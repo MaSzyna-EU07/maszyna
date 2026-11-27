@@ -55,6 +55,9 @@ public:
     // the switch the axle ran onto from its points since the last call, none: the vehicle looks whether the axle ahead
     // of it took the same way (switch_fork::forked())
     TTrack *TakeFacingEntry();
+    // the level direction of the path the axle runs on, with its buckle and its uneven track, over Reach [m] behind and
+    // ahead of it, the way the axle goes forwards; none without a path
+    glm::dvec3 PathDirection( double const Reach = 1.0 ) const;
     bool Init(TTrack *pTrack, TDynamicObject *NewOwner, double fDir);
 	void Reset();
     void Render(float fNr);
@@ -70,6 +73,7 @@ public:
     int JoinedEnd( int const End ) const;
     // the way to leave the current switch by, -1 as it is set (switch_fork::leaving_path())
     int LeavingPath() const;
+    int CrossEntry( TTrack const &Cross, int const Wish, int const End ) const;
 // members
     TTrack *pCurrentTrack = nullptr; // na którym torze siê znajduje
 	std::shared_ptr<TSegment> pCurrentSegment; // zwrotnice mog¹ mieæ dwa segmenty

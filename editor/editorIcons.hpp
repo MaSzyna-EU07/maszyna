@@ -62,6 +62,14 @@ enum class icon
 	// the tools of the signalling beside signal and station
 	station_signals,
 	line_block,
+	// the tools of the terrain added later, at the end so the other cells stay where they were
+	hole,
+	grass,
+	// the catenary, added after the terrain tools for the same reason
+	catenary,
+	work_catenary,
+	gantry,
+	wires,
 	count
 };
 

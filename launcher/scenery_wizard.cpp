@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
+#include "rendering/renderer.h"
 #include "utilities/utilities.h"
 
 #include <algorithm>

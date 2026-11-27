@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "derailment.h"
 #include "collision.h"
 #include "scripting/ladderlogic.h"
+#include "vehicle/derailmotion.h"
 #include "vehicle/odometerreading.h"
 
 class cParser;
@@ -1479,6 +1480,28 @@ class TMoverParameters
 		float pressure{0.f}; // current pressure
 	};
 
+	// the diesel generator set of a dual-mode vehicle: a second source of the traction circuit, next to the
+	// pantographs (eu07/maszyna#536). none unless the .fiz gives GensetPower
+	struct genset_device : public basic_device
+	{
+		// config (Power: Genset*), revolutions in rev/s, the .fiz gives rpm
+		double power{0.0}; // GensetPower, electric output at full revolutions [kW]; 0 = no genset
+		double voltage_nominal{0.0}; // GensetVoltage, regulated DC voltage from the idle revolutions up [V]
+		double revolutions_idle{0.0}; // GensetIdleRPM
+		double revolutions_max{0.0}; // GensetMaxRPM
+		double start_time{8.0}; // GensetStartTime, from the start request to running at idle [s]
+		double spinup_time{3.0}; // GensetSpinUpTime, time constant of the revolutions [s]
+		double traction_share{1.0}; // GensetPmaxRatio, part of the power the traction may take
+		// state
+		double timer{0.0}; // of the start [s]
+		bool is_cranking{false};
+		// ld outputs
+		double revolutions{0.0}; // [rev/s]
+		double voltage{0.0}; // [V]
+		bool fitted() const { return power > 0.0; }
+		// the power the genset gives at its present revolutions [kW]
+		double available_power() const { return revolutions_max > 0.0 ? power * std::clamp(revolutions / revolutions_max, 0.0, 1.0) : 0.0; }
+	};
 	// basic approximation of a water pump
 	struct water_pump : public basic_device
 	{
@@ -1903,6 +1926,9 @@ class TMoverParameters
 	int FastSerialCircuit = 0; /*0 - po kolei zamyka styczniki az do osiagniecia szeregowej, 1 - natychmiastowe wejscie na szeregowa*/ /*hunter-111012*/
 	int BackwardsBranchesAllowed = 1;
 	int AutoRelayType = 0; /*0 -brak, 1 - jest, 2 - opcja*/
+	// FieldShuntSwitch=Yes: the switch of AutoRelay=Optional of a diesel-electric is its switch of the field shunting, as the SU45's
+	// and SP45's (fieldshunting.h): off, the field stays full. without it, off hands the shunting to the second controller, as before
+	bool FieldShuntSwitch = false;
 	bool CoupledCtrl = false; /*czy mainctrl i scndctrl sa sprzezone*/
 	bool HasCamshaft{false};
 	int DynamicBrakeType = 0; /*patrz dbrake_**/
@@ -2209,6 +2235,11 @@ class TMoverParameters
 	bool ConverterOverloadRelayOffWhenMainIsOff{false};
 	fuel_pump FuelPump;
 	oil_pump OilPump;
+	genset_device Genset; // of a dual-mode vehicle, fitted() only with GensetPower
+	// the source the traction circuit takes its voltage from (the traction selector of a dual-mode vehicle)
+	enum class traction_mode { catenary, genset };
+	traction_mode TractionMode{traction_mode::catenary};
+	bool GensetSelected() const { return TractionMode == traction_mode::genset; }
 	water_pump WaterPump;
 	water_heater WaterHeater;
 	bool WaterCircuitsLink{false}; // optional connection between water circuits
@@ -2458,6 +2489,15 @@ class TMoverParameters
 	basic_light CompartmentLights;
 
 	bool PhysicActivation = true;
+	// what the brake force (Fb) came from when the physics fell asleep (switch_physics()), for the test of ComputeTotalForce():
+	// asleep, a vehicle keeps the Fb and FStand of its last step, and a change of these wakes it
+	struct
+	{
+		double cylinder{0.0}; // BrakePress
+		double spring{0.0}; // SpringBrake.SBP
+		int manual{0}; // ManualBrakePos
+		double local{0.0}; // LocalBrakePosA
+	} sleep_brakes;
 
 	/*ABu: stale dla wyznaczania sil (i nie tylko) po optymalizacji*/
 	double FrictConst1 = 0.0;
@@ -2554,6 +2594,22 @@ class TMoverParameters
 	// derailment, which stops it as the legacy model does (with physics.collisions new by a friction of its weight, the
 	// forces of the vehicles coupled to it acting on it)
 	derailment::outcome Derailed{derailment::outcome::none};
+	// physics.derailment new: how the vehicle left the rails, for the way it leaves the track (vehicle/derailmotion.h):
+	// what derailed it, the lateral acceleration of its body out of the curve then [m/s2] (negative into the curve, where a
+	// buckle bends the line the other way), and the side it was pulled off to by a coupling (1 the left of its front, -1
+	// the right; 0 the side the acceleration throws it to, from the track)
+	derail_motion::cause DerailCause{derail_motion::cause::off_rails};
+	double DerailAcceleration{0.0};
+	int DerailSide{0};
+	// the vehicle off the track, on the ground: begun and stepped by TDynamicObject, which knows the ground; its friction
+	// and the grade under it go into the forces of this one
+	derail_motion::body OffTrack;
+	// physics.derailment new: the vehicle derailed by the physical criteria, the end of the track or a collision has to
+	// leave the track and its motion on the ground isn't begun yet. never with physics.derailment monitor, old or off
+	bool leaves_track() const;
+	// physics.derailment new: a coupling of a vehicle off the track pulls this one off the rails sideways, to the Side
+	// (1 the left of its front, -1 the right), with the lateral acceleration [m/s2] of the pull on it
+	void pull_off(int Side, double Acceleration, std::string const &Why);
 	// physics.collisions new: what the vehicle is for the defaults of its crush and its buffers, the crush curve and the
 	// height of the buffers of an end, and how long the push of its ends held its wheels over the climbing limit
 	collision::vehicle_kind collision_kind() const;
@@ -2579,9 +2635,6 @@ class TMoverParameters
 	// the rail: it leaves the rails upright, the reason told in the log. Side is the side of its front the way the
 	// switch was thrown to lies on (1 the left, -1 the right, 0 unknown), the way it goes off the track to
 	void derail_forked(int Side, std::string const &Why);
-	// how the vehicle left the rails running forked: the side of its front the other way of the switch lay on (1 the
-	// left, -1 the right), 0 when it didn't
-	int ForkSide{0};
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/
 	bool EIMDirectionChangeAllow(void) const;
@@ -2610,7 +2663,25 @@ class TMoverParameters
 	// Q *******************************************************************************************
 	double GetTrainsetVoltage(int const Coupling = coupling::heating | coupling::highvoltage) const;
 	double GetTrainsetHighVoltage() const;
-	bool switch_physics(bool const State);
+	// what turns the physics on, counted for the debug panel (Timer::switching_counter)
+	enum class wake_cause
+	{
+		other,
+		mainpipe, // air flowing in from a neighbour along the brake pipe
+		scndpipe, // along the main reservoir pipe
+		command,
+		speed, // the test of ComputeTotalForce(): the vehicle moves
+		acceleration, // accelerates
+		neighbour, // a neighbour moves or accelerates
+		rest // active cab, switching, ezt/dmu
+	};
+	bool switch_physics(bool const State, wake_cause const Cause = wake_cause::other);
+	// whether the vehicle accelerates, for the test which turns the physics off in vehicles standing still (ComputeTotalForce()).
+	// standing still, its acceleration is the pull of the slope and of the couplers, as the brakes and the resistance count only
+	// against a speed (FTotal); with Global.physics_sleepheld one held by them, the way ComputeMovement() keeps it standing, doesn't
+	bool accelerating() const;
+	// whether the brakes of a vehicle whose physics sleeps have changed since it fell asleep, see sleep_brakes
+	bool brakes_changed_asleep() const;
 	double LocalBrakeRatio(void) const;
 	double ManualBrakeRatio(void) const;
 	double PipeRatio(void) const; /*ile napelniac*/
@@ -2938,6 +3009,13 @@ class TMoverParameters
 	bool HeatingSwitch(bool const State, range_t const Notify = range_t::consist);
 	void HeatingSwitch_(bool const State);
 	double EnginePowerSourceVoltage() const; // returns voltage of defined main engine power source
+	bool TractionModeSwitch(traction_mode const Mode, range_t const Notify = range_t::consist); // traction selector of a dual-mode vehicle
+	bool GensetSwitch(bool const State, range_t const Notify = range_t::consist); // genset start/stop request
+	double TractionSourceVoltage() const; // of the vehicle's own source the traction selector picks: the pantographs' or the genset's
+	double TractionSupplyVoltage() const; // what the traction circuit gets: the own source's, or the train's high voltage line's
+	double TractionSupplyMinVoltage() const; // below it the line breaker opens (undervoltage)
+	double GensetTractionPowerLimit() const; // [kW] at the wheels, the largest double unless running on the genset
+	double CatenaryCurrent() const; // [A] what the vehicle draws through its pantographs, if they touch the wire
 	// whether the main circuit feeds what runs on it (the converter, a compressor, the heating, the motor and resistor
 	// blowers, the traction motors): the line breaker closed, and where it closes ahead of the pantographs and holds
 	// without traction voltage (PantographsRequireMains) also the voltage there, at least the one the undervoltage
@@ -2963,6 +3041,7 @@ class TMoverParameters
 	// whether the circuit a traction motor blower runs off has power: the battery, the converter or the main circuit, by its start type
 	bool MotorBlowerPowerIsAvailable(cooling_fan const &Blower) const;
 	void PantographsCheck(double const Timestep);
+	void GensetCheck(double const Deltatime);
 	void LightsCheck(double const Timestep);
 	bool FuseOn(range_t const Notify = range_t::consist); // bezpiecznik nadamiary
 	bool FuseFlagCheck(void) const; // sprawdzanie flagi nadmiarowego
@@ -3130,6 +3209,7 @@ class TMoverParameters
 	void LoadFIZ_Headlights(std::string const &Line);
 	void LoadFIZ_Clima(std::string const &line);
 	void LoadFIZ_Power(std::string const &Line);
+	void LoadFIZ_Genset(std::string const &Line);
 	void LoadFIZ_SpeedControl(std::string const &Line);
 	void LoadFIZ_Engine(std::string const &Input);
 	void LoadFIZ_EngineDiesel(std::string const &Input);

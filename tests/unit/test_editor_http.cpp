@@ -91,6 +91,21 @@ bool proxied() {
 
 } // namespace
 
+TEST_CASE("editor http: a build with an http client has it at run time") {
+#if defined(_WIN32) || defined(EU07_WITH_CURL)
+	// WinHTTP comes with Windows. libcurl isn't linked, it's loaded when first needed: a build made with its headers runs
+	// on a system that has it, so the tests below don't quietly skip a libcurl that failed to load
+	CHECK(editor_http::available());
+#else
+	CHECK_FALSE(editor_http::available());
+	editor_http::client client;
+	std::vector<std::uint8_t> data;
+	std::string error;
+	CHECK_FALSE(client.get("http://127.0.0.1/", data, error, []() { return false; }));
+	CHECK_FALSE(error.empty());
+#endif
+}
+
 TEST_CASE("editor http: a request a service doesn't answer is given up as soon as a stop is asked for") {
 	if (false == editor_http::available() || proxied())
 		return; // a build with no http client, or a proxy in the way

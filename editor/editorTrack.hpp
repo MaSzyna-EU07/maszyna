@@ -22,6 +22,7 @@ http:
 #include "editor/editorSwitchDesign.hpp"
 #include "world/TrackUneven.h"
 #include "utilities/Classes.h"
+#include "world/TrackBlend.h"
 
 class TTrack;
 class basic_event;
@@ -72,6 +73,8 @@ class editor_track
 		float sleeper_ballast{0.f};
 		std::string timber_model;
 		std::string timber_skin;
+		std::array<std::array<float, 3>, 2> blend{{{track_blend::default_length, track_blend::default_length, track_blend::default_length},
+		                                           {track_blend::default_length, track_blend::default_length, track_blend::default_length}}};
 		std::pair<std::string, int> rail_profile;
 		std::array<std::vector<std::pair<std::string, basic_event *>>, 6> events;
 		std::string name;
