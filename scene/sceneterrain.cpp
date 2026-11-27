@@ -1130,6 +1130,8 @@ void terrain_file::load(basic_section &Section, terrain_block const &Block)
 				vertex.texture.t = std::clamp(vertex.texture.t, 0.001f, 0.999f);
 			}
 		}
+		// a file written by an older build can hold the zero normals of its text
+		fill_missing_normals(shapedata.vertices);
 
 		if (true == shapedata.translucent || shapedata.rangesquared_max <= 90000.0 || shapedata.rangesquared_min > 0.0)
 		{

@@ -74,6 +74,9 @@ struct node_data {
     instance_handle instance { 0 }; // include of an *.inc template which defines the node, if it isn't defined directly by a scenery layer file
 };
 
+// gives the vertices of each triangle with a zero normal the flat normal of the triangle, by its authored winding
+void fill_missing_normals( std::vector<world_vertex> &Vertices );
+
 // holds unique piece of geometry, covered with single material
 class shape_node
 {
