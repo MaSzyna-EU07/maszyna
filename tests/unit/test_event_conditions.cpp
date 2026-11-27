@@ -5,7 +5,15 @@
 #include "utilities/parser.h"
 #include "world/Event.h"
 
+#include <algorithm>
+#include <cctype>
 #include <sstream>
+#include <string>
+#include <vector>
+
+// the lines logged while capture is on, kept by the engine stubs (engine_stubs.cpp)
+void unit_tests_log_capture(bool Enabled);
+std::vector<std::string> unit_tests_logged_lines();
 
 // the condition block of the multiple and updatevalues events (world/eventconditions.cpp): the scenery editor writes
 // the conditions of the events back with export_as_text(), and what it writes has to read back as the same conditions
@@ -127,4 +135,31 @@ TEST_CASE("event conditions: the track and probability conditions read back alon
 
 TEST_CASE("event conditions: an event without conditions writes none") {
 	CHECK(write(conditions{}).empty());
+}
+
+TEST_CASE("event conditions: a word the reader doesn't know is logged with the event and skipped") {
+	unit_tests_log_capture(true);
+	// a name after trackfree: the track test takes the targets of the event, the name is skipped
+	auto const result{read("condition trackfree SomeTrack endevent")};
+	auto lines{unit_tests_logged_lines()};
+	unit_tests_log_capture(false);
+
+	CHECK(result.flags == basic_event::flags::track_free);
+	REQUIRE(lines.size() == 1);
+	// the parser may give the word in lower case
+	auto &line{lines.front()};
+	std::ranges::transform(line, line.begin(), [](unsigned char const Char) { return static_cast<char>(std::tolower(Char)); });
+	CHECK(line.find("\"test\"") != std::string::npos);
+	CHECK(line.find("\"sometrack\"") != std::string::npos);
+	CHECK(line.find("unknown word") != std::string::npos);
+}
+
+TEST_CASE("event conditions: the known words log nothing") {
+	unit_tests_log_capture(true);
+	auto const result{read("condition trackoccupied probability 0.5 memcompareex any == 1 * * endevent")};
+	auto const lines{unit_tests_logged_lines()};
+	unit_tests_log_capture(false);
+
+	CHECK(result.flags == (basic_event::flags::track_busy | basic_event::flags::probability | basic_event::flags::text));
+	CHECK(lines.empty());
 }
