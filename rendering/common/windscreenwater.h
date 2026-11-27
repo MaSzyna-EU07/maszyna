@@ -63,8 +63,8 @@ class windscreen_water
 	// once a frame, before the colour passes: the cab of the train followed, the step of the simulation run. Seconds: of the
 	// simulation since the frame before (0 when it's paused)
 	void update(double Seconds);
-	// whether the glasses need the cells of the rain worked out: the cab of the train has a glass of the rain (or the simulation
-	// isn't used, the cab not looked at)
+	// whether the glasses need the cells of the rain worked out: the cab of the train has a glass with drops, not of the snow (or
+	// the simulation isn't used, the cab not looked at)
 	bool wants_rain_cells();
 	// the materials let go of their slots, the glasses forgotten (the storage stays as it is, unused)
 	void release();

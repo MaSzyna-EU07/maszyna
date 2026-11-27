@@ -369,10 +369,12 @@ bool windscreen_water::wants_rain_cells()
 	// without the simulation the cab isn't looked at: the cells as before, whenever it rains
 	if (m_state <= 0)
 		return true;
-	// a material of the cab of the shader of the rain, as it is in this weather (with a mask of the wipers or without)
+	// a glass of the cab with drops, as it is in this weather: a material with an atlas of drops (raindropsatlas: the rain, or the
+	// insects, which don't come with rain), but not one of the snow (snow_slot)
 	return std::ranges::any_of(m_cabmaterials, [this](material_handle const Material) {
 		auto const *opengl{m_host.material(Material)};
-		return (opengl != nullptr) && (opengl->shader != nullptr) && (opengl->shader->param_conf.count("water_slot") > 0);
+		return (opengl != nullptr) && (opengl->shader != nullptr) && (opengl->shader->texture_conf.count("raindropsatlas") > 0) &&
+		       (opengl->shader->param_conf.count("snow_slot") == 0);
 	});
 }
 
