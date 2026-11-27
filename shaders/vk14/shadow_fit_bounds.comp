@@ -1,0 +1,133 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the cascades of the sun shadows fitted to the depth of the main view (gfx::shadow_fit), second pass: the distances
+// from the nearest to the farthest pixel which isn't the sky (shadow_fit_depth.comp) split between the cascades, and for each
+// cascade the box of the pixels it takes, in the space of the light. the cpu makes the maps of the cascades of a frame or
+// two later cover the boxes: the camera has moved since, so a cascade takes the pixels a little past its distances as well,
+// and the shading goes to the next cascade with a point outside the map of its own (light_common.glsl)
+
+#define LAYOUT_COMPUTE 1
+#include "common.glsl"
+
+layout(local_size_x = SHADOW_FIT_GROUP_SIZE, local_size_y = SHADOW_FIT_GROUP_SIZE) in;
+
+layout(set = COMPUTE_SET, binding = 0) uniform sampler2D scene_depth;
+
+layout(std430, set = COMPUTE_SET, binding = 1) buffer shadow_fit_ssbo
+{
+	uint measurement;
+	uint samples;
+	// positive floats, as bits
+	uint depthmin;
+	uint depthmax;
+	float splits[4];
+	uint counts[4];
+	// per cascade the lowest x, y, z, unused, then the highest x, y, z, unused, as shadow_fit_order() gives them
+	uint bounds[MAX_CASCADES * 8U];
+};
+
+// the parameters of the kernel (push constants)
+layout(push_constant) uniform kernel_constants
+{
+	// the inverse of the projection of the view
+	mat4 inv_projection;
+	// rotation from the view space to the space of the light: x and y across the maps, z along the light
+	mat4 view_to_light;
+	// x: the farthest distance the cascades may reach (the one of the fixed cascades), y: the nearest one the first may start
+	// from, z: the least one the last reaches, w: the share of equal ratios in the splits, the rest in equal lengths
+	vec4 split_params;
+	// how far past its distances a cascade takes the pixels, x + y * distance metres
+	vec4 margin_params;
+};
+
+shared uint shared_bounds[MAX_CASCADES * 8U];
+shared uint shared_counts[MAX_CASCADES];
+
+// a float as a uint which orders the same way, also the negative ones
+uint shadow_fit_order(float value)
+{
+	uint bits = floatBitsToUint(value);
+	return ((bits & 0x80000000U) != 0U) ? ~bits : (bits | 0x80000000U);
+}
+
+// the distances the cascades go from and to. both ends are moved out to the next step of 1/8 of a power of two, so that
+// the cascades change only now and then with the pixels coming and going
+void shadow_fit_splits(out float result[MAX_CASCADES + 1U])
+{
+	float rangemax = split_params.x;
+	float far = clamp(uintBitsToFloat(depthmax), split_params.z, rangemax);
+	far = min(exp2(ceil(log2(far) * 8.0) / 8.0), rangemax);
+	float near = clamp(uintBitsToFloat(depthmin), split_params.y, far * 0.25);
+	near = exp2(floor(log2(near) * 8.0) / 8.0);
+	result[0] = near;
+	result[MAX_CASCADES] = far;
+	for (uint cascade = 1U; cascade < MAX_CASCADES; ++cascade)
+	{
+		float share = float(cascade) / float(MAX_CASCADES);
+		result[cascade] = mix(near + (far - near) * share, near * pow(far / near, share), split_params.w);
+	}
+}
+
+void main()
+{
+	uint index = gl_LocalInvocationIndex;
+	if (index < MAX_CASCADES * 8U)
+		shared_bounds[index] = ((index & 4U) == 0U) ? 0xFFFFFFFFU : 0U;
+	if (index < MAX_CASCADES)
+		shared_counts[index] = 0U;
+	barrier();
+
+	float cascadesplits[MAX_CASCADES + 1U];
+	shadow_fit_splits(cascadesplits);
+
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = textureSize(scene_depth, 0);
+	if ((samples > 0U) && all(lessThan(pixel, size)))
+	{
+		float depth = texelFetch(scene_depth, pixel, 0).r;
+		if (depth > 0.0)
+		{
+			vec2 ndc = (vec2(pixel) + 0.5) / vec2(size) * 2.0 - 1.0;
+			vec4 position = inv_projection * vec4(ndc, depth, 1.0);
+			vec3 view = position.xyz / position.w;
+			float distance = length(view);
+			vec3 light = mat3(view_to_light) * view;
+			uvec3 ordered = uvec3(shadow_fit_order(light.x), shadow_fit_order(light.y), shadow_fit_order(light.z));
+			for (uint cascade = 0U; cascade < MAX_CASCADES; ++cascade)
+			{
+				// the end of a cascade has the padding of opengl46_renderer::Render_pass(), MAX_CASCADES - cascade metres
+				float low = (cascade == 0U) ? 0.0 : cascadesplits[cascade] - (margin_params.x + margin_params.y * cascadesplits[cascade]);
+				float high = cascadesplits[cascade + 1U] + float(MAX_CASCADES - cascade) + margin_params.x + margin_params.y * cascadesplits[cascade + 1U];
+				if ((distance < low) || (distance > high))
+					continue;
+				uint first = cascade * 8U;
+				atomicAdd(shared_counts[cascade], 1U);
+				atomicMin(shared_bounds[first + 0U], ordered.x);
+				atomicMin(shared_bounds[first + 1U], ordered.y);
+				atomicMin(shared_bounds[first + 2U], ordered.z);
+				atomicMax(shared_bounds[first + 4U], ordered.x);
+				atomicMax(shared_bounds[first + 5U], ordered.y);
+				atomicMax(shared_bounds[first + 6U], ordered.z);
+			}
+		}
+	}
+	barrier();
+
+	if ((index < MAX_CASCADES * 8U) && ((index & 3U) != 3U))
+	{
+		if ((index & 4U) == 0U)
+		{
+			if (shared_bounds[index] != 0xFFFFFFFFU)
+				atomicMin(bounds[index], shared_bounds[index]);
+		}
+		else if (shared_bounds[index] != 0U)
+			atomicMax(bounds[index], shared_bounds[index]);
+	}
+	if ((index < MAX_CASCADES) && (shared_counts[index] > 0U))
+		atomicAdd(counts[index], shared_counts[index]);
+	if (all(equal(gl_GlobalInvocationID.xy, uvec2(0U))))
+	{
+		for (uint split = 0U; split <= MAX_CASCADES; ++split)
+			splits[split] = cascadesplits[split];
+	}
+}

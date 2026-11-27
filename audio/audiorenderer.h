@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "audio/audio.h"
 #include "audio/outputfollow.h"
+#include "audio/fmradio.h"
 #include "audio/startsample.h"
 #include "model/ResourceManager.h"
 #include "application/uitranscripts.h"
@@ -34,7 +35,6 @@ http://mozilla.org/MPL/2.0/.
 
 #define EU07_SOUND_PROOFINGUSESRANGE
 
-class opengl_renderer;
 class sound_source;
 
 using uint32_sequence = std::vector<std::uint32_t>;
@@ -109,8 +109,6 @@ private:
 
 class openal_renderer {
 
-    friend opengl_renderer;
-
 public:
     openal_renderer() = default;
     ~openal_renderer();
@@ -119,6 +117,8 @@ public:
     audio::openal_buffer const &buffer( audio::buffer_handle const Buffer ) const;
     // makes buffers of all sound files still decoded in the background (sound.asyncload), waiting for them
     void complete_buffers();
+    // the sound buffers and the bytes of their data, for the debug panel
+    memory_count buffers_memory() const { return m_buffers.memory(); }
 
     bool init();
 
@@ -129,6 +129,8 @@ public:
 
     void erase( sound_source const *Controller );
     void update( double const Deltatime );
+    // provides access to the broadcast radio receiver
+    audio::fm_radio &fmradio() { return m_fmradio; }
 
     // choices the library offers, for the settings
     std::vector<std::string> output_devices() const;
@@ -179,6 +181,7 @@ private:
     buffer_manager m_buffers;
     source_list m_sources;
     source_sequence m_sourcespares;
+    audio::fm_radio m_fmradio; // streamed sound, maintained separately from regular emitters
 
     // OpenAL Soft extension entry points, resolved at runtime via al(c)GetProcAddress
     LPALDEFERUPDATESSOFT m_alDeferUpdatesSOFT { nullptr };
@@ -217,4 +220,4 @@ private:
 extern openal_renderer renderer;
 extern bool event_volume_change;
 
-} // namespace audio
+} // namespace audio

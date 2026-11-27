@@ -1,0 +1,64 @@
+layout(location = 0) in vec3 f_normal;
+layout(location = 2) in vec2 f_coord;
+layout(location = 3) in vec4 f_pos;
+
+layout(location = 4) in vec4 f_clip_pos;
+layout(location = 5) in vec4 f_clip_future_pos;
+
+#include "common.glsl"
+
+#pragma param(color, 0, 0, 4, diffuse)
+#pragma param(diffuse, 1, 0, 1, diffuse)
+#pragma param(specular, 1, 1, 1, specular)
+#pragma param(reflection, 1, 2, 1, zero)
+#pragma param(glossiness, 1, 3, 1, glossiness)
+
+#pragma texture(diffuse, 0, sRGB_A)
+layout(binding = 0) uniform sampler2D diffuse;
+
+layout(location = 0) out vec4 out_color;
+layout(location = 1) out vec4 out_motion;
+
+#include "light_common.glsl"
+#include "apply_fog.glsl"
+#include "tonemapping.glsl"
+
+void main()
+{
+	vec4 tex_color = texture(diffuse, f_coord);
+
+	bool alphatestfail = ( opacity >= 0.0 ? (tex_color.a < opacity) : (tex_color.a >= -opacity) );
+	if(alphatestfail)
+		discard;
+//	if (tex_color.a < opacity)
+//		discard;
+
+	vec3 fragcolor = ambient;
+	vec3 fragnormal = normalize(f_normal);
+	matte = true;
+	
+	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, 0.0, 0.0, shadow_tone);
+	vec4 color = vec4(apply_fog(fragcolor), tex_color.a * alpha_mult);
+/*
+	float distance = dot(f_pos.xyz, f_pos.xyz);
+	     if( distance <= cascade_end.x ) { color.r += 0.25; }
+	else if( distance <= cascade_end.y ) { color.g += 0.25; }
+	else if( distance <= cascade_end.z ) { color.b += 0.25; }
+*/
+    if (POSTFX_ENABLED)
+    {
+        out_color = color;
+    }
+    else
+    {
+        out_color = tonemap(color);
+    }
+
+	if (MOTIONBLUR_ENABLED)
+	{
+        vec2 a = (f_clip_future_pos.xy / f_clip_future_pos.w) * 0.5 + 0.5;;
+        vec2 b = (f_clip_pos.xy / f_clip_pos.w) * 0.5 + 0.5;;
+        
+        out_motion = vec4(a - b, 0.0f, tex_color.a * alpha_mult);
+	}
+}

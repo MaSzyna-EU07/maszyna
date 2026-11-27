@@ -10,7 +10,6 @@
     "reason": "tme222158_got_the_exit_signal_at_debica"
   },
   "slow": true,
-  "xfail": "eu07/maszyna#421 is not reached: with every train driven by AI Debica jams 4 minutes after the start, the AI of EP07-338'16 passes the shunting signal Tm4 at stop at 29 km/h and stops 20 m beyond the checkpoint before it (tor1834:event0), so RPE23113 never reports there and TME222158 is never let into the station",
   "physicslog": false,
   "ini": [
     "file.binary.terrain no"

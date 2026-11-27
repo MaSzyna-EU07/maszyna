@@ -1,0 +1,52 @@
+{
+  "description": "Switch under a train, the control of the facing cases (#289 review 2b): an EU07 with three coaches runs from the west line into Stacja1 on td.scn, facing through switch zwr01, which is set to track 1 from the start (keyctrl02, with the entry signal at 40). Nothing is thrown. The train has to stop before a signal at stop on track 1 and stay on the rails.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_switch_thrown.scn",
+  "vars": {
+    "trainsets": [
+      "trainset none start 80.0 0.0",
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "route": "node -1 0 autotest_route_launcher eventlauncher 0 0 0 -1 none 1034 keyctrl02 end",
+    "throw": "zwr01_1",
+    "trigger": "",
+    "order": "Shunt -1 0"
+  },
+  "track_events": {
+    "start": "event0 autotest_wake",
+    "tdo_n1725": [
+      "event2 autotest_signal1_info",
+      "event0 autotest_pass"
+    ],
+    "tdo_n1734": [
+      "eventall1 autotest_fail",
+      "eventall2 autotest_fail"
+    ]
+  },
+  "test_config": [
+    "test.timeout 400",
+    "test.standstill 120"
+  ],
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 30,
+      "within": 200
+    },
+    {
+      "type": "on_track",
+      "vehicles": "{{vehicle}}",
+      "max_offset": 0.6
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "Bad driving"
+    }
+  ]
+}

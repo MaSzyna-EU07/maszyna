@@ -406,6 +406,13 @@ enum class user_command
 	wiperswitchincrease,
 	wiperswitchdecrease,
 	lightsset,
+	fmradiotoggle,
+	fmradiovolumeincrease,
+	fmradiovolumedecrease,
+	fmradiovolumeset,
+	fmradiotuneincrease,
+	fmradiotunedecrease,
+	fmradiotuneset,
 	oilfuelpumptoggle,
 	linebreakertoggleb,
 	linebreakeropenb,
@@ -445,6 +452,13 @@ enum class user_command
 	genericset27,
 	genericset28,
 	genericset29,
+	// the traction selector and the genset of a dual-mode vehicle (eu07/maszyna#536)
+	tractionmodetoggle,
+	tractionmodecatenary,
+	tractionmodegenset,
+	gensettoggle,
+	gensetenable,
+	gensetdisable,
 	none = -1
 };
 

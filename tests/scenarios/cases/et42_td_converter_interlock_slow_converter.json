@@ -1,0 +1,27 @@
+{
+  "description": "#276, the check that the interlock takes effect: the ET42 of et42_td_converter_interlock_cold, with ConverterStartDelay=60 added to both sections, so the converters need a minute to start. With LineContactorsInterlock=Converter the line contactors wait for them and the train leaves later than it does with the same converter delay and no interlock (20 km/h at 80.0 s with it, at 73.8 s without it, measured with this case and a copy without the interlock key). Then it runs the timetable to Przystanek.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_cold_timetable.scn",
+  "vars": {
+    "consist": [
+      "node -1 0 {{vehicle}} dynamic pkp/et42_v2 112e-014-a {{variant_a}} 0 headdriver 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_b dynamic pkp/et42_v2 112e-014-b {{variant_b}} 0 nobody 3 0 enddynamic"
+    ]
+  },
+  "vehicle_variants": [
+    {"name": "a", "from": "pkp/et42_v2/112e-a", "replace": [["IniCDelay=0.5 SCDelay=0.1", "IniCDelay=0.5 SCDelay=0.1 LineContactorsInterlock=Converter ConverterStartDelay=60"]]},
+    {"name": "b", "from": "pkp/et42_v2/112e-b", "replace": [["IniCDelay=0.5 SCDelay=0.1", "IniCDelay=0.5 SCDelay=0.1 LineContactorsInterlock=Converter ConverterStartDelay=60"]]}
+  ],
+  "track_events": {
+    "tdo_n1734": "event0 autotest_wake"
+  },
+  "duration": 300,
+  "timeout": 600,
+  "checks": [
+    {"type": "starts", "min_speed": 20, "after": 77, "within": 150},
+    {"type": "max_speed", "limit": 90, "tolerance": 3},
+    {"type": "brakes", "min_pressure": 0.5},
+    {"type": "stops", "moving_speed": 20, "stop_speed": 1, "hold": 0, "min_distance": 1380, "max_distance": 1420}
+  ]
+}
