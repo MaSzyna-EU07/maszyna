@@ -9,11 +9,10 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include <cstdint>
-#include <deque>
-#include <array>
 #include <string>
 #include <vector>
+#include <deque>
+#include <array>
 
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
