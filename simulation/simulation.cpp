@@ -37,6 +37,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "vehicle/Driver.h"
 #include "world/catenary_scene.h"
+#include "physics/mover.h"
 
 namespace simulation {
 

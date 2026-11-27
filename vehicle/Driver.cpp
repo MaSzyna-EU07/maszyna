@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/Driver.h"
+#include "physics/mover.h"
 
 #include "utilities/Globals.h"
 #include "utilities/translation.h"
@@ -9661,3 +9662,21 @@ TController::UpdateBrakingHelper() {
         }
     }
 }
+
+bool TController::is_train() const {
+    return TestFlag( mvOccupied->CategoryFlag, 1 ); }
+
+bool TController::is_car() const {
+    return TestFlag( mvOccupied->CategoryFlag, 2 ); }
+
+bool TController::is_emu() const {
+    return mvControlling->TrainType == train_type::emu; }
+
+bool TController::is_dmu() const {
+    return mvControlling->TrainType == train_type::dmu; }
+
+bool TController::has_diesel_engine() const {
+    return mvControlling->EngineType == TEngineType::DieselElectric || mvControlling->EngineType == TEngineType::DieselEngine; }
+
+double TController::DirectionalVel() const {
+    return mvOccupied->Vel * sign( iDirection * mvOccupied->V ); }

@@ -34,6 +34,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
 #include "widgets/map_objects.h"
+#include "physics/mover.h"
 
 void
 basic_event::event_conditions::bind( basic_event::node_sequence *Nodes ) {

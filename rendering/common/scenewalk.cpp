@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
 #include "rendering/common/skyocclusion.h"
+#include "physics/mover.h"
 #include <algorithm>
 #include <chrono>
 #include <string>

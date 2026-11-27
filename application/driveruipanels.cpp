@@ -34,6 +34,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "widgets/vehicleparams.h"
 #include "utilities/U8.h"
+#include "physics/mover.h"
 
 #define DRIVER_HINT_CONTENT
 #include "application/driverhints.h"

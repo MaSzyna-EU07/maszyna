@@ -47,6 +47,7 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <sstream>
 #include "application/editormodeselftest.h"
+#include "physics/mover.h"
 
 editor_mode::selftest_result editor_mode::selftest_scene(std::string const &command, std::istringstream &words)
 {

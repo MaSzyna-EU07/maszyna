@@ -13,7 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string_view>
 #include "utilities/Classes.h"
 #include "utilities/utilities.h"
-#include "physics/mover.h"
+#include "physics/vehicletypes.h"
 #include "audio/sound.h"
 #include "vehicle/DynObj.h"
 #include "world/mtable.h"
@@ -266,22 +266,11 @@ public:
     inline
     bool is_active() const {
         return TestFlag( iDrivigFlags, moveActive ); }
-    inline
-    bool is_train() const {
-        return TestFlag( mvOccupied->CategoryFlag, 1 ); }
-    inline
-    bool is_car() const {
-        return TestFlag( mvOccupied->CategoryFlag, 2 ); }
-    inline
-    bool is_emu() const {
-        return mvControlling->TrainType == train_type::emu; }
-    inline
-    bool is_dmu() const {
-        return mvControlling->TrainType == train_type::dmu; }
-    inline
-    bool has_diesel_engine() const {
-        return mvControlling->EngineType == TEngineType::DieselElectric || mvControlling->EngineType == TEngineType::DieselEngine;
-    }
+    bool is_train() const;
+    bool is_car() const;
+    bool is_emu() const;
+    bool is_dmu() const;
+    bool has_diesel_engine() const;
     TBrakeSystem consist_brake_system() const;
     // the next change of the speed limit ahead, as the driving aid tells it: the speed and the distance to it.
     // the speed is the present limit (VelDesired) when nothing worth telling changes within the scan range
@@ -335,9 +324,7 @@ private:
     inline
         int DrivigFlags() const {
             return iDrivigFlags; };
-    inline
-        double DirectionalVel() const {
-            return mvOccupied->Vel * sign( iDirection * mvOccupied->V ); }
+        double DirectionalVel() const;
 
     double brake_increase_margin() const;
     bool uphill_stop_hold() const;

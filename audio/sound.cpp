@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "simulation/simulation.h"
 #include "audio/audiorenderer_extra.h"
+#include "physics/mover.h"
 
 // constructors
 sound_source::sound_source( sound_placement const Placement, float const Range ) :

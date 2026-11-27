@@ -37,6 +37,7 @@ http://mozilla.org/MPL/2.0/.
 #include "Console.h"
 #include "application/application.h"
 #include "rendering/renderer.h"
+#include "physics/mover.h"
 #include <future>
 #include <thread>
 #include <cmath>

@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationenvironment.h"
 #include "utilities/Logs.h"
 #include "vehicle/smoke.h"
+#include "physics/mover.h"
 
 
 void

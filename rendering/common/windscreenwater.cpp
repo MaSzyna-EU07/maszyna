@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "vehicle/DynObj.h"
 #include "vehicle/Train.h"
+#include "physics/mover.h"
 
 namespace gfx
 {

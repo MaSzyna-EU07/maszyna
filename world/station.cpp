@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
 #include "world/mtable.h"
+#include "physics/mover.h"
 
 namespace simulation {
 

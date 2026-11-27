@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/DynObj.h"
+#include "physics/mover.h"
 
 #include "vehicle/lightsprogrammer.h"
 
@@ -10425,3 +10426,19 @@ vehicle_table::erase_disabled() {
 
     return true;
 }
+
+// the vehicles coupled at the ends, and the ends of theirs facing this one
+TDynamicObject *TDynamicObject::NextConnected() { return MoverParameters->Neighbours[ end::rear ].vehicle; }
+TDynamicObject *TDynamicObject::PrevConnected() { return MoverParameters->Neighbours[ end::front ].vehicle; }
+TDynamicObject *TDynamicObject::NextConnected() const { return MoverParameters->Neighbours[ end::rear ].vehicle; }
+TDynamicObject *TDynamicObject::PrevConnected() const { return MoverParameters->Neighbours[ end::front ].vehicle; }
+int TDynamicObject::NextConnectedNo() const { return MoverParameters->Neighbours[ end::rear ].vehicle_end; }
+int TDynamicObject::PrevConnectedNo() const { return MoverParameters->Neighbours[ end::front ].vehicle_end; }
+
+void TDynamicObject::SetdMoveLen( double dMoveLen ) { MoverParameters->dMoveLen = dMoveLen; }
+void TDynamicObject::ResetdMoveLen() { MoverParameters->dMoveLen = 0; }
+double TDynamicObject::GetdMoveLen() { return MoverParameters->dMoveLen; }
+
+double TDynamicObject::GetVelocity() const { return MoverParameters->Vel; }
+double TDynamicObject::GetLength() const { return MoverParameters->Dim.L; }
+double TDynamicObject::GetWidth() const { return MoverParameters->Dim.W; }

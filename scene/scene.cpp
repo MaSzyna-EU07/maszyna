@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "widgets/map_objects.h"
 #include "vehicle/aiwire.h"
+#include "physics/mover.h"
 
 #include <format>
 

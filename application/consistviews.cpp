@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "vehicle/Driver.h"
 #include "vehicle/DynObj.h"
+#include "physics/mover.h"
 
 namespace {
 

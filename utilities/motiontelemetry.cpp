@@ -6,6 +6,7 @@
 #include "utilities/Timer.h"
 #include "vehicle/Driver.h"
 #include "simulation/simulation.h"
+#include "physics/mover.h"
 
 #ifdef _WIN32
 #include <winsock2.h>

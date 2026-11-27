@@ -14,7 +14,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "interfaces/IMaterial.h"
-#include "physics/mover.h"
+#include "physics/vehicletypes.h"
+#include "physics/derailment.h"
+#include "vehicle/derailmotion.h"
 #include "world/TrkFoll.h"
 #include "vehicle/Button.h"
 #include "vehicle/AirCoupler.h"
@@ -228,12 +230,12 @@ public:
     std::string asDestination; // dokąd pojazd ma być kierowany "(stacja):(tor)"
 	glm::dmat4 mMatrix; // macierz przekształcenia do renderowania modeli
     TMoverParameters *MoverParameters; // parametry fizyki ruchu oraz przeliczanie
-    inline TDynamicObject *NextConnected() { return MoverParameters->Neighbours[ end::rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
-    inline TDynamicObject *PrevConnected() { return MoverParameters->Neighbours[ end::front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
-    inline TDynamicObject *NextConnected() const { return MoverParameters->Neighbours[ end::rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
-    inline TDynamicObject *PrevConnected() const { return MoverParameters->Neighbours[ end::front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
-    inline int NextConnectedNo() const { return MoverParameters->Neighbours[ end::rear ].vehicle_end; }
-    inline int PrevConnectedNo() const { return MoverParameters->Neighbours[ end::front ].vehicle_end; }
+    TDynamicObject *NextConnected(); // pojazd podłączony od strony sprzęgu 1 (kabina -1)
+    TDynamicObject *PrevConnected(); // pojazd podłączony od strony sprzęgu 0 (kabina 1)
+    TDynamicObject *NextConnected() const; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
+    TDynamicObject *PrevConnected() const; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
+    int NextConnectedNo() const;
+    int PrevConnectedNo() const;
 
     // Dev tools
 	void Reload();
@@ -671,12 +673,9 @@ private:
 	TDynamicObject * PrevAny() const;
 	TDynamicObject * Prev(int C = -1) const;
 	TDynamicObject * Next(int C = -1) const;
-    void SetdMoveLen(double dMoveLen) {
-        MoverParameters->dMoveLen = dMoveLen; }
-    void ResetdMoveLen() {
-        MoverParameters->dMoveLen = 0; }
-    double GetdMoveLen() {
-        return MoverParameters->dMoveLen; }
+    void SetdMoveLen(double dMoveLen);
+    void ResetdMoveLen();
+    double GetdMoveLen();
 
     int GetPneumatic(bool front, bool red);
     void SetPneumatic(bool front, bool red);
@@ -849,12 +848,9 @@ public:
         return glm::value_ptr(mMatrix); };
     inline double * Matrix() {
         return glm::value_ptr(mMatrix); };
-    inline double GetVelocity() const {
-        return MoverParameters->Vel; };
-    inline double GetLength() const {
-        return MoverParameters->Dim.L; };
-    inline double GetWidth() const {
-        return MoverParameters->Dim.W; };
+    double GetVelocity() const;
+    double GetLength() const;
+    double GetWidth() const;
     double radius() const;
     // calculates distance between event-starting axle and front of the vehicle
     double tracing_offset() const;

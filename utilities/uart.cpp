@@ -9,6 +9,7 @@
 #include "utilities/utilities.h"
 #include "simulation/simulationtime.h"
 #include "application/application.h"
+#include "physics/mover.h"
 
 const char* const uart_baudrates_list[] = {
     "300",

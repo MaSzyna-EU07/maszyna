@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/physicslog.h"
 #include "utilities/utilities.h"
 #include "world/stationnames.h"
+#include "physics/mover.h"
 
 #include <algorithm>
 #include <cctype>

@@ -37,6 +37,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 #include "editor/editorTerrainStreamer.hpp"
+#include "physics/mover.h"
 
 #include <format>
 
