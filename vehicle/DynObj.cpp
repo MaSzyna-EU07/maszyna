@@ -4870,10 +4870,8 @@ bool TDynamicObject::Update(double dt, double dt1)
     // mirrors
     auto const mirrorleft { dMirrorMoveL };
     auto const mirrorright { dMirrorMoveR };
-    if( MoverParameters->Vel > MoverParameters->MirrorVelClose
-		|| MoverParameters->CabActive == 0 && activation::mirrors
-		|| MoverParameters->MirrorForbidden ) {
-        // automatically fold mirrors when above velocity threshold
+    if( MoverParameters->MirrorsFold() ) {
+        // automatically fold mirrors when above velocity threshold, in an inactive cab if the vehicle wants it, or when switched off
         if( dMirrorMoveL > 0.0 ) {
             dMirrorMoveL = std::max(
                 0.0,

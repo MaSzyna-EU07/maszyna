@@ -428,3 +428,42 @@ TEST_CASE("cab: the vigilance button held too long, its alarm not cleared by the
 	}
 	CHECK(security.is_vigilance_blinking());
 }
+
+// the cab mirrors fold above MirrorVelClose, when switched off (MirrorForbidden), and in an inactive cab only
+// if the vehicle's InactiveCabFlag has the mirrors bit; vehicles without it leave the mirrors alone there
+TEST_CASE("cab: the mirrors folded by speed, by the switch, and in an inactive cab where InactiveCabFlag says so") {
+	vehicle cab{definition::load("cab_vehicle"), 0.0, "test", 1};
+	auto &mover{cab.mover()};
+	REQUIRE(mover.MirrorVelClose == doctest::Approx(5.0));
+	for (auto const flag : {0, int(activation::mirrors), 0xff & ~int(activation::mirrors), 0xff}) {
+		for (auto const cabactive : {0, 1, -1}) {
+			for (auto const fast : {false, true}) {
+				for (auto const forbidden : {false, true}) {
+					CAPTURE(flag);
+					CAPTURE(cabactive);
+					CAPTURE(fast);
+					CAPTURE(forbidden);
+					mover.InactiveCabFlag = flag;
+					mover.CabActive = cabactive;
+					mover.Vel = fast ? 5.1 : 5.0;
+					mover.MirrorForbidden = forbidden;
+					auto const inactivefold{cabactive == 0 && (flag & activation::mirrors) != 0};
+					CHECK(mover.MirrorsFold() == (fast || forbidden || inactivefold));
+				}
+			}
+		}
+	}
+}
+
+TEST_CASE("cab: the mirrors of a deactivated cab, folded by the Impuls (InactiveCabFlag 239) but not by the Elf 22WEc (9)") {
+	for (auto const &[path, folds] : {std::pair{"impuls_v1/31we-a_pr", true}, std::pair{"elf_v1/22wec-a", false}}) {
+		CAPTURE(path);
+		vehicle unit{definition::fiz(path), 0.0, "test", 1};
+		REQUIRE(unit->CabActivisation());
+		REQUIRE(unit->CabActive == 1);
+		CHECK_FALSE(unit->MirrorsFold());
+		REQUIRE(unit->CabDeactivisation());
+		REQUIRE(unit->CabActive == 0);
+		CHECK(unit->MirrorsFold() == folds);
+	}
+}
