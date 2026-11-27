@@ -5,6 +5,7 @@
 #include "doctest.h"
 
 #include "McZapkie/hamulce.h"
+#include "vehicle/fieldshunting.h"
 
 namespace test {
 
@@ -137,7 +138,8 @@ void close_line_breaker(driven const &Driven) {
 	Driven.cab.MainSwitch(true);
 }
 
-// the converter, the compressor and the motor blowers, once the line breaker is closed
+// the converter, the compressor and the motor blowers, once the line breaker is closed; and the switch of the
+// field shunting of a diesel-electric that has one (AutoRelay=Optional with FieldShuntSwitch=Yes), as the AI does
 void switch_auxiliaries_on(TMoverParameters &Cab) {
 	Cab.ConverterSwitch(true);
 	Cab.CompressorSwitch(true);
@@ -146,6 +148,9 @@ void switch_auxiliaries_on(TMoverParameters &Cab) {
 			Cab.MotorBlowersSwitchOff(false, side);
 			Cab.MotorBlowersSwitch(true, side);
 		}
+	}
+	if (Cab.EngineType == TEngineType::DieselElectric && fieldshunting::has_switch(Cab.AutoRelayType, Cab.FieldShuntSwitch)) {
+		Cab.AutoRelaySwitch(true);
 	}
 }
 
