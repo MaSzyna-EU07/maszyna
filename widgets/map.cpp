@@ -178,7 +178,6 @@ void ui::map_panel::prepare_static_scene_cache()
 	cache_signal_directions();
 	m_static_scene_region = simulation::Region;
 	m_static_view_cache_valid = false;
-	m_dynamic_tracks_cache_valid = false;
 }
 
 void ui::map_panel::cache_static_water()
@@ -615,24 +614,10 @@ void ui::map_panel::collect_map_geometry(glm::mat4 transform)
 	for (TTrack *track : m_visible_switch_tracks)
 		track->get_map_active_paths(m_colored_paths);
 
-	std::uint64_t const dynamic_revision = TTrack::map_dynamics_revision();
-	if (!m_dynamic_tracks_cache_valid ||
-	    m_dynamic_tracks_region != simulation::Region ||
-	    m_cached_dynamic_revision != dynamic_revision)
+	for (TTrack *track : simulation::Paths.sequence())
 	{
-		m_occupied_tracks.clear();
-		for (TTrack *track : simulation::Paths.sequence())
-		{
-			if (track && track->iCategoryFlag == 1 && !track->Dynamics.empty())
-				m_occupied_tracks.push_back(track);
-		}
-		m_dynamic_tracks_region = simulation::Region;
-		m_cached_dynamic_revision = dynamic_revision;
-		m_dynamic_tracks_cache_valid = true;
-	}
-
-	for (TTrack *track : m_occupied_tracks) {
-		track->get_map_future_paths(m_colored_paths);
+		if (track && track->iCategoryFlag == 1 && !track->Dynamics.empty())
+			track->get_map_future_paths(m_colored_paths);
 	}
 
     for (std::pair<TTrack*, int> &entry : highlighted_switches) {

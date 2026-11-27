@@ -177,10 +177,6 @@ class map_panel : public ui_panel
 	std::vector<cached_world_lines> m_environment_lines;
 	std::vector<cached_world_lines> m_platform_lines;
 	std::vector<cached_station_label> m_station_labels;
-	scene::basic_region *m_dynamic_tracks_region { nullptr };
-	std::uint64_t m_cached_dynamic_revision { 0 };
-	bool m_dynamic_tracks_cache_valid { false };
-	std::vector<TTrack *> m_occupied_tracks;
 
     const int fb_size = 1024;
 

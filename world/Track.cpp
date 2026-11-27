@@ -119,12 +119,6 @@ void chain_switch_pieces( TTrack &Track, std::size_t const Index ) {
 TTrack::profiles_array TTrack::m_profiles;
 TTrack::profiles_map TTrack::m_profilesmap;
 int TTrack::s_layoutstamp { 0 };
-std::atomic<std::uint64_t> TTrack::s_map_dynamics_revision { 0 };
-
-std::uint64_t TTrack::map_dynamics_revision()
-{
-	return s_map_dynamics_revision.load(std::memory_order_relaxed);
-}
 
 TSwitchExtension::TSwitchExtension(TTrack *owner, int const what)
 { // na początku wszystko puste
@@ -1311,14 +1305,11 @@ bool TTrack::AddDynamicObject(TDynamicObject *Dynamic)
             }
         }
     }
-    bool const was_unoccupied = Dynamics.empty();
-    if( was_unoccupied ) {
+    if( Dynamics.empty() ) {
         // a train comes onto the track, which can buckle under it in the heat
         buckle_pass_enter( *Dynamic );
     }
     Dynamics.emplace_back( Dynamic );
-    if (was_unoccupied && iCategoryFlag == 1)
-        ++s_map_dynamics_revision;
     Dynamic->MyTrack = this; // ABu: na ktorym torze jesteśmy
     if( Dynamic->iOverheadMask ) {
         // jeśli ma pantografy
@@ -1341,7 +1332,6 @@ bool TTrack::CheckDynamicObject(TDynamicObject *Dynamic)
 
 bool TTrack::RemoveDynamicObject(TDynamicObject *Dynamic)
 { // usunięcie pojazdu z listy przypisanych do toru
-    bool const was_occupied = !Dynamics.empty();
     bool result = false;
     if( *Dynamics.begin() == Dynamic ) {
         // most likely the object getting removed is at the front...
@@ -1365,8 +1355,6 @@ bool TTrack::RemoveDynamicObject(TDynamicObject *Dynamic)
                 ++idx;
             }
         }
-        if (result && was_occupied && Dynamics.empty() && iCategoryFlag == 1)
-            ++s_map_dynamics_revision;
     }
     if( result ) {
         // the head of a train leaving the track the pass was drawn to buckle
@@ -1424,29 +1412,9 @@ void TTrack::RaAssign( TAnimModel *am, basic_event *done, basic_event *joined )
 
 void TTrack::create_map_geometry(std::vector<gfx::basic_vertex> &Bank, const gfx::geometrybank_handle Extra)
 {
+    if (iCategoryFlag != 1)
+        return; // only tracks for now
 	gfx::userdata_array empty_userdata{};
-
-	if (iCategoryFlag == 2)
-	{
-		std::vector<gfx::basic_vertex> vertices;
-		if (eType == tt_Normal)
-		{
-			Segment->render_lines(vertices, 0.5f);
-		}
-		else if (eType == tt_Cross)
-		{
-			for (auto const &segment : SwitchExtension->Segments)
-			{
-				if (segment)
-					segment->render_lines(vertices, 0.5f);
-			}
-		}
-		road_map_geometry = GfxRenderer->Insert(vertices, empty_userdata, Extra, GL_LINES);
-		return;
-	}
-
-	if (iCategoryFlag != 1)
-		return;
 
 	switch (eType)
 	{
@@ -1517,12 +1485,6 @@ double TTrack::ActiveLength() {
 
 void TTrack::get_map_active_paths(map_colored_paths &handles)
 {
-	if (iCategoryFlag == 2) {
-		if (road_map_geometry != null_handle)
-			handles.roads.push_back(road_map_geometry);
-		return;
-	}
-
 	if (iCategoryFlag != 1)
 		return;
 
