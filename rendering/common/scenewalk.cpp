@@ -44,6 +44,9 @@ namespace gfx
 namespace
 {
 
+// the ice on the wires, m, from which their lines are drawn a pixel wider: the colour of the ice starts to show at 0.3 mm (traction.frag)
+constexpr float WIRE_ICE_WIDER{0.002f};
+
 // the environment of a track the drawing takes into its light: the flag of the track (a tunnel, a canyon) only with
 // Global.gfx_tunnelflags. otherwise the light is the one of the geometry around it (gfx::sky_occlusion)
 TEnvironmentType track_environment(TTrack const *Track)
@@ -2941,6 +2944,18 @@ void scene_walk::Render_Alpha(TTraction *Traction)
 		walk_program( walk_shader::line );
 
 	walk_draw(Traction->m_geometry);
+	// iced wires: their lines drawn again a pixel aside (wire_pixel() of traction.vert), so they show wider than a pixel
+	if (((m_renderpass.draw_mode == rendermode::color) || (m_renderpass.draw_mode == rendermode::reflections)) && (snow.wire_ice() >= WIRE_ICE_WIDER))
+	{
+		auto const scale{std::abs(m_renderpass.pass_camera.projection()[1][1]) * static_cast<float>(std::max(Global.fb_size.y, 1))};
+		if (scale > 0.f)
+		{
+			model_ubs.param[1].w = -2.f / scale;
+			walk_draw(Traction->m_geometry);
+			++m_renderpass.draw_stats.drawcalls;
+			model_ubs.param[1].w = snow.wire_ice();
+		}
+	}
 
 	// up close also the solids of a span drawn by the type of the catenary: the wires and ropes in their real thickness and the fittings.
 	// they're opaque, so they're drawn without blending and write the depth; otherwise they'd cover one another by the order they're drawn in
@@ -2970,6 +2985,8 @@ void scene_walk::Render_Alpha(TTraction *Traction)
 	}
 
 	// the other lines drawn with the program aren't blown aside nor iced
+	model_ubs.param[1] = glm::vec4(0.f);
+	// the lines drawn next by the same program (lines_node) neither sway nor carry ice
 	model_ubs.param[1] = glm::vec4(0.f);
 	model_ubs.param[2] = glm::vec4(0.f);
 

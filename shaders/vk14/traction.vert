@@ -14,11 +14,13 @@ layout(location = 3) out vec4 f_pos;
 
 void main()
 {
-	// the wind blowing the span aside
+	// the wind blowing the span aside, and the iced wires drawn a pixel wider
 	vec3 vertex = wire_sway(v_vert, v_normal, v_coord);
-	f_pos = modelview * vec4(vertex, 1.0f);
-	f_clip_pos = (projection * modelview) * vec4(vertex, 1.0f);
-	f_clip_future_pos = (projection * future * modelview) * vec4(vertex, 1.0f);
+	vec4 view = modelview * vec4(vertex, 1.0f);
+	view.xyz += wire_pixel(view.xyz);
+	f_pos = view;
+	f_clip_pos = projection * view;
+	f_clip_future_pos = (projection * future) * view;
 	
 	gl_Position = f_clip_pos;
 }
