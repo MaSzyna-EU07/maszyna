@@ -327,6 +327,7 @@ bool driver_mode::update()
 			// fixup camera after vehicle switch
 			CabView();
 		}
+
 		if (simulation::Train != nullptr)
 			TSubModel::iInstance = reinterpret_cast<std::uintptr_t>(simulation::Train->Dynamic());
 		else
@@ -731,6 +732,7 @@ void driver_mode::update_camera(double const Deltatime)
 		Global.ZoomFactor = std::max(1.0f, Global.ZoomFactor - 15.0f * static_cast<float>(Deltatime));
 	}
 
+	// uwzględnienie ruchu wywołanego klawiszami
 	if (false == DebugCameraFlag)
 	{
 		// regular camera
