@@ -101,13 +101,7 @@ glm::mat4 ortho_frustumtest_projection(float l, float r, float b, float t, float
 glm::mat4 const coordmove{0.5, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.5, 0.5, 0.0, 1.0};
 
 // the vertices of a particle of the smoke (opengl46_particles)
-struct particle_vertex
-{
-	glm::vec3 position;
-	glm::vec4 color;
-	glm::vec2 texture;
-};
-static_assert(sizeof(particle_vertex) == 36, "the layout of the vertices of the particles");
+using vk14::particle_vertex;
 
 std::vector<std::pair<glm::vec3, glm::vec2>> const billboard_vertices{
     {{-0.5f, -0.5f, 0.f}, {0.f, 0.f}}, {{0.5f, -0.5f, 0.f}, {1.f, 0.f}}, {{0.5f, 0.5f, 0.f}, {1.f, 1.f}}, {{-0.5f, -0.5f, 0.f}, {0.f, 0.f}}, {{0.5f, 0.5f, 0.f}, {1.f, 1.f}}, {{-0.5f, 0.5f, 0.f}, {0.f, 1.f}},
