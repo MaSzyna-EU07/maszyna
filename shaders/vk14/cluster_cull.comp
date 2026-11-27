@@ -25,7 +25,8 @@ float light_peak(light_s light)
 	if (light.type == LIGHT_HEADLIGHTS)
 		// weights are the state of the individual lamps and the beam texture, which is not brighter than 1, picks from them
 		return peak * max(light.headlight_weights.r, max(light.headlight_weights.g, light.headlight_weights.b));
-	return peak * (1.0 + light.ambient);
+	// point and spot lights: ambient holds the signed radius of the sphere the light shines from, which brings no brightness
+	return peak;
 }
 
 // distance from the light at which its contribution falls under MIN_CONTRIBUTION, 0 for a light which has none
