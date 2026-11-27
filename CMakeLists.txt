@@ -247,6 +247,7 @@ set(SOURCES
 "editor/editorGeoMap.cpp"
 "editor/editorPreviews.cpp"
 "editor/editorIcons.cpp"
+"widgets/map_icons.cpp"
 "editor/editorClips.cpp"
 "application/editormode.cpp"
 "application/editormodetrack.cpp"
@@ -643,6 +644,14 @@ file(READ "${EDITOR_ICONS}" EDITOR_ICONS_HEX HEX)
 string(REGEX REPLACE "(................................)" "\\1\n" EDITOR_ICONS_HEX "${EDITOR_ICONS_HEX}")
 string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," EDITOR_ICONS_HEX "${EDITOR_ICONS_HEX}")
 file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/geninc/editor_icons_png.inc" CONTENT "${EDITOR_ICONS_HEX}\n")
+
+set(MAP_ICONS_PNG "${CMAKE_SOURCE_DIR}/widgets/map_icons.png")
+set(MAP_ICONS_INCLUDE "${CMAKE_BINARY_DIR}/geninc/map_icons_png.inc")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${MAP_ICONS_PNG}")
+file(READ "${MAP_ICONS_PNG}" MAP_ICONS_HEX HEX)
+string(REGEX REPLACE "(................................)" "\\1\n" MAP_ICONS_HEX "${MAP_ICONS_HEX}")
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," MAP_ICONS_HEX "${MAP_ICONS_HEX}")
+file(CONFIGURE OUTPUT "${MAP_ICONS_INCLUDE}" CONTENT "${MAP_ICONS_HEX}\n")
 
 set (PREFIX "")
 set (SUFFIX "")

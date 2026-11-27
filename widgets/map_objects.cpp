@@ -1,9 +1,433 @@
 #include "stdafx.h"
 #include "widgets/map_objects.h"
 #include "simulation/simulation.h"
+#include "model/AnimModel.h"
+#include "utilities/Globals.h"
 #include "vehicle/DynObj.h"
+#include "world/EvLaunch.h"
+#include "world/Track.h"
+#include "rendering/renderer.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <ranges>
+#include <unordered_map>
+#include <unordered_set>
 
 map::objects map::Objects;
+
+namespace {
+
+struct scene_map_group
+{
+	std::vector<scene::basic_node *> nodes;
+	std::vector<basic_event *> events;
+};
+
+bool event_belongs_to_signal(std::string const &event_name, std::string const &signal_name)
+{
+	if (!event_name.starts_with(signal_name))
+		return false;
+	if (event_name.size() == signal_name.size())
+		return true;
+
+	char const separator = event_name[signal_name.size()];
+	return separator == '_' || separator == '-' || separator == '+' || separator == ':';
+}
+
+void collect_signal_models(
+	std::vector<basic_event *> const &root_events,
+	std::vector<TAnimModel *> &models)
+{
+	std::vector<basic_event *> pending_events(root_events);
+	std::unordered_set<basic_event *> visited_events;
+	std::unordered_set<TAnimModel *> visited_models;
+
+	while (!pending_events.empty())
+	{
+		basic_event *event = pending_events.back();
+		pending_events.pop_back();
+		if (!event || !visited_events.insert(event).second)
+			continue;
+
+		if (auto *lights = dynamic_cast<lights_event *>(event))
+		{
+			for (scene::basic_node *target : lights->target_nodes())
+			{
+				auto *model = dynamic_cast<TAnimModel *>(target);
+				if (model && model->iNumLights > 0 && !model->name().ends_with("w24") &&
+				    visited_models.insert(model).second)
+					models.push_back(model);
+			}
+			continue;
+		}
+
+		if (auto *multi = dynamic_cast<multi_event *>(event))
+		{
+			auto children = multi->children();
+			pending_events.insert(pending_events.end(), children.begin(), children.end());
+		}
+	}
+}
+
+bool is_shp_event(basic_event const *event)
+{
+	if (!event)
+		return false;
+
+	std::string const &event_name = event->name();
+	if (event_name.size() < 4)
+		return false;
+
+	std::size_t const suffix_start = event_name.size() - 3;
+	return event_name[suffix_start - 1] == '_' &&
+	       std::tolower(static_cast<unsigned char>(event_name[suffix_start])) == 's' &&
+	       std::tolower(static_cast<unsigned char>(event_name[suffix_start + 1])) == 'h' &&
+	       std::tolower(static_cast<unsigned char>(event_name[suffix_start + 2])) == 'p';
+}
+
+bool is_shp_launcher(basic_event const *first_event, basic_event const *second_event)
+{
+	return is_shp_event(first_event) || is_shp_event(second_event);
+}
+
+bool assign_cross_switch(map::track_switch &sw, std::string const &switch_name, std::string const &id, std::size_t index)
+{
+	sw.action[index] = simulation::Events.FindEvent(switch_name + ":" + id);
+	if (!sw.action[index])
+		sw.action[index] = simulation::Events.FindEvent(switch_name + id);
+	if (!sw.action[index])
+		return false;
+
+	auto *multi = dynamic_cast<multi_event *>(sw.action[index]);
+	if (!multi)
+		return false;
+
+	auto names = multi->dump_children_names();
+	for (auto &name : names)
+	{
+		name = name.substr(switch_name.size());
+		if (name.size() > 4)
+			continue;
+
+		auto const position_of = [&name](char const character) {
+			auto const position = name.find_last_of(character);
+			return position == std::string::npos ? -1 : static_cast<int>(position);
+		};
+		int const pos_a = position_of('a');
+		int const pos_b = position_of('b');
+		int const pos_c = position_of('c');
+		int const pos_d = position_of('d');
+		int const pos_0 = position_of('0');
+		int const pos_1 = position_of('1');
+
+		int position = 3;
+		if (pos_a > pos_b && pos_a > pos_c && pos_a > pos_d)
+			position = 0;
+		else if (pos_b > pos_a && pos_b > pos_c && pos_b > pos_d)
+			position = 1;
+		else if (pos_c > pos_a && pos_c > pos_b && pos_c > pos_d)
+			position = 2;
+		sw.preview[index][position] = pos_0 > pos_1 ? '0' : '1';
+	}
+	return true;
+}
+
+template <typename NodeType>
+void collect_group_nodes(
+	std::unordered_map<scene::group_handle, scene_map_group> &groups,
+	std::deque<NodeType *> const &items)
+{
+	for (NodeType *node : items)
+	{
+		if (node && node->group() != null_handle)
+			groups[node->group()].nodes.push_back(node);
+	}
+}
+
+std::size_t section_index(glm::dvec3 const &location)
+{
+	int const column = std::clamp(
+		static_cast<int>(std::floor(location.x / scene::EU07_SECTIONSIZE +
+		                            scene::EU07_REGIONSIDESECTIONCOUNT / 2.0)),
+		0, scene::EU07_REGIONSIDESECTIONCOUNT - 1);
+	int const row = std::clamp(
+		static_cast<int>(std::floor(location.z / scene::EU07_SECTIONSIZE +
+		                            scene::EU07_REGIONSIDESECTIONCOUNT / 2.0)),
+		0, scene::EU07_REGIONSIDESECTIONCOUNT - 1);
+	return static_cast<std::size_t>(row * scene::EU07_REGIONSIDESECTIONCOUNT + column);
+}
+
+void append_section_geometry(
+	std::vector<map::objects::prepared_section_geometry> &output,
+	scene::basic_section *section,
+	gfx::geometrybank_handle const geometry)
+{
+	if (!section || geometry == null_handle)
+		return;
+
+	auto const &area = section->area();
+	glm::dvec2 const center(area.center.x, area.center.z);
+	glm::dvec2 const radius(area.radius);
+	output.push_back({center - radius, center + radius, geometry});
+}
+
+void prepare_track_geometry()
+{
+	map::Objects.geometry_bank = GfxRenderer->Create_Bank();
+	map::Objects.section_geometry.clear();
+	map::Objects.road_geometry.clear();
+
+	std::unordered_map<std::size_t, gfx::vertex_array> section_vertices;
+	for (TTrack *track : simulation::Paths.sequence())
+	{
+		if (!track)
+			continue;
+		track->create_map_geometry(
+			section_vertices[section_index(track->location())], map::Objects.geometry_bank);
+	}
+
+	for (auto &[index, vertices] : section_vertices)
+	{
+		if (vertices.empty())
+			continue;
+
+		scene::basic_section *section = simulation::Region->get_section(index);
+		gfx::userdata_array userdata{};
+		gfx::geometrybank_handle const geometry =
+			GfxRenderer->Insert(vertices, userdata, map::Objects.geometry_bank, GL_LINES);
+		append_section_geometry(map::Objects.section_geometry, section, geometry);
+	}
+
+	for (TTrack *track : simulation::Paths.sequence())
+	{
+		if (!track || track->iCategoryFlag != 2 || track->road_map_geometry == null_handle)
+			continue;
+
+		scene::basic_section *section = simulation::Region->get_section(section_index(track->location()));
+		append_section_geometry(map::Objects.road_geometry, section, track->road_map_geometry);
+	}
+}
+
+} // namespace
+
+void map::prepare()
+{
+	Objects.entries.clear();
+
+	std::unordered_map<scene::group_handle, scene_map_group> groups;
+	collect_group_nodes(groups, simulation::Instances.sequence());
+	collect_group_nodes(groups, simulation::Memory.sequence());
+	collect_group_nodes(groups, simulation::Paths.sequence());
+
+	for (TEventLauncher *launcher : simulation::Events.launchers())
+	{
+		if (launcher && launcher->group() != null_handle)
+			groups[launcher->group()].nodes.push_back(launcher);
+	}
+	for (basic_event *event : simulation::Events.sequence())
+	{
+		if (event && event->group() != null_handle)
+			groups[event->group()].events.push_back(event);
+	}
+
+	std::unordered_map<std::string, std::shared_ptr<track_switch>> last_switch_map;
+	for (auto const &group_entry : groups)
+	{
+		auto const &group = group_entry.second;
+		std::vector<TAnimModel *> named_models;
+		std::unordered_map<std::string, TMemCell *> signal_cells;
+		for (scene::basic_node *node : group.nodes)
+		{
+			if (auto *model = dynamic_cast<TAnimModel *>(node); model && !model->name().empty())
+				named_models.push_back(model);
+			if (typeid(*node) == typeid(TMemCell) && node->name().ends_with("_sem_mem"))
+			{
+				std::string signal_name = node->name().substr(0, node->name().size() - 8);
+				signal_cells.emplace(std::move(signal_name), static_cast<TMemCell *>(node));
+			}
+		}
+
+		std::unordered_map<std::string, std::shared_ptr<semaphore>> signals_by_name;
+		std::vector<std::shared_ptr<semaphore>> semaphore_signals;
+		for (scene::basic_node *node : group.nodes)
+		{
+			if (typeid(*node) != typeid(TMemCell) || !node->name().ends_with("_sem_mem"))
+				continue;
+
+			std::string const signal_name = node->name().substr(0, node->name().size() - 8);
+			auto *memcell = static_cast<TMemCell *>(node);
+			bool const has_shunting_board_model = std::ranges::any_of(
+				named_models, [&signal_name](TAnimModel const *model) {
+					if (!event_belongs_to_signal(model->name(), signal_name) || !model->Model())
+						return false;
+					std::string const model_path = model->Model()->NameGet();
+					return model_path.find("sem/tm_") != std::string::npos ||
+					       model_path.find("sem/karzelki/ktm") != std::string::npos ||
+					       model_path.find("pkp/tmk_") != std::string::npos ||
+					       model_path.ends_with("pkp/mk1un.t3d");
+				});
+
+			auto signal = std::make_shared<semaphore>();
+			signal->location = memcell->location();
+			signal->memcell = memcell;
+			signal->name = signal_name;
+			signal->shunting =
+				signal_name.starts_with("Tm") || signal_name.starts_with("tm_") ||
+				has_shunting_board_model;
+			signals_by_name.emplace(signal_name, signal);
+			semaphore_signals.push_back(signal);
+			Objects.entries.push_back(std::move(signal));
+		}
+
+		for (auto const &signal : semaphore_signals)
+		{
+			std::vector<basic_event *> root_events;
+			for (basic_event *event : group.events)
+			{
+				if (!event_belongs_to_signal(event->name(), signal->name))
+					continue;
+				if (event->name().substr(signal->name.size()).find("sem") != std::string::npos)
+					continue;
+				root_events.push_back(event);
+			}
+
+			std::vector<TAnimModel *> signal_models;
+			collect_signal_models(root_events, signal_models);
+			std::vector<TAnimModel *> ordered_signal_models;
+			for (TAnimModel *model : named_models)
+			{
+				if (model->name().starts_with(signal->name))
+					ordered_signal_models.push_back(model);
+			}
+			for (TAnimModel *model : signal_models)
+			{
+				if (std::ranges::find(ordered_signal_models, model) == ordered_signal_models.end())
+					ordered_signal_models.push_back(model);
+			}
+
+			for (TAnimModel *model : ordered_signal_models)
+			{
+				if (model->name().ends_with("_wk_el"))
+					continue;
+
+				auto [signal_it, inserted] = signals_by_name.try_emplace(model->name());
+				if (inserted)
+				{
+					auto repeated_signal = std::make_shared<semaphore>();
+					repeated_signal->location = model->location();
+					repeated_signal->name = model->name();
+					repeated_signal->shunting =
+						repeated_signal->name.starts_with("Tm") || repeated_signal->name.starts_with("tm_");
+					if (auto const cell = signal_cells.find(repeated_signal->name); cell != signal_cells.end())
+						repeated_signal->memcell = cell->second;
+					Objects.entries.push_back(repeated_signal);
+					signal_it->second = std::move(repeated_signal);
+				}
+
+				auto &models = signal_it->second->models;
+				if (std::ranges::find(models, model) == models.end())
+					models.push_back(model);
+				if (!signal_it->second->memcell)
+					signal_it->second->location = model->location();
+			}
+		}
+
+		for (auto const &[signal_name, signal] : signals_by_name)
+		{
+			for (basic_event *event : group.events)
+			{
+				if (!event_belongs_to_signal(event->name(), signal_name))
+					continue;
+				if (event->name().substr(signal_name.size()).find("sem") != std::string::npos)
+					continue;
+				if (std::ranges::find(signal->events, event) == signal->events.end())
+					signal->events.push_back(event);
+			}
+		}
+
+		for (scene::basic_node *node : group.nodes)
+		{
+			if (Global.map_manualswitchcontrol)
+			{
+				auto *track = dynamic_cast<TTrack *>(node);
+				if (!track || track->eType != tt_Switch)
+					continue;
+
+				basic_event *switch_plus = simulation::Events.FindEvent(track->name() + "+");
+				basic_event *switch_minus = simulation::Events.FindEvent(track->name() + "-");
+				if (switch_plus && switch_minus)
+				{
+					auto map_switch = std::make_shared<track_switch>();
+					Objects.entries.push_back(map_switch);
+					map_switch->location = node->location();
+					map_switch->name = node->name();
+					map_switch->action[0] = switch_plus;
+					map_switch->action[1] = switch_minus;
+					map_switch->track[0] = track;
+					map_switch->preview[0][0] = '0';
+					map_switch->preview[1][0] = '1';
+					continue;
+				}
+
+				std::string switch_name = track->name();
+				if (switch_name.size() <= 2)
+					continue;
+				char const last_character = switch_name.back();
+				switch_name.pop_back();
+				if (switch_name.back() == '_')
+					switch_name.pop_back();
+				if (!simulation::Events.FindEvent(switch_name + ":ac") &&
+				    !simulation::Events.FindEvent(switch_name + "ac"))
+					continue;
+
+				if (last_character < 'a' || last_character > 'd')
+					continue;
+				auto [switch_it, inserted] = last_switch_map.try_emplace(switch_name);
+				if (inserted)
+				{
+					switch_it->second = std::make_shared<track_switch>();
+					switch_it->second->name = switch_name;
+				}
+				auto const &cross_switch = switch_it->second;
+				cross_switch->track[last_character - 'a'] = track;
+				if (!std::ranges::all_of(cross_switch->track, [](TTrack const *item) { return item != nullptr; }))
+					continue;
+				if (!assign_cross_switch(*cross_switch, switch_name, "ac", 0) ||
+				    !assign_cross_switch(*cross_switch, switch_name, "ad", 1) ||
+				    !assign_cross_switch(*cross_switch, switch_name, "bc", 2) ||
+				    !assign_cross_switch(*cross_switch, switch_name, "bd", 3))
+					continue;
+
+				cross_switch->location = (cross_switch->track[0]->location() + cross_switch->track[1]->location() +
+				                          cross_switch->track[2]->location() + cross_switch->track[3]->location()) / 4.0;
+				Objects.entries.push_back(cross_switch);
+				last_switch_map.erase(switch_name);
+				continue;
+			}
+
+			auto *launcher_node = dynamic_cast<TEventLauncher *>(node);
+			if (!launcher_node || !launcher_node->Event1 || !launcher_node->Event2 ||
+			    is_shp_launcher(launcher_node->Event1, launcher_node->Event2))
+				continue;
+
+			auto map_launcher = std::make_shared<launcher>();
+			Objects.entries.push_back(map_launcher);
+			map_launcher->location = node->location();
+			map_launcher->name = node->name();
+			map_launcher->first_event = launcher_node->Event1;
+			map_launcher->second_event = launcher_node->Event2;
+			if (map_launcher->name.empty())
+				map_launcher->name = launcher_node->Event1->name();
+			map_launcher->type = launcher_node->Event1->name().find_first_of("-+:") != std::string::npos
+			                         ? launcher::track_switch
+			                         : launcher::level_crossing;
+		}
+	}
+
+	prepare_track_geometry();
+}
 
 map::sorted_object_list map::objects::find_in_range(glm::vec3 from, float distance) const
 {

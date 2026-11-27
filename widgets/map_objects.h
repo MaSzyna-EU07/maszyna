@@ -4,6 +4,7 @@
 #include "world/Event.h"
 #include "scene/scene.h"
 #include "world/MemCell.h"
+#include <cstdint>
 
 namespace map
 {
@@ -19,25 +20,26 @@ struct map_object
 	}
 };
 
-using object_list = std::vector<std::shared_ptr<map::map_object>>;
-using sorted_object_list = std::map<float, std::shared_ptr<map::map_object>>;
+using object_list = std::vector<std::shared_ptr<map_object>>;
+using sorted_object_list = std::map<float, std::shared_ptr<map_object>>;
 
 // semaphore description (only for minimap purposes)
-struct semaphore : public map_object
+struct semaphore : map_object
 {
 	std::vector<TAnimModel *> models;
 	std::vector<basic_event *> events;
 	TMemCell *memcell = nullptr;
+	bool shunting { false };
 
 	gfx::basic_vertex vertex() override {
-		bool stop_signal = memcell->IsVelocity() && (memcell->Value1() == 0.0);
+		bool stop_signal = memcell && memcell->IsVelocity() && (memcell->Value1() == 0.0);
 		return gfx::basic_vertex(location, glm::vec3(),
 		    (!stop_signal) ? glm::vec2(0.0f, 0.2f) : glm::vec2(0.2f, 0.4f));
 	}
 };
 
 // event launcher description (only for minimap purposes)
-struct launcher : public map_object
+struct launcher : map_object
 {
 	basic_event *first_event = nullptr;
 	basic_event *second_event = nullptr;
@@ -55,7 +57,7 @@ struct launcher : public map_object
 };
 
 // switch description (only for minimap purposes)
-struct track_switch : public map_object
+struct track_switch : map_object
 {
     std::array<basic_event*, 4> action = { nullptr };
     std::array<char[4], 4> preview;
@@ -67,7 +69,7 @@ struct track_switch : public map_object
 };
 
 // training obstacle description
-struct obstacle : public map_object
+struct obstacle : map_object
 {
 	std::string model_name;
 
@@ -76,20 +78,30 @@ struct obstacle : public map_object
 	}
 };
 
-// vehicle wrapper for map display
-struct vehicle : public map_object
+struct vehicle : map_object
 {
 	TDynamicObject *dynobj = nullptr;
 };
 
 struct objects
 {
-	std::vector<std::shared_ptr<map_object>> entries;
-	bool poi_dirty = true;
+	struct prepared_section_geometry
+	{
+		glm::dvec2 minimum;
+		glm::dvec2 maximum;
+		gfx::geometrybank_handle geometry;
+	};
 
-	// returns objects in range from vec3, NaN in Y ignores it
+	object_list entries;
+	gfx::geometrybank_handle geometry_bank;
+	std::vector<prepared_section_geometry> section_geometry;
+	std::vector<prepared_section_geometry> road_geometry;
+	bool poi_dirty = true;
 	sorted_object_list find_in_range(glm::vec3 from, float distance) const;
 };
 
+void prepare();
+
 extern objects Objects;
+
 } // namespace map

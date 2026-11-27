@@ -208,11 +208,7 @@ public:
 	// generates renderable version of held non-instanced geometry in specified geometry bank
     void
         create_geometry( gfx::geometrybank_handle const &Bank );
-	void
-	    create_map_geometry(std::vector<gfx::basic_vertex> &Bank, const gfx::geometrybank_handle Extra);
-	void
-	    get_map_active_paths(map_colored_paths &handles);
-	glm::vec3 find_nearest_track_point(const glm::dvec3 &pos);
+    glm::vec3 find_nearest_track_point(const glm::dvec3 &pos);
     // provides access to bounding area data
     bounding_area const &
         area() const {
@@ -436,18 +432,12 @@ public:
     // loads geometry of the section kept in binary terrain files, if any is waiting
     void
         load_terrain();
-	void
-	    create_map_geometry(const gfx::geometrybank_handle handle);
-	void
-	    get_map_active_paths(map_colored_paths &handles);
     // provides access to bounding area data
     bounding_area const &
         area() const {
             return m_area; }
 
-    const gfx::geometrybank_handle get_map_geometry()
-	    { return m_map_geometryhandle;}
-	glm::vec3 find_nearest_track_point(const glm::dvec3 &point);
+    glm::vec3 find_nearest_track_point(const glm::dvec3 &point);
 
 //private:
 // types
@@ -467,10 +457,8 @@ public:
     std::vector<terrain_block> m_terrain; // geometry in binary terrain files, loaded when the section comes into use
     // TODO: implement dedicated, higher fidelity, fixed resolution terrain mesh item
 	// gfx renderer data
-    gfx::geometrybank_handle m_geometrybank;
-    bool m_geometrycreated { false };
-
-    gfx::geometrybank_handle m_map_geometryhandle;
+	gfx::geometrybank_handle m_geometrybank;
+	bool m_geometrycreated { false };
 };
 
 // top-level of scene spatial structure, holds collection of sections
@@ -579,17 +567,11 @@ public:
     // of its own, so it's safe while other threads look for sections too
     void
         sections( glm::dvec3 const &Point, float const Radius, std::vector<basic_section *> &Sections ) const;
-	void
-	    create_map_geometry();
-	void
-	    update_poi_geometry();
     // loads all geometry kept in binary terrain files which wasn't needed so far
     void
         load_terrain();
     basic_section* get_section(size_t section)
 	    { return m_sections[section]; }
-	gfx::geometrybank_handle
-	    get_map_poi_geometry() { return m_map_poipoints; }
 	glm::vec3 find_nearest_track_point(const glm::dvec3 &pos)
 	    { return section(pos).find_nearest_track_point(pos); }
 
@@ -601,10 +583,6 @@ public:
 
         std::vector<basic_section *> sections;
     };
-
-    gfx::geometrybank_handle m_map_geometrybank;
-	gfx::geometrybank_handle m_map_poipoints;
-
 // methods
     // checks whether specified point is within boundaries of the region
     bool

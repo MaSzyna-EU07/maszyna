@@ -35,9 +35,8 @@ public:
     // indicates creation of current group ended. returns: handle to the parent group or null_handle if group stack is empty
     group_handle
         close();
-	// update minimap objects
-	void
-	    update_map();
+    void
+        update_map();
     // returns current active group, or null_handle if group stack is empty
     group_handle
         handle() const;
@@ -85,8 +84,6 @@ private:
     // creates handle for a new group
     group_handle
         create_handle();
-    bool
-        assign_cross_switch(map::track_switch&sw, std::string &sw_name, const std::string &id, size_t idx);
     // the node leaves the group it's in
     void
         leave( scene::basic_node *Node );
