@@ -75,6 +75,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   railtime                             lays out the rails of every track, as when its geometry is made, and logs how long it took
 //   throw <0|1>                          sets every switch to the path and moves its blades there at once
 //   crossings [name]                     logs where rails of tracks cross rails of other tracks and of what kind (acute, obtuse, middle acute or obtuse, wide), checks that each acute crossing has one partner and one nose
+//   fastentour [cell] [frames]           the camera over each cell of the grid with switches laying timbers in turn, for a fastencheck after of the whole scenery
 //   switchtimbers <model|none>           the model of the timbers set on all the switches and crossings, as the buttons of the switch tool do it
 //   frogkey name [on|off]                sets or clears the frogs key of a switch (one undo step); logs the key, whether it is written, the frog and the crossings
 //   geomhash [name]                      logs the number of vertices and a hash of the drawn geometry of each rail track (rails, trackbed, cut faces), to compare builds; exact: the bits of every value, userdata and tread materials too
@@ -123,6 +124,11 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   terrainfill <palette entry> <blur> <rotation> <x> <z> <x> <z> <x> <z>...   the area outlined filled, as the fill tool does it
 //   terrainturn <palette entry> <degrees>  the textures of the palette entry turned
 //   terrainwater <index> <material> [size]    material and repeat of a body of water; terrainwaterdefault <material>
+//   terraincut <x> <z> <radius> <1 cut|0 close>   a stroke of the holes brush; terraincutarea <1|0> <x> <z>...   the area outlined
+//   terraingrasskind <preset name>       a preset added to the grass palette; terraingrass <x> <z> <radius> <kind> [erase 0|1]   a stroke
+//                                        of the grass brush; terraingrassarea <kind, -1 takes the grass away> <x> <z>...   the area outlined
+//   terraincursor                        logs the point of the ground under the cursor, found along the ray (over holes too)
+//   terraintool <holes|grass|paint|sculpt|none>   the tool the left button works on the terrain, with a brush of 3 m
 //   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given
 //   orthoarea <x> <z>... | clear         the download area through the points of the world, as drawn on the map; orthoareapause 0|1
 //   orthohires 0|1                       the 4K tiles on or off; orthostats logs the tiles, the area and the requests made

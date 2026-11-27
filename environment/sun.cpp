@@ -8,6 +8,29 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 // cSun -- class responsible for dynamic calculation of position and intensity of the Sun,
 
+namespace {
+
+// direction to a body on the sky of the observer (x to the west, y up, z to the north) from its hour angle and declination,
+// at the given (refracted) elevation. degrees
+glm::vec3
+horizontal_direction( double const Hourangle, double const Declination, double const Latitude, double const Elevation ) {
+
+    auto const hourangle { glm::radians( Hourangle ) };
+    auto const declination { glm::radians( Declination ) };
+    auto const latitude { glm::radians( Latitude ) };
+    auto const elevation { glm::radians( Elevation ) };
+    auto const west { std::cos( declination ) * std::sin( hourangle ) };
+    auto const north { std::cos( latitude ) * std::sin( declination ) - std::sin( latitude ) * std::cos( declination ) * std::cos( hourangle ) };
+    auto const horizontal { std::hypot( west, north ) };
+    if( horizontal < 1e-9 ) {
+        return { 0.f, ( Elevation >= 0.0 ? 1.f : -1.f ), 0.f };
+    }
+    auto const scale { std::cos( elevation ) / horizontal };
+    return glm::normalize( glm::vec3( static_cast<float>( west * scale ), static_cast<float>( std::sin( elevation ) ), static_cast<float>( north * scale ) ) );
+}
+
+} // namespace
+
 cSun::cSun() {
 
 	setLocation( 19.00f, 52.00f );					// default location roughly in centre of Poland
@@ -29,11 +52,8 @@ cSun::update() {
     m_observer.temp = Global.AirTemperature;
 
     move();
-    glm::vec3 position( 0.f, 0.f, -1.f );
-    position = glm::rotateX( position, glm::radians( static_cast<float>( m_body.elevref ) ) );
-    position = glm::rotateY( position, glm::radians( static_cast<float>( -m_body.hrang ) ) );
-
-    m_position = glm::normalize( position );
+    // the azimuth follows from the hour angle, the declination and the latitude; it is not the hour angle itself
+    m_position = horizontal_direction( m_body.hrang, m_body.declin, m_observer.latitude, m_body.elevref );
 }
 
 void
@@ -122,7 +142,7 @@ void cSun::move() {
         + 275 * localtime.wMonth / 9
         + localtime.wDay
         - 730530
-        + localut / 24.0;
+        + ( localut - m_observer.timezone ) / 24.0; // the orbital elements count days of universal time
 
     // Universal Coordinated (Greenwich standard) time
     m_observer.utime = localut - m_observer.timezone;
@@ -171,7 +191,8 @@ void cSun::move() {
     m_body.rascen = clamp_circular( radtodeg * std::atan2( top, bottom ) );
 
     // Greenwich mean sidereal time (hours)
-    m_observer.gmst = clamp_circular( 6.697375 + 0.0657098242 * daynumber + m_observer.utime, 24.0 );
+    // (Schlyter: GMST0 = sun's mean longitude + 180 degrees, for the day number counted from 2000 Jan 0.0 UT)
+    m_observer.gmst = clamp_circular( 6.5991604 + 0.0657098242 * daynumber + m_observer.utime, 24.0 );
 
     // local mean sidereal time (deg)
     m_observer.lmst = clamp_circular( m_observer.gmst * 15.0 + m_observer.longitude );

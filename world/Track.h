@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Segment.h"
 #include "world/RailLayout.h"
 #include "world/TrackSleepers.h"
+#include "world/TrackBlend.h"
 #include "world/TrackBuckle.h"
 #include "world/TrackUneven.h"
 #include "model/material.h"
@@ -169,8 +170,7 @@ private:
 // trajektoria ruchu - opakowanie
 class TTrack : public scene::basic_node
 {
-    friend opengl_renderer;
-    friend opengl33_renderer;
+    friend opengl46_renderer;
     // NOTE: temporary arrangement
     friend itemproperties_panel;
     friend class editor_track;
@@ -220,6 +220,8 @@ public:
     bool m_editorremoved { false };
     bool m_tributary { false }; // loaded as a tributary: a river of its first path, the second one kept to be written back
     std::vector<TTrack *> m_crossings; // tracks whose rails cross the rails of this one, found when its geometry was made
+    track_rails::rail_plan m_railplans[ 2 ][ 2 ]; // the cuts of its rails, by path and right side, as its geometry was made
+    std::vector<glm::dvec2> m_railguards[ 2 ][ 2 ]; // the guard rails inside its rails at the crossings at wide angles, from and to along the path, as its geometry was made
     scene::basic_node *m_road { nullptr }; // road or road junction which generated this path. such path is one-way, and isn't saved nor edited on its own
     std::array<float, 3> m_routeweights { 0.f, 0.f, 0.f }; // odds of each route through a crossroads being picked by a driver, by the number of the route. all zero: even odds
 	int iterate_stamp = 0;
@@ -241,6 +243,15 @@ public:
     //   timbermodel <model> <skin>
     std::string m_timber_model_name;
     std::string m_timber_skin_name; // replacable skin, empty for the textures of the model
+    // how far from its ends p1, p2 (and p4 of a switch) the rails and the ballast blend into those of the tracks joined there
+    // (blendrails, blendballast), by the kind (track_blend::kind)
+    std::array<std::array<float, 3>, 2> m_blend { {
+        { track_blend::default_length, track_blend::default_length, track_blend::default_length },
+        { track_blend::default_length, track_blend::default_length, track_blend::default_length } } };
+    // the materials the blending is drawn with, null where nothing's blended: the rails of a plain track, its ballast, the trackbed of a switch
+    material_handle m_blendmaterial1 { null_handle };
+    material_handle m_blendmaterial2 { null_handle };
+    material_handle m_blendmaterial3 { null_handle };
     TModel3d *m_sleeper_model { nullptr }; // resolved on init; nullptr means no model / failed to load
     material_handle m_sleeper_skin { 0 }; // resolved replacable skin handle, 0 = use model defaults
     // precomputed local-space transforms (relative to m_origin) for every sleeper instance along the path.

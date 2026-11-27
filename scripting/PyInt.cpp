@@ -120,7 +120,7 @@ void render_task::run()
 			const auto screenWidth = static_cast<int>(PyLong_AsLong(outputWidth));
 			const auto screenHeight = static_cast<int>(PyLong_AsLong(outputHeight));
 
-			const bool useRgb = false && !Global.gfx_usegles;
+			const bool useRgb = false;
 
 			const int glFormat = useRgb ? GL_SRGB8 : GL_SRGB8_ALPHA8;
 			const int glComponents = useRgb ? GL_RGB : GL_RGBA;

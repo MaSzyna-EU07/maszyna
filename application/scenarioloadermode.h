@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 class scenarioloader_mode : public application_mode {
 	std::shared_ptr<simulation::deserializer_state> state;
 	std::chrono::system_clock::time_point timestart;
+	// the scenery is loaded: the loading screen kept while the renderer prepares the programs (gfx_renderer::Prewarm_Shaders())
+	int m_closing{0};
 
 public:
 // constructors

@@ -369,8 +369,11 @@ void editor_map::upload()
 	}
 	m_error.clear();
 	release();
+	// the map as the service sends it, its values taken as they are (not as srgb), with the linear filtering
+	imgui_renderer::image_options options;
+	options.srgb = false;
 	auto *renderer{GfxRenderer ? GfxRenderer->GetImguiRenderer() : nullptr};
-	m_texture = renderer != nullptr ? renderer->Create_Image(result.pixels.data(), result.width, result.height) : 0;
+	m_texture = renderer != nullptr ? renderer->Create_Image(result.pixels.data(), result.width, result.height, options) : 0;
 	m_image_low = result.low;
 	m_image_high = result.high;
 }

@@ -58,6 +58,7 @@ public:
   private:
 // methods
     bool ComputatePosition(); // przeliczenie pozycji na torze
+    int CrossEntry( TTrack const &Cross, int const Wish, int const End ) const;
 // members
     TTrack *pCurrentTrack = nullptr; // na którym torze siê znajduje
 	std::shared_ptr<TSegment> pCurrentSegment; // zwrotnice mog¹ mieæ dwa segmenty
