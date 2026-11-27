@@ -97,6 +97,7 @@ public:
     bool m_ignored { false }; // replacement for tp_ignored
     bool m_passive { false }; // false gdy ma nie być dodawany do kolejki (skanowanie sygnałów)
     int m_inqueue { 0 }; // ile razy dodany do kolejki
+    bool m_lostcalllogged { false }; // a lost call was already logged during the current stay in the queue
     TDynamicObject const *m_activator { nullptr };
     double m_launchtime { 0.0 };
     double m_delay { 0.0 };
@@ -122,9 +123,10 @@ protected:
         std::vector<TTrack *> tracks; // used by conditional_track
         bool has_else { false };
 
-        void deserialize( cParser &Input );
+        // the event name only goes to the log, for the faults found in the condition
+        void deserialize( cParser &Input, std::string_view Eventname );
         void bind( basic_event::node_sequence *Nodes );
-        void init();
+        void init( std::string_view Eventname );
         // verifies whether event meets execution condition(s)
         bool test() const;
         // sends basic content of the class in legacy (text) format to provided stream

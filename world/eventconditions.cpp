@@ -12,6 +12,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "world/Event.h"
+#include "utilities/Logs.h"
+
+#include <format>
 
 bool
 basic_event::is_keyword( std::string const &Token ) {
@@ -22,7 +25,7 @@ basic_event::is_keyword( std::string const &Token ) {
 }
 
 void
-basic_event::event_conditions::deserialize( cParser &Input ) {
+basic_event::event_conditions::deserialize( cParser &Input, std::string_view const Eventname ) {
     // przetwarzanie warunków, wspólne dla Multiple i UpdateValues
 
     std::string token;
@@ -93,6 +96,10 @@ basic_event::event_conditions::deserialize( cParser &Input ) {
                 Input >> memcompare_value2;
                 flags |= flags::value2;
             }
+        }
+        else {
+            // e.g. a name written after trackfree: the track test takes the targets of the event, never a name of its own
+            ErrorLog( std::format( "Bad event: \"{}\" has an unknown word \"{}\" in its condition, it's skipped", Eventname, token ) );
         }
     }
 }
