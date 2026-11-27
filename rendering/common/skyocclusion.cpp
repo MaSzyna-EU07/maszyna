@@ -817,8 +817,8 @@ void sky_occlusion::gather_submodel(TSubModel *Submodel, std::uint32_t const Alp
 		if ((0 == part->iVisible) || (part->fSquareMinDist > 0.f))
 			continue;
 		auto transform{Transform};
-		if ((part->iFlags & 0xC000) && (part->fMatrix != nullptr))
-			transform = transform * glm::dmat4{glm::make_mat4(part->fMatrix->readArray())};
+		if ((part->iFlags & 0xC000) && (part->iFlags & 0x8000))
+			transform = transform * glm::dmat4{part->fMatrix};
 		if ((part->eType == GL_TRIANGLES) && (Alpha & part->iFlags & 0x1F) && (part->m_geometry.handle != gfx::geometry_handle{0, 0}) && (part->fVisible > 0.f))
 		{
 			auto const &vertices{GfxRenderer->Vertices(part->m_geometry.handle)};

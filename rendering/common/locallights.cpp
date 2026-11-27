@@ -143,9 +143,9 @@ bool find_parent_transform(TSubModel const *Submodel, TSubModel const *Target, g
 			return true;
 		}
 		auto transform{Parent};
-		if ((submodel->iFlags & 0xC000) && (submodel->fMatrix != nullptr))
+		if ((submodel->iFlags & 0xC000) && (submodel->iFlags & 0x8000))
 		{
-			transform *= glm::make_mat4(submodel->fMatrix->readArray());
+			transform *= submodel->fMatrix;
 		}
 		if (find_parent_transform(submodel->Child, Target, transform, Result))
 		{
@@ -162,9 +162,9 @@ void extend_bounds(TSubModel const *Submodel, glm::mat4 const &Transform, gfx::g
 	for (auto const *submodel{Submodel}; submodel != nullptr; submodel = (Siblings ? submodel->Next : nullptr))
 	{
 		auto transform{Transform};
-		if ((submodel->iFlags & 0xC000) && (submodel->fMatrix != nullptr))
+		if ((submodel->iFlags & 0xC000) && (submodel->iFlags & 0x8000))
 		{
-			transform *= glm::make_mat4(submodel->fMatrix->readArray());
+			transform *= submodel->fMatrix;
 		}
 		if (submodel->eType == TP_FREESPOTLIGHT)
 		{
@@ -499,9 +499,9 @@ void gfx::local_lights::walk(TSubModel *Submodel, glm::mat4 const &Transform, gl
 		auto transform{Transform};
 		if (submodel->iFlags & 0xC000)
 		{
-			if (submodel->fMatrix != nullptr)
+			if (submodel->iFlags & 0x8000)
 			{
-				transform *= glm::make_mat4(submodel->fMatrix->readArray());
+				transform *= submodel->fMatrix;
 			}
 			if (submodel->b_aAnim != TAnimType::at_None)
 			{

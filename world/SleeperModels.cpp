@@ -53,8 +53,8 @@ template <typename Visit>
 void vertices_of( TSubModel *Submodel, Visit Visitor ) {
 
     glm::mat4 transform { 1.f };
-    if( ( Submodel->iFlags & 0xC000 ) && ( Submodel->GetMatrix() != nullptr ) ) {
-        transform = glm::make_mat4( Submodel->GetMatrix()->readArray() );
+    if( Submodel->iFlags & 0xC000 ) {
+        transform = Submodel->fMatrix;
     }
     auto const &vertices { Submodel->m_geometry.handle != null_handle ? GfxRenderer->Vertices( Submodel->m_geometry.handle ) : Submodel->Vertices };
     for( auto const &vertex : vertices ) {
@@ -66,10 +66,7 @@ void vertices_of( TSubModel *Submodel, Visit Visitor ) {
 // no face lies over it
 std::optional<float> surface_at( TSubModel *Submodel, float const X, float const Z ) {
 
-    glm::mat4 transform { 1.f };
-    if( ( Submodel->iFlags & 0xC000 ) && ( Submodel->GetMatrix() != nullptr ) ) {
-        transform = glm::make_mat4( Submodel->GetMatrix()->readArray() );
-    }
+    glm::mat4 transform = (Submodel->iFlags & 0xC000) ? Submodel->fMatrix : glm::mat4{1.f};
     auto const indexed { Submodel->m_geometry.handle != null_handle };
     auto const &vertices { indexed ? GfxRenderer->Vertices( Submodel->m_geometry.handle ) : Submodel->Vertices };
     auto const &indices { indexed ? GfxRenderer->Indices( Submodel->m_geometry.handle ) : Submodel->Indices };

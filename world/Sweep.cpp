@@ -168,9 +168,9 @@ void gather_parts(TSubModel *Submodel, glm::dmat4 const &Transform, material_dat
 		if (std::find(Lit.begin(), Lit.end(), submodel) != Lit.end())
 			continue;
 		auto transform{Transform};
-		if ((submodel->iFlags & 0xC000) != 0 && submodel->GetMatrix() != nullptr)
+		if ((submodel->iFlags & 0xC000) != 0 && (submodel->iFlags & 0x8000))
 		{
-			transform = Transform * glm::dmat4(glm::make_mat4(submodel->GetMatrix()->readArray()));
+			transform = Transform * glm::dmat4(submodel->fMatrix);
 		}
 		// the nearest level of detail only, the others would be drawn over it
 		if (submodel->eType == GL_TRIANGLES && submodel->fSquareMinDist <= 0.f && (submodel->m_geometry.handle.bank != 0 || submodel->m_geometry.handle.chunk != 0))
