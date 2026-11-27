@@ -112,6 +112,8 @@ struct line_class
 	track_kind track{track_kind::main};
 	double load{5.0}; // Tg a year, for the cant excess (ST-T1-A6 tab. 9.8)
 	unsigned features{0}; // platform, station, ballastless, suburban, tilting
+
+	bool operator==(line_class const &) const = default;
 };
 
 // the speed of the slow trains of a line of the traffic and the highest speed given: the line type of ST-T1-A6 tab. 8.1 with the
@@ -202,7 +204,8 @@ enum class element_kind
 	arc
 };
 
-// an element of the line in the plan: the curvature changes evenly along it from its start to its end, signed, positive turning left
+// an element of the line in the plan: the curvature changes evenly along it from its start to its end (or as a Bloss curve does),
+// signed, positive turning left
 struct element
 {
 	element_kind kind{element_kind::straight};
@@ -210,6 +213,9 @@ struct element
 	double length{0.0};
 	double curvature_start{0.0}; // 1/m
 	double curvature_end{0.0};
+	// a transition whose curvature follows the Bloss curve, 3t^2 - 2t^3 of the change: gentle at its ends, 1.5 times as fast as an
+	// even one in its middle, the arc moved in by L^2 / 40R instead of L^2 / 24R
+	bool bloss{false};
 	double speed{0.0}; // km/h, the highest on it; 0: the one of the line class
 	unsigned features{0}; // switch_track, movable_frog, curved_switch, crossing, expansion, diverging, platform, station
 	// the element is cut by the end of the line or by a switch: its length isn't its own
