@@ -1013,7 +1013,10 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
     IsScheduledPassengerStopVisible = false;
     mvOccupied->SecuritySystem.set_cabsignal_lock(false);
     // te flagi są ustawiane tutaj, w razie potrzeby
-    iDrivigFlags &= ~(moveTrackEnd | moveSwitchFound | moveSignalFound | /*moveSpeedLimitFound*/ moveStopPointFound );
+    drivingFlags.trackEnd = false;
+    drivingFlags.switchFound = false;
+    drivingFlags.signalFound = false;
+    drivingFlags.stopPointFound = false;
     SignalAreaEndDist = -1.0;
     update_point_limits();
 
@@ -1029,7 +1032,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
         v = point.fVelNext; // odczyt prędkości do zmiennej pomocniczej
         if( TestFlag( point.iFlags, spSwitch ) ) {
             // zwrotnice są usuwane z tabelki dopiero po zjechaniu z nich
-            iDrivigFlags |= moveSwitchFound; // rozjazd z przodu/pod ogranicza np. sens skanowania wstecz
+            drivingFlags.switchFound = true; // rozjazd z przodu/pod ogranicza np. sens skanowania wstecz
             SwitchClearDist = point.fDist + point.trTrack->Length() + fLength;
         }
         else if ( TestFlag(point.iFlags, spEvent) && TableUpdateEvent(v, go, point, d_to_next_sem, idx) ) // W4 może się deaktywować
@@ -1055,7 +1058,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                      && true == TestFlag(point.iFlags, spEnabled | spEvent | spPassengerStopPoint)
                      && false == IsAtPassengerStop ) {
                         // ma podjechać bliżej - czy na pewno w tym miejscu taki warunek?
-                        a = d > passengerstopmaxdistance || (iDrivigFlags & moveStopCloser) != 0 ? fAcc : 0.0;
+                        a = d > passengerstopmaxdistance || drivingFlags.stopCloser ? fAcc : 0.0;
                     }
                     else {
                         // przyspieszenie: ujemne, gdy trzeba hamować
@@ -1191,7 +1194,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
 
     // jeśli mieliśmy ograniczenie z semafora i nie ma przed nami
     if( VelSignalLast >= 0.0
-     && (iDrivigFlags & (moveSignalFound | moveSwitchFound | moveStopPointFound)) == 0
+     && ( false == drivingFlags.signalFound && false == drivingFlags.switchFound && false == drivingFlags.stopPointFound )
        && true == TestFlag(OrderCurrentGet(), Obey_train) ) {
         VelSignalLast = -1.0;
     }
@@ -1228,7 +1231,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
     // stop points are irrelevant when not in one of the basic modes
     if( ( OrderCurrentGet() & ( Shunt | Loose_shunt | Obey_train | Bank ) ) == 0 ) { return true; }
     // jeśli przystanek, trzeba obsłużyć wg rozkładu
-    iDrivigFlags |= moveStopPointFound;
+    drivingFlags.stopPointFound = true;
     // the W4 and the timetable name the station each in its own file, so the two spellings are compared by their key:
     // with or without the polish letters, in any case, with spaces or underscores
     if( false == timetable::stop_point_is_for( Point.evEvent->input_text(), asNextStop ) )
@@ -1250,7 +1253,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
         }
         return true; // ignorowanie jakby nie było tej pozycji
     }
-    else if (iDrivigFlags & moveStopPoint) // jeśli pomijanie W4, to nie sprawdza czasu odjazdu
+    else if (drivingFlags.stopPoint) // jeśli pomijanie W4, to nie sprawdza czasu odjazdu
     { // tylko gdy nazwa zatrzymania się zgadza
         if( ( OrderCurrentGet() & ( Obey_train | Bank ) ) != 0 ) {
             // check whether the station specifies radio channel change
@@ -1348,7 +1351,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
 			                    // peronu, chyba że pociąg jest dłuższy, to wtedy minimalna.
 			                    // jeśli długość peronu ((sSpeedTable[i].evEvent->ValueGet(2)) nie podana,
 			                    // przyjąć odległość fMinProximityDist
-			                    && ((iDrivigFlags & moveStopCloser) != 0 ?
+			                    && (drivingFlags.stopCloser ?
 			                            Point.fDist + fLength + (Point.fMoved - stopminproximity * 0.5f) <= std::max(std::abs(Point.evEvent->input_value(2)),
 			                                                                                                          2.0 * stopmaxproximity + fLength) :
 			                            Point.fDist < Signaldistance);
@@ -1370,7 +1373,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                 // jeśli się zatrzymał przy W4, albo stał w momencie zobaczenia W4
                 if( !AIControllFlag ) {
                     // w razie przełączenia na AI ma nie podciągać do W4, gdy użytkownik zatrzymał za daleko
-                    iDrivigFlags &= ~moveStopCloser;
+                    drivingFlags.stopCloser = false;
                 }
                 if (TrainParams.UpdateMTable( simulation::Time, asNextStop) ) {
                     // to się wykona tylko raz po zatrzymaniu na W4
@@ -1380,7 +1383,8 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                     if( TrainParams.StationIndex < TrainParams.StationCount ) {
                         // jeśli są dalsze stacje, bez trąbienia przed odjazdem
                         // also ignore any horn cue that may be potentially set below 1 km/h and before the actual full stop
-                        iDrivigFlags &= ~( moveStartHorn | moveStartHornNow );
+                        drivingFlags.startHorn = false;
+                        drivingFlags.startHornNow = false;
                     }
                     UpdateDelayFlag();
 
@@ -1401,9 +1405,9 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                     if (TrainParams.DirectionChange()) {
                         // jeśli "@" w rozkładzie, to wykonanie dalszych komend
                         // wykonanie kolejnej komendy, nie dotyczy ostatniej stacji
-                        if (iDrivigFlags & movePushPull) {
+                        if (drivingFlags.pushPull) {
                             // SN61 ma się też nie ruszać, chyba że ma wagony
-                            iDrivigFlags |= moveStopHere; // EZT ma stać przy peronie
+                            drivingFlags.stopHere = true; // EZT ma stać przy peronie
                             if (OrderNextGet() != Change_direction) {
                                 OrderPush(Change_direction); // zmiana kierunku
                                 OrderPush(
@@ -1415,12 +1419,13 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                         else {
                             // a dla lokomotyw...
                             // pozwolenie na przejechanie za W4 przed czasem i nie ma stać
-                            iDrivigFlags &= ~( moveStopPoint | moveStopHere );
+                            drivingFlags.stopPoint = false;
+                            drivingFlags.stopHere = false;
                         }
                         // przejście do kolejnego rozkazu (zmiana kierunku, odczepianie)
                         JumpToNextOrder();
                         // ma nie podjeżdżać pod W4 po przeciwnej stronie
-                        iDrivigFlags &= ~moveStopCloser;
+                        drivingFlags.stopCloser = false;
                         // ten W4 nie liczy się już zupełnie (nie wyśle SetVelocity)
                         Point.iFlags = 0;
                         // jechać
@@ -1459,13 +1464,13 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
 
                         if( static_cast<int>( std::floor( std::abs( Point.evEvent->input_value( 1 ) ) ) ) % 2 ) {
                             // nie podjeżdżać do semafora, jeśli droga nie jest wolna
-                            iDrivigFlags |= moveStopHere;
+                            drivingFlags.stopHere = true;
                         }
                         else {
                             //po czasie jedź dalej
-                            iDrivigFlags &= ~moveStopHere;
+                            drivingFlags.stopHere = false;
                         }
-                        iDrivigFlags |= moveStopCloser; // do następnego W4 podjechać blisko (z dociąganiem)
+                        drivingFlags.stopCloser = true; // do następnego W4 podjechać blisko (z dociąganiem)
                         Point.iFlags = 0; // nie liczy się już zupełnie (nie wyśle SetVelocity)
                         Point.fVelNext = -1; // można jechać za W4
                         if( Point.fDist <= 0.0 && eSignNext == Point.evEvent ) {
@@ -1478,7 +1483,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                         if( false == tsGuardSignal.empty()
                          && true == timetable::has_conductor( m_stopflags ) ) {
                             // jeśli mamy głos kierownika, to odegrać
-                            iDrivigFlags |= moveGuardSignal;
+                            drivingFlags.guardSignal = true;
                         }
                         return true; // nie analizować prędkości
                     } // koniec startu z zatrzymania
@@ -1486,7 +1491,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
 						cue_action(driver_hint::waitdeparturetime);
 						if (timetable::has_conductor(m_stopflags) // no conductor, no door kept open for him
 						 && TrainParams.IsTimeToGo(simulation::Time.data().wHour, simulation::Time.data().wMinute + simulation::Time.data().wSecond*0.0167 + 0.1)) { //if is less than 6 sec to departure
-							iDrivigFlags |= moveGuardOpenDoor;
+							drivingFlags.guardOpenDoor = true;
 							GuardOpenDoor();
 						}
 					}
@@ -1505,10 +1510,10 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                         vehicle->DestinationClear();
                     }
                     // ma nie podjeżdżać pod W4 i ma je pomijać
-                    iDrivigFlags &= ~moveStopCloser;
-                    if( false == TestFlag( iDrivigFlags, movePushPull ) ) {
+                    drivingFlags.stopCloser = false;
+                    if( false == drivingFlags.pushPull ) {
                         // if the consist can change direction through a simple cab change it doesn't need fiddling with recognition of passenger stops
-                        iDrivigFlags &= ~moveStopPoint;
+                        drivingFlags.stopPoint = false;
                     }
                     fLastStopExpDist = -1.0f; // nie ma rozkładu, nie ma usuwania stacji
                     Point.iFlags = 0; // W4 nie liczy się już (nie wyśle SetVelocity)
@@ -1520,7 +1525,8 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                     // wykonanie kolejnego rozkazu (Change_direction albo Shunt)
                     JumpToNextOrder();
                     // ma się nie ruszać aż do momentu podania sygnału
-                    iDrivigFlags |= moveStopHere | moveStartHorn;
+                    drivingFlags.stopHere = true;
+                    drivingFlags.startHorn = true;
                     return true; // nie analizować prędkości
                 } // koniec obsługi ostatniej stacji
             } // vel 0, at passenger stop
@@ -1940,14 +1946,14 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 			if ( Point.fDist < 0.0) { // jeśli wskaźnik został minięty
                 VelSignalLast = Velocity; //ustawienie prędkości na -1
             }
-            else if( ( iDrivigFlags & moveSwitchFound ) == 0 ) { // jeśli rozjazdy już minięte
+            else if( ( false == drivingFlags.switchFound ) ) { // jeśli rozjazdy już minięte
                 VelSignalLast = Velocity; //!!! to też koniec ograniczenia
             }
         }
         else
         { // w trybie manewrowym: skanować od niego wstecz, stanąć po wyjechaniu za sygnalizator i zmienić kierunek
             Velocity = 0.0; // zmiana kierunku może być podanym sygnałem, ale wypadało by zmienić światło wcześniej
-            if( ( iDrivigFlags & moveSwitchFound ) == 0 ) { // jeśli nie ma rozjazdu
+            if( ( false == drivingFlags.switchFound ) ) { // jeśli nie ma rozjazdu
                 // check for presence of a signal facing the opposite direction
                 // if there's one, we'll want to pass it before changing direction
                 basic_event *foundevent = nullptr;
@@ -1958,7 +1964,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
                     auto *foundtrack = BackwardTraceRoute( scandistance, scandirection, scanvehicle, foundevent, -1, end::front, false );
                 }
                 if( foundevent == nullptr ) {
-                    iDrivigFlags |= moveTrackEnd; // to dalsza jazda trwale ograniczona (W5, koniec toru)
+                    drivingFlags.trackEnd = true; // to dalsza jazda trwale ograniczona (W5, koniec toru)
                 }
             }
         }
@@ -1973,7 +1979,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 			// jazda na widoczność - skanować możliwość kolizji i nie podjeżdżać zbyt blisko
 			// usunąć flagę po podjechaniu blisko semafora zezwalającego na jazdę
 			// ostrożnie interpretować sygnały - semafor może zezwalać na jazdę pociągu z przodu!
-			iDrivigFlags |= moveVisibility;
+			drivingFlags.visibility = true;
 			// store the ordered restricted speed and don't exceed it until the flag is cleared
 			VelRestricted = Point.evEvent->input_value(2);
 		}
@@ -2003,7 +2009,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
         }
         else {
             //jeśli z przodu to dajemy flagę, że jest
-			iDrivigFlags |= moveSignalFound;
+			drivingFlags.signalFound = true;
             Signaldistance = std::min( Point.fDist, Signaldistance );
             // if there's another vehicle closer to the signal, then it's likely its intended recipient
             // HACK: if so, make it a stop point, to prevent non-signals farther down affect us
@@ -2146,7 +2152,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 							// jeśli event
 							// ale inny niż ten, na którym minięto S1, chyba że się już zmieniło
 							// sygnał zezwalający na jazdę wyłącza jazdę na widoczność (po S1 na SBL)
-							iDrivigFlags &= ~moveVisibility;
+							drivingFlags.visibility = false;
 							// remove restricted speed
 							VelRestricted = -1.0;
 						}
@@ -2169,7 +2175,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 					// TBD, TODO: revise this check for bank/loose_shunt; we might want to ignore obstacles with no owner in these modes
 					if (Point.fDist < Obstacle.distance)
 					{
-						if (true == TestFlag(iDrivigFlags, moveStopHere))
+						if (true == drivingFlags.stopHere)
 						{
 							// jeśli ma stać, dostaje komendę od razu
 							Command = TCommandType::cm_Command; // komenda z komórki, do wykonania po zatrzymaniu
@@ -2369,7 +2375,7 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
     OrdersClear();
 
     if( true == Primary ) {
-        iDrivigFlags |= movePrimary; // aktywnie prowadzące pojazd
+        drivingFlags.primary = true; // aktywnie prowadzące pojazd
     }
 
     if( mvOccupied != nullptr ) {
@@ -2425,7 +2431,7 @@ std::string TController::OrderCurrent() const
 { // pobranie aktualnego rozkazu celem wyświetlenia
     auto const order { OrderCurrentGet() };
     // generally prioritize direction change...
-    if( order & Change_direction && false == TestFlag(iDrivigFlags, moveConnect) ) {
+    if( order & Change_direction && false == drivingFlags.connect ) {
         // ...but not in the middle of coupling operation
 		return STR("Change direction");
 	}
@@ -2785,15 +2791,15 @@ bool TController::CheckVehicles(TOrders user)
     fMass = 0.0; // całkowita masa do liczenia stycznej składowej grawitacji
     fVelMax = -1; // ustalenie prędkości dla składu
     bool main = true; // czy jest głównym sterującym
-    iDrivigFlags |= moveOerlikons; // zakładamy, że są same Oerlikony
+    drivingFlags.oerlikons = true; // zakładamy, że są same Oerlikony
     // Ra 2014-09: ustawić moveMultiControl, jeśli wszystkie są w ukrotnieniu (i skrajne mają kabinę?)
     while (p)
     { // sprawdzanie, czy jest głównym sterującym, żeby nie było konfliktu
         if( p->Mechanik // jeśli ma obsadę
-		    && p->Mechanik != this && p->Mechanik->iDrivigFlags & movePrimary ) { // ale chodzi o inny pojazd, niż aktualnie sprawdzający
+		    && p->Mechanik != this && p->Mechanik->drivingFlags.primary ) { // ale chodzi o inny pojazd, niż aktualnie sprawdzający
 			// a tamten ma priorytet
 			// TODO: take into account drivers' operating modes, one or more of them might be on banking duty
-			if (iDrivigFlags & movePrimary && mvOccupied->DirAbsolute && mvOccupied->BrakeCtrlPos >= -1)
+			if (drivingFlags.primary && mvOccupied->DirAbsolute && mvOccupied->BrakeCtrlPos >= -1)
 			{
 				// jeśli rządzi i ma kierunek
 				p->Mechanik->primary(false); // dezaktywuje tamtego
@@ -2814,17 +2820,17 @@ bool TController::CheckVehicles(TOrders user)
         // reset oerlikon brakes consist flag as different type was detected
         if( p->MoverParameters->BrakeSubsystem != TBrakeSubSystem::ss_ESt
          && p->MoverParameters->BrakeSubsystem != TBrakeSubSystem::ss_LSt ) {
-            iDrivigFlags &= ~moveOerlikons;
+            drivingFlags.oerlikons = false;
         }
         p = p->Neighbour(dir); // pojazd podłączony od wskazanej strony
     }
     if( main ) {
-        iDrivigFlags |= movePrimary; // nie znaleziono innego, można się porządzić
+        drivingFlags.primary = true; // nie znaleziono innego, można się porządzić
     }
 
     ControllingSet(); // ustalenie członu do sterowania (może być inny niż zasiedziany)
 
-    if (iDrivigFlags & movePrimary)
+    if (drivingFlags.primary)
     { // jeśli jest aktywnie prowadzącym pojazd, może zrobić własny porządek
         auto pantmask = 1;
         p = frontvehicle;
@@ -2904,10 +2910,10 @@ bool TController::CheckVehicles(TOrders user)
             // nastawianie hamulca do jazdy pociągowej
             AutoRewident();
 /*
-            if( ( true == TestFlag( iDrivigFlags, moveConnect ) )
+            if( ( true == drivingFlags.connect )
                 && ( true == TestFlag( OrderCurrentGet(), Connect ) ) ) {
                 iCoupler = 0; // dalsza jazda manewrowa już bez łączenia
-                iDrivigFlags &= ~moveConnect; // zdjęcie flagi doczepiania
+                drivingFlags.connect = false; // zdjęcie flagi doczepiania
                 SetVelocity( 0, 0, stopJoin ); // wyłączyć przyspieszanie
                 JumpToNextOrder(); // wykonanie następnej komendy
             }
@@ -2917,11 +2923,11 @@ bool TController::CheckVehicles(TOrders user)
         // detect push-pull train configurations and mark them accordingly
         if( frontvehicle->is_connected( pVehicles[ end::rear ], coupling::control ) ) {
             // zmiana czoła przez zmianę kabiny
-            iDrivigFlags |= movePushPull;
+            drivingFlags.pushPull = true;
         }
         else {
             // zmiana czoła przez manewry
-            iDrivigFlags &= ~movePushPull;
+            drivingFlags.pushPull = false;
         }
 
         // HACK: ensure vehicle lights are active from the beginning, if it had pre-activated battery
@@ -3165,11 +3171,11 @@ void TController::SetVelocity(double NewVel, double NewVelNext, TStopReason r)
         // to całe poniżej to warunki zatrąbienia przed ruszeniem
         if( is_train() // tylko pociągi trąbią (unimogi tylko na torach, więc trzeba raczej sprawdzać tor)
          && (OrderCurrentGet() & (Shunt | Loose_shunt | Obey_train | Bank | Connect | Prepare_engine)) != 0 // jeśli jedzie w dowolnym trybie
-         && (iDrivigFlags & moveStartHorn) != 0 // jezeli trąbienie włączone
-         && (iDrivigFlags & (moveStartHornDone | moveConnect)) == 0 // jeśli nie zatrąbione i nie jest to moment podłączania składu
+         && drivingFlags.startHorn // jezeli trąbienie włączone
+         && ( false == drivingFlags.startHornDone && false == drivingFlags.connect ) // jeśli nie zatrąbione i nie jest to moment podłączania składu
          && mvOccupied->Vel < 1.0 // jesli stoi (na razie, bo chyba powinien też, gdy hamuje przed semaforem)
          && ( NewVel >= 1.0 || NewVel < 0.0 ) ) { // o ile prędkość jest znacząca zatrąb po odhamowaniu
-            iDrivigFlags |= moveStartHornNow;
+            drivingFlags.startHornNow = true;
         }
     }
     VelSignal = NewVel; // prędkość zezwolona na aktualnym odcinku
@@ -3388,7 +3394,7 @@ bool TController::PrepareEngine()
             eStopReason = stopNone;
         }
         // może skanować sygnały i reagować na komendy
-        iDrivigFlags |= moveActive;
+        drivingFlags.active = true;
     }
 
     iEngineActive = isready;
@@ -3519,7 +3525,7 @@ bool TController::ReleaseEngine() {
         eAction = TAction::actSleep; //śpi (wygaszony)
 
         OrderNext(Wait_for_orders); //żeby nie próbował coś robić dalej
-        iDrivigFlags &= ~moveActive; // ma nie skanować sygnałów i nie reagować na komendy
+        drivingFlags.active = false; // ma nie skanować sygnałów i nie reagować na komendy
         TableClear(); // zapominamy ograniczenia
         VelSignalLast = -1.0;
     }
@@ -3975,7 +3981,7 @@ bool TController::IncSpeed()
     {
     case TEngineType::None: // McZapkie-041003: wagon sterowniczy
         if (mvControlling->MainCtrlPosNo > 0) // jeśli ma czym kręcić
-            iDrivigFlags |= moveIncSpeed; // ustawienie flagi jazdy
+            drivingFlags.incSpeed = true; // ustawienie flagi jazdy
         return false;
     case TEngineType::ElectricSeriesMotor:
         if (mvPantographUnit->EnginePowerSource.SourceType == TPowerSource::CurrentCollector) // jeśli pantografujący
@@ -3989,7 +3995,7 @@ bool TController::IncSpeed()
         if( mvControlling->EnginePowerSource.SourceType == TPowerSource::Accumulator ) {
             fVoltage = mvControlling->BatteryVoltage;
         }
-        if (!IsAnyMotorOverloadRelayOpen && !mvControlling->ControlPressureSwitch && (mvControlling->IsMainCtrlNoPowerPos() || mvControlling->StLinFlag) && (Ready || iDrivigFlags & movePress)) {
+        if (!IsAnyMotorOverloadRelayOpen && !mvControlling->ControlPressureSwitch && (mvControlling->IsMainCtrlNoPowerPos() || mvControlling->StLinFlag) && (Ready || drivingFlags.press)) {
 			// youBy polecił dodać 2012-09-08 v367
 			// na pozycji 0 przejdzie, a na pozostałych będzie czekać, aż się załączą liniowe (zgaśnie DelayCtrlFlag)
 			auto const usehighoverloadrelaythreshold{mvControlling->TrainType != train_type::et42 // ET42 uses these variables for different purpose. TODO: fix this
@@ -4090,11 +4096,11 @@ bool TController::IncSpeed()
 					// czekaj na 1 pozycji, zanim się nie włączą liniowe
 					if (true == mvControlling->StLinFlag)
 					{
-						iDrivigFlags |= moveIncSpeed;
+						drivingFlags.incSpeed = true;
 					}
 					else
 					{
-						iDrivigFlags &= ~moveIncSpeed;
+						drivingFlags.incSpeed = false;
 					}
 
 					if (mvControlling->Im == 0 && mvControlling->MainCtrlPowerPos() > 1)
@@ -4113,7 +4119,7 @@ bool TController::IncSpeed()
 //        mvControlling->AutoRelayCheck(); // sprawdzenie logiki sterowania
         break;
     case TEngineType::Dumb:
-        if (!IsAnyMotorOverloadRelayOpen && (Ready || iDrivigFlags & movePress))
+        if (!IsAnyMotorOverloadRelayOpen && (Ready || drivingFlags.press))
 		//{(BrakePress<=0.01*MaxBrakePress)}
 		{
 			OK = IncSpeedEIM();
@@ -4124,7 +4130,7 @@ bool TController::IncSpeed()
 		}
 		break;
     case TEngineType::DieselElectric:
-        if (!IsAnyMotorOverloadRelayOpen && !mvControlling->ControlPressureSwitch && (mvControlling->IsMainCtrlNoPowerPos() || mvControlling->StLinFlag) && (Ready || iDrivigFlags & movePress)) {
+        if (!IsAnyMotorOverloadRelayOpen && !mvControlling->ControlPressureSwitch && (mvControlling->IsMainCtrlNoPowerPos() || mvControlling->StLinFlag) && (Ready || drivingFlags.press)) {
 			// youBy polecił dodać 2012-09-08 v367
 			// na pozycji 0 przejdzie, a na pozostałych będzie czekać, aż się załączą liniowe (zgaśnie DelayCtrlFlag)
 			//{(BrakePress<=0.01*MaxBrakePress)}
@@ -4136,13 +4142,13 @@ bool TController::IncSpeed()
 		}
         break;
     case TEngineType::ElectricInductionMotor:
-        if( !IsAnyMotorOverloadRelayOpen && (Ready || iDrivigFlags & movePress || mvOccupied->ShuntMode) ) {
+        if( !IsAnyMotorOverloadRelayOpen && (Ready || drivingFlags.press || mvOccupied->ShuntMode) ) {
 			//{(BrakePress<=0.01*MaxBrakePress)}
 			OK = IncSpeedEIM();
 			if (mvControlling->SpeedCtrl && mvControlling->Mains)
 			{
 				// cruise control
-				auto const couplinginprogress{true == TestFlag(iDrivigFlags, moveConnect) && true == TestFlag(OrderCurrentGet(), Connect)};
+				auto const couplinginprogress{true == drivingFlags.connect && true == TestFlag(OrderCurrentGet(), Connect)};
 				auto const SpeedCntrlVel{(ActualProximityDist > std::max(50.0, fMaxProximityDist) || couplinginprogress ? VelDesired : min_speed(VelDesired, VelNext))};
 				if (SpeedCntrlVel >= mvControlling->SpeedCtrlUnit.MinVelocity &&
 				    SpeedCntrlVel - mvControlling->SpeedCtrlUnit.MinVelocity == quantize(SpeedCntrlVel - mvControlling->SpeedCtrlUnit.MinVelocity, mvControlling->SpeedCtrlUnit.VelocityStep))
@@ -4171,7 +4177,7 @@ bool TController::IncSpeed()
             // mvControlling->ShuntMode=(OrderList[OrderPos]&Shunt)||(fMass>224000.0);
         }
 		if (mvControlling->SpeedCtrl && mvControlling->Mains) {// cruise control
-            auto const couplinginprogress { true == TestFlag(iDrivigFlags, moveConnect) && true == TestFlag(OrderCurrentGet(), Connect) };
+            auto const couplinginprogress { true == drivingFlags.connect && true == TestFlag(OrderCurrentGet(), Connect) };
             auto const SpeedCntrlVel { (
                 ActualProximityDist > std::max(50.0, fMaxProximityDist) || couplinginprogress ?
                     VelDesired :
@@ -4231,7 +4237,7 @@ bool TController::DecSpeed(bool force)
     switch (mvOccupied->EngineType)
     {
     case TEngineType::None: // McZapkie-041003: wagon sterowniczy
-        iDrivigFlags &= ~moveIncSpeed; // usunięcie flagi jazdy
+        drivingFlags.incSpeed = false; // usunięcie flagi jazdy
         if (force && mvControlling->MainCtrlPosNo > 0) // przy aktywacji kabiny jest potrzeba natychmiastowego wyzerowania
 		                                               // McZapkie-041003: wagon sterowniczy, np. EZT
 			mvControlling->DecMainCtrl(std::min(mvControlling->MainCtrlPowerPos(), 2));
@@ -4395,7 +4401,7 @@ void TController::SpeedSet() {
         if (mvControlling->MainCtrlPosNo > 0)
         { // jeśli ma czym kręcić
             // TODO: sprawdzanie innego czlonu //if (!FuseFlagCheck())
-            if( ( iDrivigFlags & moveIncSpeed ) == 0 ) {
+            if( ( false == drivingFlags.incSpeed ) ) {
                 // przetok rozłączać od razu (no dependency on fActionTime)
                 while( mvControlling->MainCtrlPos
                     && mvControlling->DecMainCtrl(1) ) {
@@ -4457,7 +4463,7 @@ void TController::SpeedSet() {
     }
     case TEngineType::ElectricSeriesMotor: {
 /*
-        if (Ready || (iDrivigFlags & movePress)) { // o ile może jechać
+        if (Ready || (drivingFlags.press)) { // o ile może jechać
 //            if (fAccGravity < -0.10) // i jedzie pod górę większą niż 10 promil
             { // procedura wjeżdżania na ekstremalne wzniesienia
                 if( std::fabs( mvControlling->Im ) > 0.85 * mvControlling->Imax ) { // a prąd jest większy niż 85% nadmiarowego
@@ -4909,12 +4915,12 @@ void TController::Doors( bool const Open, int const Side ) {
         // if the doors are already closed and locked then there's nothing to do
         if( false == doors_permit_active()
          && false == doors_open() ) {
-            iDrivigFlags &= ~moveDoorOpened;
-        	iDrivigFlags &= ~moveDepartureWarned;
+            drivingFlags.doorOpened = false;
+        	drivingFlags.departureWarned = false;
             return;
         }
 
-    	if (mvOccupied->Doors.has_warning && !TestFlag(iDrivigFlags, moveDepartureWarned))
+    	if (mvOccupied->Doors.has_warning && !drivingFlags.departureWarned)
     	{
     		if (!mvOccupied->DepartureSignal)
     		{
@@ -4926,7 +4932,7 @@ void TController::Doors( bool const Open, int const Side ) {
     		// Not warned yet, warning now - stop the warning signal and mark it as done.
     		cue_action( driver_hint::departuresignaloff );
     		fActionTime = Random( -0.2, 0.0 ); // Wait just a bit more before departing
-    		iDrivigFlags |= moveDepartureWarned;
+    		drivingFlags.departureWarned = true;
     		return;
     	}
 
@@ -4960,8 +4966,8 @@ void TController::Doors( bool const Open, int const Side ) {
             }
         }
 		fActionTime = Random(-3.5, -1.0); // 1.0-3.5 sec wait
-        iDrivigFlags &= ~moveDoorOpened; // zostały zamknięte - nie wykonywać drugi raz
-    	iDrivigFlags &= ~moveDepartureWarned;
+        drivingFlags.doorOpened = false; // zostały zamknięte - nie wykonywać drugi raz
+    	drivingFlags.departureWarned = false;
     }
 }
 
@@ -5076,7 +5082,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
                         pVehicle->MoverParameters->PermitDoors( side::left, false );
                     }
                 }
-                iDrivigFlags &= ~moveDoorOpened;
+                drivingFlags.doorOpened = false;
 
                 TrainParams.UpdateMTable( simulation::Time, TrainParams.NextStationName );
                 TrainParams.StationIndexInc(); // przejście do następnej
@@ -5085,7 +5091,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
                 // the flags of the first station until the train stops there
                 m_stopflags = TrainParams.stop_flags();
                 m_lastannouncement = announcement_t::idle;
-                iDrivigFlags |= movePrimary; // skoro dostał rozkład, to jest teraz głównym
+                drivingFlags.primary = true; // skoro dostał rozkład, to jest teraz głównym
 //                NewCommand = Global.asCurrentSceneryPath + NewCommand;
                 auto lookup =
                     FileExists(
@@ -5180,9 +5186,9 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
             OrderCheck(); // jeśli jazda pociągowa teraz, to wykonać niezbędne operacje
         }
         if (NewValue1 != 0.0) // jeśli jechać
-            iDrivigFlags &= ~moveStopHere; // podjeżanie do semaforów zezwolone
+            drivingFlags.stopHere = false; // podjeżanie do semaforów zezwolone
         else
-            iDrivigFlags |= moveStopHere; // stać do momentu podania komendy jazdy
+            drivingFlags.stopHere = true; // stać do momentu podania komendy jazdy
         SetVelocity(NewValue1, NewValue2, reason); // bylo: nic nie rob bo SetVelocity zewnetrznie
         // jest wywolywane przez dynobj.cpp
         return true;
@@ -5218,12 +5224,12 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
             CheckVehicles(); // zabrać to do OrderCheck()
         }
         // dla prędkości ujemnej przestawić nawrotnik do tyłu? ale -1=brak ograniczenia !!!!
-        iDrivigFlags &= ~movePress; // bez dociskania
+        drivingFlags.press = false; // bez dociskania
         SetVelocity(NewValue1, NewValue2, reason);
         if (NewValue1 != 0.0)
-            iDrivigFlags &= ~moveStopHere; // podjeżanie do semaforów zezwolone
+            drivingFlags.stopHere = false; // podjeżanie do semaforów zezwolone
         else
-            iDrivigFlags |= moveStopHere; // ma stać w miejscu
+            drivingFlags.stopHere = true; // ma stać w miejscu
         if (fabs(NewValue1) > 2.0) // o ile wartość jest sensowna (-1 nie jest konkretną wartością)
             fShuntVelocity = fabs(NewValue1); // zapamiętanie obowiązującej prędkości dla manewrów
 
@@ -5277,7 +5283,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
         else if (!o) // jeśli wcześniej było czekanie
             OrderNext(Shunt); // to dalej jazda manewrowa
         if (mvOccupied->Vel >= EU07_AI_MOVEMENT) // jeśli jedzie
-            iDrivigFlags &= ~moveStartHorn; // to bez trąbienia po ruszeniu z zatrzymania
+            drivingFlags.startHorn = false; // to bez trąbienia po ruszeniu z zatrzymania
         // Change_direction wykona się samo i następnie przejdzie do kolejnej komendy
         return true;
     }
@@ -5315,7 +5321,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
         // 0, 0 - odczepienie lokomotywy
         // x,-y - podłączyć się do składu (sprzęgiem y>=1), a następnie odczepić i zabrać (x) wagonów
         // 1, 0 - odczepienie lokomotywy z jednym wagonem
-        iDrivigFlags &= ~moveStopHere; // podjeżanie do semaforów zezwolone
+        drivingFlags.stopHere = false; // podjeżanie do semaforów zezwolone
         if( false == iEngineActive ) {
             OrderNext( Prepare_engine ); // trzeba odpalić silnik najpierw
         }
@@ -5360,17 +5366,17 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
                     // both couplers empty
                     // NOTE: this condition implements legacy behavior (mis)used by some scenarios to keep vehicle idling without moving
                     SetVelocity( 0, 0, stopJoin );
-                    iDrivigFlags |= moveStopHere; // nie podjeżdżać do semafora, jeśli droga nie jest wolna
+                    drivingFlags.stopHere = true; // nie podjeżdżać do semafora, jeśli droga nie jest wolna
                 }
                 WaitingTime = 0.0; // nie ma co dalej czekać, można zatrąbić i jechać, chyba że już jedzie
             }
         }
         if (NewValue1 == -1.0) {
-            iDrivigFlags &= ~moveStopHere; // ma jechać
+            drivingFlags.stopHere = false; // ma jechać
             WaitingTime = 0.0; // nie ma co dalej czekać, można zatrąbić i jechać
         }
         if( NewValue1 < -1.5 ) { // jeśli -2/-3, czyli czekanie z ruszeniem na sygnał
-            iDrivigFlags |= moveStopHere; // nie podjeżdżać do semafora, jeśli droga nie jest wolna
+            drivingFlags.stopHere = true; // nie podjeżdżać do semafora, jeśli droga nie jest wolna
         }
         // (nie dotyczy Connect)
         if( NewValue1 < -2.5 ) { // jeśli -3 to potem jazda pociągowa
@@ -5449,13 +5455,17 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
     }
 
 	if (NewCommand == "SetSignal") {
-		TSignals signal = (TSignals)std::lrint(NewValue1);
+		auto const signal{std::lrint(NewValue1)};
 
-		for (int i = Signal_START; i <= Signal_MAX; i++)
-			iDrivigFlags &= ~(1 << i);
+		drivingFlags.signalPc6 = false;
+		drivingFlags.signalA1 = false;
 
 		if (NewValue2 > 0.5)
-			iDrivigFlags |= 1 << (uint32_t)signal;
+		{
+			// another number set the bit of a driving flag of that number before
+			drivingFlags.signalPc6 = signal == Signal_Pc6;
+			drivingFlags.signalA1 = signal == Signal_A1;
+		}
 		else
 			CheckVehicles(); // restore light state
 	}
@@ -5542,7 +5552,7 @@ void TController::PhysicsLog()
 void
 TController::Update( double const Timedelta ) {
     // uruchamiać przynajmniej raz na sekundę
-    if( ( iDrivigFlags & movePrimary ) == 0 ) { return; } // pasywny nic nie robi
+    if( ( false == drivingFlags.primary ) ) { return; } // pasywny nic nie robi
     if( false == simulation::is_ready )       { return; }
 
     update_timers( Timedelta );
@@ -5749,17 +5759,17 @@ void TController::OrderCheck()
     }
     if( OrderCurrentGet() & ( Shunt | Loose_shunt | Connect ) ) {
         // HACK: ensure consist doors will be closed on departure
-        iDrivigFlags |= moveDoorOpened;
+        drivingFlags.doorOpened = true;
     }
     auto const currentorder { OrderCurrentGet() };
     if (currentorder & Change_direction) // może być nałożona na inną i wtedy ma priorytet
         iDirectionOrder = -iDirection; // trzeba zmienić jawnie, bo się nie domyśli
     else if (currentorder == Obey_train)
-        iDrivigFlags |= moveStopPoint; // W4 są widziane
+        drivingFlags.stopPoint = true; // W4 są widziane
     else if (currentorder == Disconnect)
         iVehicleCount = iVehicleCount < 0 ? 0 : iVehicleCount; // odczepianie lokomotywy
     else if (currentorder == Connect)
-        iDrivigFlags &= ~moveStopPoint; // podczas jazdy na połączenie nie zwracać uwagi na W4
+        drivingFlags.stopPoint = false; // podczas jazdy na połączenie nie zwracać uwagi na W4
     else if (currentorder == Wait_for_orders)
         OrdersClear(); // czyszczenie rozkazów i przeskok do zerowej pozycji
 }
@@ -5841,7 +5851,7 @@ void TController::OrdersInit(double fVel)
         if (fVel > 0.0 && fVel < 0.02)
             OrderPush(Shunt); // dla prędkości 0.01 włączamy jazdę manewrową
         else if (TrainParams.DirectionChange() ? //  jeśli obrót na pierwszym przystanku
-                    (iDrivigFlags & movePushPull ? // SZT również! SN61 zależnie od wagonów...
+                    (drivingFlags.pushPull ? // SZT również! SN61 zależnie od wagonów...
                         TrainParams.TimeTable[1].StationName == TrainParams.Relation1 :
                         false) :
                     false)
@@ -5865,7 +5875,7 @@ void TController::OrdersInit(double fVel)
             }
             if ( contains( t->StationWare, '@' ) )
             { // zmiana kierunku i dalsza jazda wg rozk?adu
-                if (iDrivigFlags & movePushPull) // SZT również! SN61 zależnie od wagonów...
+                if (drivingFlags.pushPull) // SZT również! SN61 zależnie od wagonów...
                 { // jeśli skład zespolony, wystarczy zmienić kierunek jazdy
                     OrderPush(Change_direction); // zmiana kierunku
                 }
@@ -5895,11 +5905,12 @@ void TController::OrdersInit(double fVel)
          || fVel < 0.02 ) {
             // jeśli ma jechać - dla 0.01 ma podjechać manewrowo po podaniu sygnału
             // to do następnego W4 ma podjechać blisko
-            iDrivigFlags = iDrivigFlags & ~moveStopHere | moveStopCloser;
+            drivingFlags.stopHere = false;
+            drivingFlags.stopCloser = true;
         }
         else {
             // czekać na sygnał
-            iDrivigFlags |= moveStopHere;
+            drivingFlags.stopHere = true;
         }
         JumpToFirstOrder();
         if (fVel >= 1.0) // jeśli ma jechać
@@ -6187,7 +6198,7 @@ TCommandType TController::BackwardScan( double const Range )
 		#endif
 		                    // SetProximityVelocity(scandist,scanvel,&sl);
 		                    // jeśli jedzie na W5 albo koniec toru, to można zmienić kierunek
-		                    return (iDrivigFlags & moveTrackEnd) ? TCommandType::cm_ChangeDirection :
+		                    return (drivingFlags.trackEnd) ? TCommandType::cm_ChangeDirection :
 		                                                           TCommandType::cm_Unknown;
 		                    // TBD: request direction change also if VelNext in current direction is 0,
 		                    // while signal behind requests movement?
@@ -6257,11 +6268,11 @@ void TController::UpdateDelayFlag() {
 
     if( TrainParams.CheckTrainLatency() < 0.0 ) {
         // odnotowano spóźnienie
-        iDrivigFlags |= moveLate;
+        drivingFlags.late = true;
     }
     else {
         // przyjazd o czasie
-        iDrivigFlags &= ~moveLate;
+        drivingFlags.late = false;
     }
 }
 
@@ -6312,9 +6323,9 @@ void TController::TakeControl( bool const Aidriver, bool const Forcevehiclecheck
                         OrderNext( Shunt ); // jazda manewrowa
 */
                     if( mvOccupied->Vel >= 1.0 ) // jeśli jedzie (dla 0.1 ma stać)
-                        iDrivigFlags &= ~moveStopHere; // to ma nie czekać na sygnał, tylko jechać
+                        drivingFlags.stopHere = false; // to ma nie czekać na sygnał, tylko jechać
                     else
-                        iDrivigFlags |= moveStopHere; // a jak stoi, to niech czeka
+                        drivingFlags.stopHere = true; // a jak stoi, to niech czeka
                 }
             }
             CheckVehicles(); // ustawienie świateł
@@ -7125,19 +7136,19 @@ TController::control_horns( double const Timedelta ) {
     }
     if( mvOccupied->Vel > EU07_AI_MOVEMENT ) {
         // jesli jedzie, można odblokować trąbienie, bo się wtedy nie włączy
-        iDrivigFlags &= ~moveStartHornDone; // zatrąbi dopiero jak następnym razem stanie
-        iDrivigFlags |= moveStartHorn; // i trąbić przed następnym ruszeniem
+        drivingFlags.startHornDone = false; // zatrąbi dopiero jak następnym razem stanie
+        drivingFlags.startHorn = true; // i trąbić przed następnym ruszeniem
     }
 
-    if( true == TestFlag(iDrivigFlags, moveStartHornNow)
+    if( true == drivingFlags.startHornNow
      && true == Ready
      && true == iEngineActive
      && mvControlling->MainCtrlPowerPos() > 0 ) {
         // uruchomienie trąbienia przed ruszeniem
         fWarningDuration = 0.3; // czas trąbienia
         cue_action( driver_hint::hornon, pVehicle->iHornWarning ); // wysokość tonu (2=wysoki)
-        iDrivigFlags |= moveStartHornDone; // nie trąbić aż do ruszenia
-        iDrivigFlags &= ~moveStartHornNow; // trąbienie zostało zorganizowane
+        drivingFlags.startHornDone = true; // nie trąbić aż do ruszenia
+        drivingFlags.startHornNow = false; // trąbienie zostało zorganizowane
     }
 }
 
@@ -7494,7 +7505,7 @@ TController::determine_proximity_ranges() {
     {
     case Connect: {
         // podłączanie do składu
-        if (iDrivigFlags & moveConnect) {
+        if (drivingFlags.connect) {
             // jeśli stanął już blisko, unikając zderzenia i można próbować podłączyć
             fMinProximityDist = -1.0;
             fMaxProximityDist =  0.0; //[m] dojechać maksymalnie
@@ -7555,7 +7566,7 @@ TController::determine_proximity_ranges() {
             fMinProximityDist = minproximity;
             fMaxProximityDist = maxproximity;
 
-            if( iDrivigFlags & moveLate ) {
+            if( drivingFlags.late ) {
                 // jeśli spóźniony, to gna
                 fVelMinus = 1.0;
                 // dopuszczalne przekroczenie prędkości na ograniczeniu bez hamowania
@@ -7610,7 +7621,7 @@ TController::check_departure() {
      && mvOccupied->RunningTrack.Velmax != 0.0 ) {
         // jeśli stoi, a upłynął czas oczekiwania i tor ma niezerową prędkość
         if( OrderCurrentGet() & (Shunt | Loose_shunt | Obey_train | Bank)
-         && iDrivigFlags & moveStopHere ) {
+         && drivingFlags.stopHere ) {
             // zakaz ruszania z miejsca bez otrzymania wolnej drogi
             WaitingTime = -WaitingExpireTime;
         }
@@ -7631,7 +7642,7 @@ TController::check_departure() {
             }
         }
     }
-    else if( VelSignal == 0.0 && VelNext > 0.0 && mvOccupied->Vel < 1.0 && (iCoupler > 0 || (iDrivigFlags & moveStopHere) == 0) ) {
+    else if( VelSignal == 0.0 && VelNext > 0.0 && mvOccupied->Vel < 1.0 && (iCoupler > 0 || ( false == drivingFlags.stopHere )) ) {
 		// Ra: tu jest coś nie tak, bo bez tego warunku ruszało w manewrowym !!!!
 		SetVelocity(VelNext, VelNext, stopSem); // omijanie SBL
 	}
@@ -7666,9 +7677,9 @@ TController::check_load_exchange() {
         m_lastexchangedirection = pVehicle->DirectionGet();
     }
     if( false == TrainParams.IsMaintenance()
-     && ( false == TestFlag(iDrivigFlags, moveDoorOpened)
+     && ( false == drivingFlags.doorOpened
        || true == DoesAnyDoorNeedOpening ) ) {
-        iDrivigFlags |= moveDoorOpened; // nie wykonywać drugi raz
+        drivingFlags.doorOpened = true; // nie wykonywać drugi raz
         remove_hint( driver_hint::doorleftopen );
         remove_hint( driver_hint::doorrightopen );
         Doors( true, m_lastexchangeplatforms );
@@ -7695,11 +7706,11 @@ TController::UpdateChangeDirection() {
         VelSignalNext = -1;
         PrepareEngine();
         JumpToNextOrder(); // następnie robimy, co jest do zrobienia (Shunt albo Obey_train)
-        if( OrderCurrentGet() & (Shunt | Loose_shunt | Connect) && false == TestFlag(iDrivigFlags, moveStopHere) ) {
+        if( OrderCurrentGet() & (Shunt | Loose_shunt | Connect) && false == drivingFlags.stopHere ) {
             // jeśli dalej mamy manewry
 			// o ile nie ma stać w miejscu,
 			// jechać od razu w przeciwną stronę i nie trąbić z tego tytułu:
-			iDrivigFlags &= ~moveStartHorn;
+			drivingFlags.startHorn = false;
 			SetVelocity(fShuntVelocity, fShuntVelocity);
 		}
     }
@@ -7735,11 +7746,11 @@ TController::UpdateObeyTrain() {
 
     UpdateNextStop();
 
-    if( (iDrivigFlags & moveGuardSignal) != 0
+    if( drivingFlags.guardSignal
      && VelDesired > 0.0 ) {
         // komunikat od kierownika tu, bo musi być wolna droga i odczekany czas stania
-        iDrivigFlags &= ~moveGuardSignal; // tylko raz nadać
-		iDrivigFlags &= ~moveGuardOpenDoor; // nie trzeba już otwierać drzwi
+        drivingFlags.guardSignal = false; // tylko raz nadać
+		drivingFlags.guardOpenDoor = false; // nie trzeba już otwierać drzwi
         if( false == tsGuardSignal.empty() ) {
             tsGuardSignal.stop();
             // w zasadzie to powinien mieć flagę, czy jest dźwiękiem radiowym, czy bezpośrednim
@@ -7774,7 +7785,7 @@ TController::UpdateObeyTrain() {
 void
 TController::UpdateConnect() {
     // podłączanie do składu
-    if (iDrivigFlags & moveConnect) {
+    if (drivingFlags.connect) {
         // sprzęgi sprawdzamy w pierwszej kolejności, bo jak połączony, to koniec
         auto *vehicle { iCouplingVehicle.value().first };
         auto const couplingend { iCouplingVehicle.value().second };
@@ -7814,7 +7825,7 @@ TController::UpdateConnect() {
 
             iCoupler = 0; // dalsza jazda manewrowa już bez łączenia
             iCouplingVehicle.reset();
-            iDrivigFlags &= ~moveConnect; // zdjęcie flagi doczepiania
+            drivingFlags.connect = false; // zdjęcie flagi doczepiania
             JumpToNextOrder( true ); // wykonanie następnej komendy
         }
     } // moveConnect
@@ -7824,14 +7835,14 @@ TController::UpdateConnect() {
 			// write down which vehicle should be coupled with the target consist,
 			// so we don't lose track of it if the user does something unexpected
 			iCouplingVehicle = {pVehicles[end::front], (pVehicles[end::front]->DirectionGet() > 0 ? end::front : end::rear)};
-			iDrivigFlags |= moveConnect;
+			drivingFlags.connect = true;
 		}
     }
 }
 
 void
 TController::GuardOpenDoor() {
-	if ((iDrivigFlags & moveGuardOpenDoor) != 0) {
+	if (drivingFlags.guardOpenDoor) {
 		auto *vehicle{ pVehicles[end::front] };
 		while (vehicle != nullptr && vehicle->MoverParameters->Doors.range == 0) {
 			vehicle = vehicle->Next();
@@ -7847,7 +7858,7 @@ TController::GuardOpenDoor() {
 			}
 		}
 		else {
-			iDrivigFlags &= ~moveGuardOpenDoor;
+			drivingFlags.guardOpenDoor = false;
 		}
 	}
 }
@@ -7891,7 +7902,7 @@ TController::UpdateDisconnect() {
             cue_action( driver_hint::mastercontrollersetreverserunlock );
             cue_action( driver_hint::directionother );
         }
-        if( (iDrivigFlags & movePress) != 0 && iDirection == iDirectionOrder ) {
+        if( drivingFlags.press && iDirection == iDirectionOrder ) {
             if( iVehicleCount >= 0 ) {
                 // zmieni się po odczepieniu
                 WriteLog( "Uncoupling [" + mvOccupied->Name + "]: actuating and compressing buffers..." );
@@ -7950,7 +7961,7 @@ TController::UpdateDisconnect() {
             } // a jak nie, to dociskać dalej
         }
         // 2nd stage: apply consist brakes and change direction
-        if( ( iDrivigFlags & movePress ) == 0 ) {
+        if( ( false == drivingFlags.press ) ) {
             // store initial consist direction
             if( !iDirectionBackup ) {
                 iDirectionBackup = iDirection;
@@ -7969,7 +7980,7 @@ TController::UpdateDisconnect() {
                 }
 */
                 iDirectionOrder = -iDirection; // zmiana kierunku jazdy na przeciwny (dociskanie)
-                iDrivigFlags |= movePress; // następnie będzie dociskanie
+                drivingFlags.press = true; // następnie będzie dociskanie
             }
         }
     } // odczepianie
@@ -7986,10 +7997,10 @@ TController::UpdateDisconnect() {
         }
         // 5th stage: clean up and move on to next order
         if( iDirection == iDirectionOrder ) {
-            iDrivigFlags &= ~movePress; // koniec dociskania
+            drivingFlags.press = false; // koniec dociskania
             JumpToNextOrder( true ); // zmieni światła
             TableClear(); // skanowanie od nowa
-            iDrivigFlags &= ~moveStartHorn; // bez trąbienia przed ruszeniem
+            drivingFlags.startHorn = false; // bez trąbienia przed ruszeniem
         }
     }
 }
@@ -8058,7 +8069,7 @@ TController::handle_orders() {
     default: {
         // special case, change_direction potentially received during partially completed coupling operation
         // this is unlikely to happen for the AI, but can happen for a (slower) human user
-        if( TestFlag( iDrivigFlags, moveConnect ) ) {
+        if( drivingFlags.connect ) {
             UpdateConnect();
         }
         break;
@@ -8073,13 +8084,13 @@ TController::set_velocity_for_uncoupling() {
 
     if( iVehicleCount < 0 ) {
         // 4th stage: restore initial direction
-        if( ( iDrivigFlags & movePress ) != 0 ) {
+        if( drivingFlags.press ) {
             SetVelocity( 0, 0, stopJoin );
         }
         return;
     }
     // 3rd stage: compress buffers and uncouple
-    if( ( iDrivigFlags & movePress ) != 0 && iDirection == iDirectionOrder ) {
+    if( drivingFlags.press && iDirection == iDirectionOrder ) {
         SetVelocity( 2, 0 ); // jazda w ustawionym kierunku z prędkością 2
         return;
     }
@@ -8368,7 +8379,7 @@ TController::adjust_desired_speed_for_limits() {
         return; // speed limit can't get any lower
     }
 
-    if( (OrderCurrentGet() & (Shunt | Loose_shunt | Obey_train | Bank)) != 0 && (iDrivigFlags & moveStopHere) != 0 && mvOccupied->Vel < 0.01 && VelSignalNext == 0.0 ) {
+    if( (OrderCurrentGet() & (Shunt | Loose_shunt | Obey_train | Bank)) != 0 && drivingFlags.stopHere && mvOccupied->Vel < 0.01 && VelSignalNext == 0.0 ) {
         // w Connect nie, bo moveStopHere odnosi się do stanu po połączeniu
 		// jeśli ma czekać na wolną drogę, stoi a wyjazdu nie ma, to ma stać
 		VelDesired = 0.0;
@@ -8947,7 +8958,7 @@ void TController::control_tractive_force() {
     // jeśli przyspieszenie pojazdu jest mniejsze niż żądane oraz...
     if( AccDesired > EU07_AI_NOACCELERATION // don't add power if not asked for actual speed-up
 	    && (AbsAccS < AccDesired /*- std::min( 0.05, 0.01 * iDriverFailCount )*/ || mvOccupied->SpeedCtrlUnit.IsActive && velocity < mvOccupied->SpeedCtrlUnit.FullPowerVelocity) &&
-	    false == TestFlag(iDrivigFlags, movePress) &&
+	    false == drivingFlags.press &&
 	    // starting uphill against the releasing brake, the power that holds the train is enough: the brake coming off
 	    // speeds the train up, more power only drags the brake and slips the wheels. nor is a notch past that taken
 	    // back: the power got there in one notch from below, and the notch below doesn't hold the train
@@ -8970,7 +8981,7 @@ void TController::control_tractive_force() {
 	}
     // zmniejszanie predkosci
     // margines dla prędkości jest doliczany tylko jeśli oczekiwana prędkość jest większa od 5km/h
-    if( false == TestFlag( iDrivigFlags, movePress ) ) {
+    if( false == drivingFlags.press ) {
 		double SpeedCtrlMargin = mvControlling->SpeedCtrlUnit.IsActive && VelDesired > 5 ? 3 : 0;
         // jeśli nie dociskanie
         if( AccDesired <= EU07_AI_NOACCELERATION ) {
@@ -9231,7 +9242,7 @@ TController::uphill_brake_committed( double const Velocity ) const {
 void TController::control_braking_force() {
 
     // don't touch the brakes when compressing buffers during coupling/uncoupling
-    if( TestFlag( iDrivigFlags, movePress ) ) { return; }
+    if( drivingFlags.press ) { return; }
 
     auto const velocity { DirectionalVel() };
     // a train slipping back uphill is braked, also when it is to go on: released now it only rolls back further.
@@ -9243,7 +9254,7 @@ void TController::control_braking_force() {
 
     // jeśli przyspieszamy, to nie hamujemy
     if( AccDesired > 0.0 && OrderCurrentGet() != Disconnect // przy odłączaniu nie zwalniamy tu hamulca
-	    && false == TestFlag(iDrivigFlags, movePress)
+	    && false == drivingFlags.press
 	    && false == slippingbackuphill ) {
 		cue_action(driver_hint::brakingforcesetzero);
 	}
@@ -9412,7 +9423,7 @@ void TController::control_releaser() {
     state.control_pressure = mvOccupied->Hamulec->GetCRP();
     state.velocity = mvOccupied->Vel;
     state.uphill_start = bUphillStart;
-    state.pressing = TestFlag( iDrivigFlags, movePress );
+    state.pressing = drivingFlags.press;
     // stage 3 of uncoupling (UpdateDisconnect), from the direction change until the coupler lets go
     state.compressing_buffers =
         state.pressing && ( OrderCurrentGet() & Disconnect ) != 0 && iVehicleCount >= 0 && iDirection == iDirectionOrder;
@@ -9473,7 +9484,7 @@ void TController::control_main_pipe() {
      || mvOccupied->BrakeHandle == TBrakeHandle::M394 ) {
 
         auto const departblocked { is_departure_blocked( DepartBlockedFSDelay ) };
-        if( (iDrivigFlags & moveOerlikons || true == IsCargoTrain || departblocked) && BrakeCtrlPosition == gbh_RP && AbsAccS < 0.03 && AccDesired > -0.03 && VelDesired - mvOccupied->Vel > 2.0 && fReady > 0.35 &&
+        if( (drivingFlags.oerlikons || true == IsCargoTrain || departblocked) && BrakeCtrlPosition == gbh_RP && AbsAccS < 0.03 && AccDesired > -0.03 && VelDesired - mvOccupied->Vel > 2.0 && fReady > 0.35 &&
 		    ( mvOccupied->EqvtPipePress < 4.5 || departblocked ) // don't charge with a risk of overcharging the main pipe
 		    && mvOccupied->Compressor >= 7.5 // don't charge without sufficient pressure in the tank
 		    && BrakeChargingCooldown >= 0.0 // don't charge while cooldown is active
@@ -9562,7 +9573,7 @@ TController::check_route_ahead( double const Range ) {
         if( VelNext == 0.0 ) {
             break; // ale jak coś z przodu zamyka, to ma stać
         }
-        if( iDrivigFlags & moveStopCloser ) {
+        if( drivingFlags.stopCloser ) {
             VelSignal = -1.0; // ma czekać na sygnał z sygnalizatora!
         }
         break;
@@ -9605,7 +9616,7 @@ void
 TController::check_route_behind( double const Range ) {
 
     if( VelNext != 0.0 ) { return; } // not if we can move ahead
-    if( TestFlag( iDrivigFlags, moveConnect ) ) { return; } // not if we're in middle of coupling operation
+    if( drivingFlags.connect ) { return; } // not if we're in middle of coupling operation
 
     if( ( OrderCurrentGet() & ~( Shunt | Loose_shunt | Connect ) ) == 0 ) {
         // jedzie w Shunt albo Connect, albo Wait_for_orders
@@ -9613,7 +9624,7 @@ TController::check_route_behind( double const Range ) {
         auto const couplinginprogress {
             TestFlag(OrderCurrentGet(), Connect)
          && ( Obstacle.distance < std::min(2000.0, FirstSemaphorDist)
-           || TestFlag(iDrivigFlags, moveConnect) ) };
+           || drivingFlags.connect ) };
         if( couplinginprogress ) { return; }
 
         auto const commandbehind { BackwardScan( Range ) };
@@ -9624,7 +9635,7 @@ TController::check_route_behind( double const Range ) {
             // i dopiero wtedy zmienić kierunek jazdy, oczekując podania prędkości >0.5
             if( commandbehind == TCommandType::cm_Command ) {
                 // jeśli komenda Shunt to ją odbierz bez przemieszczania się (np. odczep wagony po dopchnięciu do końca toru)
-                iDrivigFlags |= moveStopHere;
+                drivingFlags.stopHere = true;
             }
             iDirectionOrder = -iDirection; // zmiana kierunku jazdy
             // zmiana kierunku bez psucia kolejnych komend
@@ -9682,3 +9693,21 @@ bool TController::has_diesel_engine() const {
 
 double TController::DirectionalVel() const {
     return mvOccupied->Vel * sign( iDirection * mvOccupied->V ); }
+
+std::vector<std::string_view> DrivingFlags::ActiveNames() const {
+    std::vector<std::pair<bool, std::string_view>> const flags {
+        { stopCloser, "StopCloser" }, { stopPoint, "StopPoint" }, { active, "Active" }, { press, "Press" },
+        { connect, "Connect" }, { primary, "Primary" }, { late, "Late" }, { stopHere, "StopHere" },
+        { startHorn, "StartHorn" }, { startHornNow, "StartHornNow" }, { startHornDone, "StartHornDone" },
+        { oerlikons, "Oerlikons" }, { incSpeed, "IncSpeed" }, { trackEnd, "TrackEnd" }, { switchFound, "SwitchFound" },
+        { guardSignal, "GuardSignal" }, { visibility, "Visibility" }, { doorOpened, "DoorOpened" },
+        { pushPull, "PushPull" }, { signalFound, "SignalFound" }, { stopPointFound, "StopPointFound" },
+        { guardOpenDoor, "GuardOpenDoor" }, { departureWarned, "DepartureWarned" } };
+    std::vector<std::string_view> names;
+    for( auto const &[ set, name ] : flags ) {
+        if( set ) {
+            names.emplace_back( name );
+        }
+    }
+    return names;
+}

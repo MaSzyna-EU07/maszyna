@@ -52,7 +52,7 @@ enum TOrders
 	Jump_to_first_order =   1 << 9, // zapęlenie do pierwszej pozycji (po co?)
 };
 
-// TSignals is shifted into TMovementStatus
+// the signals the map asks the driver to show (SetSignal)
 enum TSignals
 {
 	Signal_START = 30,
@@ -61,36 +61,37 @@ enum TSignals
 	Signal_MAX = 31
 };
 
-enum TMovementStatus
-{ // flagi bitowe ruchu (iDrivigFlags)
-    moveStopCloser = 1, // podjechać blisko W4 (nie podjeżdżać na początku ani po zmianie czoła)
-    moveStopPoint = 2, // stawać na W4 (wyłączone podczas zmiany czoła)
-    moveActive = 4, // pojazd jest załączony i skanuje
-    movePress = 8, // dociskanie przy odłączeniu (zamiast zmiennej Prepare2press)
-    moveConnect = 0x10, // jest blisko innego pojazdu i można próbować podłączyć
-    movePrimary = 0x20, // ma priorytet w składzie (master)
-    moveLate = 0x40, // flaga spóźnienia, włączy bardziej
-    moveStopHere = 0x80, // nie podjeżdżać do semafora, jeśli droga nie jest wolna
-    moveStartHorn = 0x100, // podawaj sygnał po podaniu wolnej drogi
-    moveStartHornNow = 0x200, // podaj sygnał po odhamowaniu
-    moveStartHornDone = 0x400, // podano sygnał po podaniu wolnej drogi
-    moveOerlikons = 0x800, // skład wyłącznie z zaworami? Oerlikona
-    moveIncSpeed = 0x1000, // załączenie jazdy (np. dla EZT)
-    moveTrackEnd = 0x2000, // dalsza jazda do przodu trwale ograniczona (W5, koniec toru)
-    moveSwitchFound = 0x4000, // na drodze skanowania do przodu jest rozjazd
-    moveGuardSignal = 0x8000, // sygnał od kierownika (minął czas postoju)
-    moveVisibility = 0x10000, // jazda na widoczność po przejechaniu S1 na SBL
-    moveDoorOpened = 0x20000, // drzwi zostały otwarte - doliczyć czas na zamknięcie
-    movePushPull = 0x40000, // zmiana czoła przez zmianę kabiny - nie odczepiać przy zmianie kierunku
-    moveSignalFound = 0x80000, // na drodze skanowania został znaleziony semafor
-    moveStopPointFound = 0x100000, // stop point detected ahead
-	moveGuardOpenDoor = 0x200000, // time for opening a door before departure
-	moveDepartureWarned = 0x400000 // driver has already warned about the doors being closed (only for manual warning - i.e. EN57-ish)
-/*
-    moveSemaphorWasElapsed = 0x100000, // minięty został semafor
-    moveTrainInsideStation = 0x200000, // pociąg między semaforem a rozjazdami lub następnym semaforem
-    moveSpeedLimitFound = 0x400000 // pociąg w ograniczeniu z podaną jego długością
-*/
+// what the driver keeps in mind about the movement of the train: each a condition of its own, set and cleared on its own
+struct DrivingFlags
+{
+    bool stopCloser{ false }; // podjechać blisko W4 (nie podjeżdżać na początku ani po zmianie czoła)
+    bool stopPoint{ true }; // stawać na W4 (wyłączone podczas zmiany czoła)
+    bool active{ false }; // pojazd jest załączony i skanuje
+    bool press{ false }; // dociskanie przy odłączeniu
+    bool connect{ false }; // jest blisko innego pojazdu i można próbować podłączyć
+    bool primary{ false }; // ma priorytet w składzie (master)
+    bool late{ false }; // spóźnienie, włączy bardziej
+    bool stopHere{ true }; // nie podjeżdżać do semafora, jeśli droga nie jest wolna
+    bool startHorn{ true }; // podawaj sygnał po podaniu wolnej drogi
+    bool startHornNow{ false }; // podaj sygnał po odhamowaniu
+    bool startHornDone{ false }; // podano sygnał po podaniu wolnej drogi
+    bool oerlikons{ false }; // skład wyłącznie z zaworami Oerlikona
+    bool incSpeed{ false }; // załączenie jazdy (np. dla EZT)
+    bool trackEnd{ false }; // dalsza jazda do przodu trwale ograniczona (W5, koniec toru)
+    bool switchFound{ false }; // na drodze skanowania do przodu jest rozjazd
+    bool guardSignal{ false }; // sygnał od kierownika (minął czas postoju)
+    bool visibility{ false }; // jazda na widoczność po przejechaniu S1 na SBL
+    bool doorOpened{ false }; // drzwi zostały otwarte - doliczyć czas na zamknięcie
+    bool pushPull{ false }; // zmiana czoła przez zmianę kabiny - nie odczepiać przy zmianie kierunku
+    bool signalFound{ false }; // na drodze skanowania został znaleziony semafor
+    bool stopPointFound{ false }; // stop point detected ahead
+    bool guardOpenDoor{ false }; // time for opening a door before departure
+    bool departureWarned{ false }; // driver has already warned about the doors being closed (only for manual warning - i.e. EN57-ish)
+    bool signalPc6{ false }; // the map asked to show the Pc6 signal (SetSignal); nothing reads it yet
+    bool signalA1{ false }; // the map asked to show the A1 signal (SetSignal); nothing reads it yet
+
+    // the names of the flags set, for the debug panel
+    std::vector<std::string_view> ActiveNames() const;
 };
 
 enum TStopReason
@@ -241,11 +242,11 @@ public:
     void TakeControl( bool const Aidriver, bool const Forcevehiclecheck = false );
     inline
     bool primary( bool const Primary ) {
-        SetFlag( iDrivigFlags, Primary ? movePrimary : -movePrimary );
+        drivingFlags.primary = Primary;
         return primary(); }
     inline
     bool primary() const {
-        return (iDrivigFlags & movePrimary) != 0; };
+        return drivingFlags.primary; };
     inline
     TMoverParameters const *Controlling() const {
         return mvControlling; }
@@ -265,7 +266,7 @@ public:
         return eAction; }
     inline
     bool is_active() const {
-        return TestFlag( iDrivigFlags, moveActive ); }
+        return drivingFlags.active; }
     bool is_train() const;
     bool is_car() const;
     bool is_emu() const;
@@ -322,8 +323,8 @@ private:
     float
         braking_distance_multiplier( float const Targetvelocity ) const;
     inline
-        int DrivigFlags() const {
-            return iDrivigFlags; };
+        DrivingFlags const &DrivingFlagsState() const {
+            return drivingFlags; }
         double DirectionalVel() const;
 
     double brake_increase_margin() const;
@@ -499,10 +500,7 @@ private:
     double fStopTime = 0.0; // czas postoju przed dalszą jazdą (np. na przystanku)
     float ExchangeTime{ 0.0 }; // time needed to finish current load exchange
     double fShuntVelocity = 40.0; // prędkość manewrowania, zależy m.in. od składu
-    int iDrivigFlags = // flagi bitowe ruchu
-        moveStopPoint | // podjedź do W4 możliwie blisko
-        moveStopHere | // nie podjeżdżaj do semafora, jeśli droga nie jest wolna
-        moveStartHorn; // podaj sygnał po podaniu wolnej drogi
+    DrivingFlags drivingFlags; // what the driver keeps in mind about the movement of the train
     double fDriverBraking = 0.0; // po pomnożeniu przez v^2 [km/h] daje ~drogę hamowania [m]
     double fDriverDist = 0.0; // dopuszczalna odległość podjechania do przeszkody
     double fVelMax = -1.0; // maksymalna prędkość składu (sprawdzany każdy pojazd)
