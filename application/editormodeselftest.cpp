@@ -151,6 +151,9 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //                                        a line of known curves, the points along them clicked as a curve traced, the line they make logged
 //   laychain <layout> <R> <x> <z> | b | u | r | e | t | p...   the points clicked, Backspace, undo, redo, Enter, Tab, the line logged
 //   joints <x> <z>...                    the joints check over the scenery, the issues around the points logged, every issue with free ends without points
+//   normsreport <file> [scope 0|1] [plk|tsi|en|ch] [km/h]   the tracks checked against the norms of the profile, the line through the
+//                                        selected path (0) or the whole scenery (1), the speed of the line class where the tracks have none:
+//                                        the report written to the file, its counts logged
 //   route <x> <z> <single 0|1>          the route design of the path nearest the point, a curve or the whole line
 //   routevertex <i> <R> <L in> <L out> <cant>, routearc <i> <R> <L> <share>, routeshare <i> <share>, routekm <km>
 //   routeapply, routetake                as the buttons of the route design do it
@@ -225,6 +228,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   expect track <name> <present|removed>
 //   expect route <track> <in|out>        the track is a part of the line open in the route tool, or not
 //   expect norms gauge <mm> [tolerance]  the rail axes distance of the norms the tracks are laid to
+//   expect findings <note|warning|block|any> <least> <most>   how many of the tier the last check of the norms found (normsreport)
 //   expect height <track> <start|end> <m> <tolerance>   the height of the end of the first path
 //   expect lift <track> <start|end> <label> <m> <tolerance>   how far the end of the first path is above the height marked
 //   expect includes <track> <count>      the includes whose parameters name the track: the model and the events of a turntable

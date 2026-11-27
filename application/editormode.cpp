@@ -1676,6 +1676,8 @@ bool editor_mode::update()
         steps.step("speed");
         m_joints.update();
         steps.step("joints");
+        m_norms.update();
+        steps.step("norms");
         if (m_nmt_state.grade_lines_dirty)
         {
             m_nmt_state.grade_lines_dirty = false;
@@ -1693,6 +1695,7 @@ bool editor_mode::update()
         draw_infra_overlay();
         m_speed.draw_overlay();
         m_joints.draw_overlay();
+        m_norms.draw_overlay();
         m_srk.draw_overlay();
         m_km.draw_overlay();
         steps.step("overlays");

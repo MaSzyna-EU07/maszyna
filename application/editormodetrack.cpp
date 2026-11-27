@@ -478,9 +478,9 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 15> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 16> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 15> const modes{{
+	static std::array<track_mode, 16> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters", editor_icons::icon::select, 0},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track", editor_icons::icon::lay_track, 0},
 	    {"Plan", "G", track_tab::straights, "The plan of the line laid: LMB on a straight drags its ends or the middle, on a curve its vertex and radius. C works too", editor_icons::icon::curve, 0},
@@ -496,6 +496,7 @@ std::array<editor_mode::track_mode, 15> const &editor_mode::track_modes()
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line", editor_icons::icon::profile, 2},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows", editor_icons::icon::speed, 2},
 	    {"Joints", "J", track_tab::joints, "Ends of the paths which almost meet, steps, kinks, jumps of the cant and of the grade at the joints", editor_icons::icon::joints, 2},
+	    {"Norms", nullptr, track_tab::norms, "The geometry of the tracks against the norms of a profile (PLK, TSI, EN 13803, AB-EBV): what is beyond them, read only", editor_icons::icon::norms, 2},
 	    // the infrastructure tool (track_tab::infra) is left out: no button nor key
 	}};
 	return modes;
@@ -641,6 +642,7 @@ std::string editor_mode::track_mode_name() const
 	case track_tab::profile: return STR_C("Vertical profile");
 	case track_tab::speed: return STR_C("Speed check");
 	case track_tab::joints: return STR_C("Joints");
+	case track_tab::norms: return STR_C("Norms");
 	case track_tab::lineside: return STR_C("Posts along the track");
 	case track_tab::infra: return STR_C("Infrastructure");
 	case track_tab::parallel: return STR_C("Parallel track");
@@ -654,6 +656,23 @@ std::string editor_mode::track_mode_name() const
 	}
 }
 
+namespace
+{
+
+// the title of the window a check of the track tab lists what it finds in
+char const *track_analysis_title(editor_track_tab const Tab)
+{
+	switch (Tab)
+	{
+	case editor_track_tab::speed: return STR_C("Speed check");
+	case editor_track_tab::joints: return STR_C("Joints");
+	case editor_track_tab::norms: return STR_C("Norms");
+	default: return STR_C("Infrastructure");
+	}
+}
+
+} // namespace
+
 void editor_mode::render_track_inspector()
 {
 	auto const &io{ImGui::GetIO()};
@@ -661,6 +680,7 @@ void editor_mode::render_track_inspector()
 	m_speed.set_open(m_track_window_open && m_track_tab == track_tab::speed);
 	m_infra.open = m_track_window_open && m_track_tab == track_tab::infra;
 	m_joints.set_open(m_track_window_open && m_track_tab == track_tab::joints);
+	m_norms.set_open(m_track_window_open && m_track_tab == track_tab::norms);
 	m_srk.set_open(m_track_window_open && srk_tab(), m_track_tab == track_tab::station_signals ? srk_tool::part::signals : m_track_tab == track_tab::line_block ? srk_tool::part::lines : srk_tool::part::station);
 	m_km.set_open(m_track_window_open && m_track_tab == track_tab::kilometrage);
 	if (false == m_track_window_open || m_track_tab != track_tab::lineside)
@@ -685,9 +705,9 @@ void editor_mode::render_track_inspector()
 
 	// the tools of the mode are drawn in the tool options window and the selected path in the inspector, see
 	// render_track_tool_options() and render_track_selection(); the checks list what they find in a window of their own
-	if (m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra)
+	if (m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::norms || m_track_tab == track_tab::infra)
 	{
-		auto const *title{m_track_tab == track_tab::speed ? STR_C("Speed check") : m_track_tab == track_tab::joints ? STR_C("Joints") : STR_C("Infrastructure")};
+		auto const *title{track_analysis_title(m_track_tab)};
 		ImGui::SetNextWindowSize(ImVec2(600.0f, std::min(320.0f, io.DisplaySize.y - 80.0f)), ImGuiCond_FirstUseEver);
 		if (ImGui::Begin((std::string{title} + "###trackanalysis").c_str(), nullptr, ImGuiWindowFlags_NoCollapse))
 		{
@@ -695,6 +715,7 @@ void editor_mode::render_track_inspector()
 			{
 			case track_tab::speed: m_speed.render_options(); break;
 			case track_tab::joints: m_joints.render_options(); break;
+			case track_tab::norms: m_norms.render_options(); break;
 			default: render_infra_body(); break;
 			}
 		}
@@ -741,6 +762,7 @@ void editor_mode::render_track_tool_options()
 	case track_tab::profile: render_profile_body(); break;
 	case track_tab::speed:
 	case track_tab::joints:
+	case track_tab::norms:
 	case track_tab::infra:
 		ImGui::TextDisabled("%s", STR_C("What the check finds is listed in its window"));
 		break;
@@ -2034,6 +2056,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB on a track", "a point of the km there"}, {"Mouse over a track", "its km by the cursor"}};
 	else if (m_track_window_open && m_track_tab == track_tab::joints)
 		hints = {{"LMB on a row", "show the place"}, {"Fix", "joins the ends, aligns them"}};
+	else if (m_track_window_open && m_track_tab == track_tab::norms)
+		hints = {{"LMB on a row", "show the place"}};
 	else if (m_track_window_open && m_track_tab == track_tab::infra)
 		hints = {{"LMB", "select a path"}};
 	else if (m_track_tab == track_tab::straights && m_straights.tool == 1)
