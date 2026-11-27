@@ -1,0 +1,376 @@
+//$n Autotest of the track editor
+//$d The fixture of the self-test scripts of the editor (tests/editor): plain tracks, a turntable and two
+//$d canted curves side by side. The runner copies it into the scenery folder under a name of its own.
+
+sky skydome_clouds.t3d endsky
+atmo 0 0 0 1000 2000 0 0 0 endatmo
+time 10:30 06:30 19:00 endtime
+
+// line a: three straights joined, no cant (the cant of the inspector, the norms after a delete)
+node -1 0 a1 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+0 0 0 0
+0 0 0
+0 0 0
+0 0 100 0
+0
+endtrack
+
+node -1 0 a2 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+0 0 100 0
+0 0 0
+0 0 0
+0 0 200 0
+0
+endtrack
+
+node -1 0 a3 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+0 0 200 0
+0 0 0
+0 0 0
+0 0 300 0
+0
+endtrack
+
+// line s: three straights joined, for the switches
+node -1 0 s1 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+40 0 0 0
+0 0 0
+0 0 0
+40 0 100 0
+0
+endtrack
+
+node -1 0 s2 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+40 0 100 0
+0 0 0
+0 0 0
+40 0 200 0
+0
+endtrack
+
+node -1 0 s3 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+40 0 200 0
+0 0 0
+0 0 0
+40 0 300 0
+0
+endtrack
+
+// line d: three straights joined, for a double switch and a slip
+node -1 0 d1 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+80 0 0 0
+0 0 0
+0 0 0
+80 0 100 0
+0
+endtrack
+
+node -1 0 d2 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+80 0 100 0
+0 0 0
+0 0 0
+80 0 200 0
+0
+endtrack
+
+node -1 0 d3 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+80 0 200 0
+0 0 0
+0 0 0
+80 0 300 0
+0
+endtrack
+
+// lines p and q: straights side by side 4.5 m apart, for a crossover
+node -1 0 p1 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+120 0 0 0
+0 0 0
+0 0 0
+120 0 100 0
+0
+endtrack
+
+node -1 0 p2 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+120 0 100 0
+0 0 0
+0 0 0
+120 0 200 0
+0
+endtrack
+
+node -1 0 p3 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+120 0 200 0
+0 0 0
+0 0 0
+120 0 300 0
+0
+endtrack
+
+node -1 0 q1 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+124.5 0 0 0
+0 0 0
+0 0 0
+124.5 0 100 0
+0
+endtrack
+
+node -1 0 q2 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+124.5 0 100 0
+0 0 0
+0 0 0
+124.5 0 200 0
+0
+endtrack
+
+node -1 0 q3 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+124.5 0 200 0
+0 0 0
+0 0 0
+124.5 0 300 0
+0
+endtrack
+
+// a track of 1000 mm gauge and one of the standard gauge (pasting the style of a track)
+node -1 0 g1 track normal 50 1 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+160 0 0 0
+0 0 0
+0 0 0
+160 0 50 0
+0
+endtrack
+
+node -1 0 g2 track normal 50 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+170 0 0 0
+0 0 0
+0 0 0
+170 0 50 0
+0
+endtrack
+
+// a turntable of 16 m with the speed limit of its own (its speed set in the editor, deleting it in a set)
+node -1 0 tt1 track turn 16 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+200 0 17 0
+0 0 0
+0 0 0
+200 0 33 0
+0
+velocity 10
+endtrack
+
+include eng/obrotnica16m_e.inc tt1 200 0 25 0 eng/most1-jezdniablach 0 0 0 0 0 0 0 0 0 0 0 0 end
+
+// curves i (R 600 m) and o (R 604.5 m) side by side 4.5 m apart, canted 60 mm, with straights taking the cant on and off
+node -1 0 i0 track normal 60 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+300 0 -60 0
+0 0 0
+0 0 0
+300 0 0 -2.292443
+0
+endtrack
+
+node -1 0 i1 track normal 30 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+300 0 0 -2.292443
+0 0 10.000521
+-0.499818 0 -9.988023
+300.749844 0 29.987502 -2.292443
+600
+endtrack
+
+node -1 0 i2 track normal 30 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+300.749844 0 29.987502 -2.292443
+0.499818 0 9.988023
+-0.998386 0 -9.95056
+302.997501 0 59.90005 -2.292443
+600
+endtrack
+
+node -1 0 i3 track normal 30 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+302.997501 0 59.90005 -2.292443
+0.998386 0 9.95056
+-1.494459 0 -9.888226
+306.737353 0 89.662879 -2.292443
+600
+endtrack
+
+node -1 0 i4 track normal 30 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+306.737353 0 89.662879 -2.292443
+1.494459 0 9.888226
+-1.986797 0 -9.801176
+311.960053 0 119.201598 -2.292443
+600
+endtrack
+
+node -1 0 i5 track normal 30 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+311.960053 0 119.201598 -2.292443
+1.986797 0 9.801176
+-2.474168 0 -9.689629
+318.652547 0 148.442376 -2.292443
+600
+endtrack
+
+node -1 0 i6 track normal 30 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+318.652547 0 148.442376 -2.292443
+2.474168 0 9.689629
+-2.955356 0 -9.553862
+326.798107 0 177.312124 -2.292443
+600
+endtrack
+
+node -1 0 i7 track normal 30 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+326.798107 0 177.312124 -2.292443
+2.955356 0 9.553862
+-3.429157 0 -9.394216
+336.376372 0 205.738684 -2.292443
+600
+endtrack
+
+node -1 0 i8 track normal 30 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+336.376372 0 205.738684 -2.292443
+3.429157 0 9.394216
+-3.894386 0 -9.21109
+347.363404 0 233.651005 -2.292443
+600
+endtrack
+
+node -1 0 i9 track normal 60 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+347.363404 0 233.651005 -2.292443
+0 0 0
+0 0 0
+370.728504 0 288.914665 0
+0
+endtrack
+
+node -1 0 o0 track normal 60 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+295.5 0 -60 0
+0 0 0
+0 0 0
+295.5 0 0 -2.292443
+0
+endtrack
+
+node -1 0 o1 track normal 30.225 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+295.5 0 0 -2.292443
+0 0 10.075525
+-0.503566 0 -10.062933
+296.255468 0 30.212408 -2.292443
+604.5
+endtrack
+
+node -1 0 o2 track normal 30.225 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+296.255468 0 30.212408 -2.292443
+0.503566 0 10.062933
+-1.005874 0 -10.025189
+298.519982 0 60.3493 -2.292443
+604.5
+endtrack
+
+node -1 0 o3 track normal 30.225 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+298.519982 0 60.3493 -2.292443
+1.005874 0 10.025189
+-1.505668 0 -9.962387
+302.287883 0 90.335351 -2.292443
+604.5
+endtrack
+
+node -1 0 o4 track normal 30.225 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+302.287883 0 90.335351 -2.292443
+1.505668 0 9.962387
+-2.001698 0 -9.874685
+307.549754 0 120.09561 -2.292443
+604.5
+endtrack
+
+node -1 0 o5 track normal 30.225 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+307.549754 0 120.09561 -2.292443
+2.001698 0 9.874685
+-2.492725 0 -9.762301
+314.292441 0 149.555693 -2.292443
+604.5
+endtrack
+
+node -1 0 o6 track normal 30.225 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+314.292441 0 149.555693 -2.292443
+2.492725 0 9.762301
+-2.977521 0 -9.625516
+322.499092 0 178.641965 -2.292443
+604.5
+endtrack
+
+node -1 0 o7 track normal 30.225 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+322.499092 0 178.641965 -2.292443
+2.977521 0 9.625516
+-3.454875 0 -9.464673
+332.149195 0 207.281725 -2.292443
+604.5
+endtrack
+
+node -1 0 o8 track normal 30.225 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+332.149195 0 207.281725 -2.292443
+3.454875 0 9.464673
+-3.923594 0 -9.280173
+343.218629 0 235.403388 -2.292443
+604.5
+endtrack
+
+node -1 0 o9 track normal 60 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+343.218629 0 235.403388 -2.292443
+0 0 0
+0 0 0
+366.58373 0 290.667048 0
+0
+endtrack
+
+// a track apart with a vehicle of the scenery: the editor saving a scenery without one puts a vehicle of its own onto the
+// first track long enough, a track of the cases
+node -1 0 v1 track normal 50 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-100 0 0 0
+0 0 0
+0 0 0
+-100 0 50 0
+0
+endtrack
+
+FirstInit
+
+trainset none v1 20 0
+node -1 0 autotest_wmb10 dynamic pkp/wmb10_v1 wmb10-6457 wmb10 0 nobody 0 0 enddynamic
+endtrainset

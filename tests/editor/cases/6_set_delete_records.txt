@@ -1,0 +1,40 @@
+# PR #450: deleting a set of tracks does what Del does with each: the records of the switches go with them, and the
+# model and the events of a turntable too. The records stayed behind and on saving were given to another switch.
+# s1, s2, s3: straights joined one after another; tt1: a turntable with the include of its model and events
+wait 5
+switchplace Rz_60E1-300-1:9 40 150 1 1
+expect records z1 1 switch
+expect includes tt1 1
+# a set of the switch, the track before it and the turntable
+tracksetdelete z1 s2 tt1
+expect track z1 removed
+expect track s2 removed
+expect track tt1 removed
+expect records z1 0
+expect includes tt1 0
+# one undo brings it all back
+undo
+expect track z1 present
+expect track s2 present
+expect track tt1 present
+expect records z1 1 switch
+expect includes tt1 1
+redo
+expect records z1 0
+expect includes tt1 0
+save
+wait 5
+quit
+#> reopen
+# the scenery as saved, loaded again: no record of the switch, no turntable
+wait 5
+expect track z1 removed
+expect track tt1 removed
+expect records z1 0
+expect includes tt1 0
+# a new switch, given the name z1 freed, has one record, its own
+switchplace Rz_60E1-300-1:9 80 150 1 1
+expect track z1 present
+expect records z1 1
+expect records z1 1 switch
+quit

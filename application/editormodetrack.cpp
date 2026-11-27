@@ -1442,6 +1442,32 @@ void editor_mode::render_path_events(TTrack &Track)
 		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), STR_C("No such events: %s"), m_track_events_missing.c_str());
 }
 
+float editor_mode::cant_of_roll(float const Roll)
+{
+	return static_cast<float>(1500.0 * std::sin(glm::radians(static_cast<double>(Roll))));
+}
+
+float editor_mode::roll_of_cant(float const Cant)
+{
+	return static_cast<float>(glm::degrees(std::asin(std::clamp(static_cast<double>(Cant) / 1500.0, -1.0, 1.0))));
+}
+
+void editor_mode::track_cant_commit(TTrack &Track, editor_track::state const &Before)
+{
+	std::vector<std::pair<TTrack *, editor_track::state>> states{{&Track, Before}};
+	std::vector<TTrack *> changed{&Track};
+	auto const joints{editor_track::joints(Track)};
+	for (auto const &joint : joints)
+		if (std::ranges::find(changed, joint.other) == changed.end())
+		{
+			states.emplace_back(joint.other, editor_track::capture(*joint.other));
+			changed.push_back(joint.other);
+		}
+	editor_track::match_rolls(Track, joints);
+	push_track_snapshot(std::move(states));
+	editor_track::commit(changed);
+}
+
 void editor_mode::render_path_ui()
 {
 	auto *track = selected_track();
@@ -1584,30 +1610,13 @@ void editor_mode::render_path_ui()
 				if (begin_fields("##cantradius", 0.3f))
 				{
 					field_row("Cant (mm)");
-					auto const lift = [](float const Roll) { return static_cast<float>(1500.0 * std::sin(glm::radians(static_cast<double>(Roll)))); };
-					auto const roll = [](float const Lift) { return static_cast<float>(glm::degrees(std::asin(std::clamp(static_cast<double>(Lift) / 1500.0, -1.0, 1.0)))); };
-					if (std::array<float, 2> cants{lift(path.rolls[0]), lift(path.rolls[1])}; ImGui::DragFloat2("##roll", cants.data(), 0.5f, -388.0f, 388.0f, "%.0f") && std::isfinite(cants[0]) && std::isfinite(cants[1]))
-						path.rolls = {roll(cants[0]), roll(cants[1])};
+					if (std::array<float, 2> cants{cant_of_roll(path.rolls[0]), cant_of_roll(path.rolls[1])}; ImGui::DragFloat2("##roll", cants.data(), 0.5f, -388.0f, 388.0f, "%.0f") && std::isfinite(cants[0]) && std::isfinite(cants[1]))
+						path.rolls = {roll_of_cant(cants[0]), roll_of_cant(cants[1])};
 					item_tooltip("Cant at the start and at the end: how much higher one rail is, + raises the left rail looking along the path");
-					// the cant typed at an end goes on into the track joined there, as with the gizmo and the joints tool: the joint
-					// would step otherwise. the neighbours go into the same undo step
 					if (ImGui::IsItemActivated())
 						m_track_field_before = before;
 					if (ImGui::IsItemDeactivatedAfterEdit())
-					{
-						std::vector<std::pair<TTrack *, editor_track::state>> states{{track, m_track_field_before}};
-						std::vector<TTrack *> changed{track};
-						auto const joints{editor_track::joints(*track)};
-						for (auto const &joint : joints)
-							if (std::find(changed.begin(), changed.end(), joint.other) == changed.end())
-							{
-								states.emplace_back(joint.other, editor_track::capture(*joint.other));
-								changed.push_back(joint.other);
-							}
-						editor_track::match_rolls(*track, joints);
-						push_track_snapshot(std::move(states));
-						editor_track::commit(changed);
-					}
+						track_cant_commit(*track, m_track_field_before);
 					field_row("Radius");
 					if (auto radius{path.radius}; ImGui::InputFloat("##radius", &radius, 0.0f, 0.0f, "%.1f") && std::isfinite(radius))
 						path.radius = radius;

@@ -270,6 +270,7 @@ set(SOURCES
 "application/editormodeselftestterrain.cpp"
 "application/editormodeselftestrails.cpp"
 "application/editormodeselftestmonkey.cpp"
+"application/editormodeselftestexpect.cpp"
 "application/scriptedinput.cpp"
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"

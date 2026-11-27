@@ -53,7 +53,7 @@ http://mozilla.org/MPL/2.0/.
 
 editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &command, std::istringstream &words)
 {
-	for (auto const group : {&editor_mode::selftest_scene, &editor_mode::selftest_sleepers, &editor_mode::selftest_sweep, &editor_mode::selftest_track, &editor_mode::selftest_switch, &editor_mode::selftest_rails, &editor_mode::selftest_join, &editor_mode::selftest_signal, &editor_mode::selftest_terrain, &editor_mode::selftest_props, &editor_mode::selftest_monkey})
+	for (auto const group : {&editor_mode::selftest_scene, &editor_mode::selftest_sleepers, &editor_mode::selftest_sweep, &editor_mode::selftest_track, &editor_mode::selftest_switch, &editor_mode::selftest_rails, &editor_mode::selftest_join, &editor_mode::selftest_signal, &editor_mode::selftest_terrain, &editor_mode::selftest_props, &editor_mode::selftest_monkey, &editor_mode::selftest_expect})
 		if (auto const result{(this->*group)(command, words)}; result != selftest_result::unhandled)
 			return result;
 	for (auto *tool : m_tools)
@@ -208,7 +208,27 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   rideahead, rideprobe, rideleave      logs the switch ahead from its blades / logs the place of the ride / ends the ride
 //   minimap <0|1|2>, stations            the minimap shown or hidden (2: the whole scenery in it) / logs the stations the W4 name with their stops
 //   station <text>, minimapclick <x> <z> the camera to the next stop of the station whose name holds the text / as a click on the map there
-//   quit
+//   trackcant <track> <path> <start mm> <end mm>   the cant typed into the field of the inspector: the tracks joined at the ends follow,
+//                                        in the same undo step
+//   routegauge <mm> [track]              the rail axes distance of the norms set as the route tool sets it, the line of the track opened in
+//                                        it first unless it's open already
+//   tracksetdelete <name>...             the tracks made the set, one too, and deleted as Del deletes the set
+//   mark <label> <track> <start|end>     the height of the end of the first path kept, for expect lift
+//   expect cant <track> <start|end> <mm> <tolerance mm>   the cant at the end of the first path, as the inspector shows it
+//   expect joint <track> <start|end> <gap m> <angle deg> <cant step mm>   the end of the first path against the end of another track
+//                                        nearest to it within 1 m: the gap, the kink and the step of the cant between them, each at most
+//   expect records <name> <count> [kind] the records of the switch store of the name, with the connections having the switch among theirs
+//   expect shaped <switch> <yes|no>      the switch keeps the shape its record says, or was bent out of it
+//   expect speed <track> <km/h> [tolerance], expect gauge <track> <m> [tolerance]   as editor_track::velocity gives it / the gauge
+//   expect track <name> <present|removed>
+//   expect route <track> <in|out>        the track is a part of the line open in the route tool, or not
+//   expect norms gauge <mm> [tolerance]  the rail axes distance of the norms the tracks are laid to
+//   expect height <track> <start|end> <m> <tolerance>   the height of the end of the first path
+//   expect lift <track> <start|end> <label> <m> <tolerance>   how far the end of the first path is above the height marked
+//   expect includes <track> <count>      the includes whose parameters name the track: the model and the events of a turntable
+//                                        each expect logs SELFTEST PASS or SELFTEST FAIL; a failed one, or a command no group takes,
+//                                        makes the run end with editor_selftest::failed_exit_code
+//   quit                                 logs SELFTEST result: <failed> failed of <expectations>, the editor closes
 void editor_mode::selftest_step()
 {
 	auto &test{m_selftest};
@@ -221,8 +241,13 @@ void editor_mode::selftest_step()
 		std::ifstream stream(file);
 		std::string line;
 		while (std::getline(stream, line))
-			if (false == line.empty() && line.front() != '#')
-				test.lines.push_back(line);
+		{
+			// an indented comment or a line of blanks is no command either
+			auto const first{line.find_first_not_of(" \t\r")};
+			if (first == std::string::npos || line[first] == '#')
+				continue;
+			test.lines.push_back(line.substr(first));
+		}
 		WriteLog("SELFTEST: " + std::to_string(test.lines.size()) + " steps from " + file);
 	}
 	++editor_selftest::frames();
@@ -262,7 +287,8 @@ void editor_mode::selftest_step()
 			words >> test.wait;
 			return;
 		}
-		if (auto const result{selftest_dispatch(command, words)}; result == selftest_result::pause || result == selftest_result::again)
+		auto const result{selftest_dispatch(command, words)};
+		if (result == selftest_result::pause || result == selftest_result::again)
 		{
 			if (result == selftest_result::again)
 				--test.next;
@@ -272,6 +298,7 @@ void editor_mode::selftest_step()
 		{
 			if (false == test.quitting)
 			{
+				WriteLog(format("SELFTEST result: %zu failed of %zu", editor_selftest::failures(), editor_selftest::expectations()));
 				WriteLog("SELFTEST done");
 				test.quitting = true;
 				test.wait = 30;
@@ -280,6 +307,13 @@ void editor_mode::selftest_step()
 			}
 			Application.queue_quit(true);
 			return;
+		}
+		// a command no group took does nothing: a script mistyped, whose expectations after it would pass for nothing
+		if (result == selftest_result::unhandled)
+		{
+			++editor_selftest::expectations();
+			++editor_selftest::failures();
+			WriteLog("SELFTEST FAIL " + command + ": no group took the command");
 		}
 	}
 }
