@@ -13,7 +13,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Float3d.h"
 #include "rendering/geometrybank.h"
 #include "model/material.h"
-#include "gl/query.h"
 
 #include <string_view>
 
@@ -265,7 +264,6 @@ public:
     void ReplaceMaterial(const std::string &name);
 	float MaxY( float4x4 const &m );
     std::shared_ptr<std::vector<glm::vec2>> screen_touch_list; // for python screen touching
-	std::optional<gl::query> occlusion_query;
     glm::mat4 future_transform;
 
 	void deserialize(std::istream&);
