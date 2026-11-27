@@ -2137,6 +2137,10 @@ void TMoverParameters::rerail()
 		OffsetTrackH = 0.0;
 		OffsetTrackV = 0.0;
 	}
+	// a derailed vehicle which stopped sleeps (Global.physics_sleepheld) with the friction of the derailment in FStand and
+	// where the derailment put it, until something wakes it: the physics on, for the friction of the rails and its place on
+	// them. it is put back by a command (resetconsist, SetDamage) or by the road spawner, which sets it going anyway
+	switch_physics(true, wake_cause::command);
 }
 
 void TMoverParameters::repair_damage()
@@ -6492,6 +6496,12 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	// McZapkie-031103: sprawdzanie czy warto liczyc fizyke i inne updaty
 	// ABu 300105: cos tu mieszalem , dziala teraz troche lepiej, wiec zostawiam
 	{
+		// asleep, the brake force is the one of the step it fell asleep in: a vehicle whose brakes have changed since, released
+		// or applied, wakes for the 5 s of LastSwitchingTime, which take the new force into FStand, and sleeps again if it's
+		// still held. none of the causes of the test below, so as "other"
+		if (brakes_changed_asleep())
+			switch_physics(true, wake_cause::other);
+
 		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || accelerating() || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU};
 
 		auto const movingvehicleahead{Neighbours[end::front].vehicle != nullptr &&
@@ -11428,6 +11438,24 @@ void TMoverParameters::wake_for_brake()
 }
 
 // *************************************************************************************************
+// whether the brakes of a vehicle whose physics sleeps have changed since it fell asleep: the pressure in the brake cylinders
+// or in the one of the spring brake by more than 0.05 bar, the hand brake by a notch, or the local brake by 1 percent. the brake system
+// itself steps on while asleep in the vehicle the user is in (TDynamicObject::Update(), MechInside); the settings change by
+// hand or by a command in any vehicle. 0.05 bar is less than what a distributor applying or releasing moves the cylinder by in
+// a second, and much less than the pressure the cylinder's return spring takes (BrakeCylSpring, some tenths of a bar), below
+// which the cylinder gives no force: a release ends with the vehicle asleep and no force left. a cylinder holding its
+// pressure, or settling within that, leaves the vehicle asleep
+// *************************************************************************************************
+bool TMoverParameters::brakes_changed_asleep() const
+{
+	if (PhysicActivation)
+		return false;
+	constexpr double pressure_change{0.05}; // [bar]
+	return std::abs(BrakePress - sleep_brakes.cylinder) > pressure_change || std::abs(SpringBrake.SBP - sleep_brakes.spring) > pressure_change ||
+	       ManualBrakePos != sleep_brakes.manual || std::abs(LocalBrakePosA - sleep_brakes.local) > 0.01;
+}
+
+// *************************************************************************************************
 // Kasowanie zmiennych pracy fizyki
 // *************************************************************************************************
 bool TMoverParameters::switch_physics(bool const State, wake_cause const Cause) // DO PRZETLUMACZENIA NA KONCU
@@ -11442,6 +11470,11 @@ bool TMoverParameters::switch_physics(bool const State, wake_cause const Cause) 
 	{
 		LastSwitchingTime = 0;
 		Timer::subsystem.switching.note(static_cast<Timer::switching_counter::source>(Timer::switching_counter::wake + static_cast<std::size_t>(Cause)), this, &TypeName, &Name);
+	}
+	else
+	{
+		// what the brake force of the last step came from, which it keeps while asleep (brakes_changed_asleep())
+		sleep_brakes = {BrakePress, SpringBrake.SBP, ManualBrakePos, LocalBrakePosA};
 	}
 
 	return true;
