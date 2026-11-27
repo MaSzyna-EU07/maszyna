@@ -27,9 +27,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import heapq
 import json
-import os
 import math
+import os
 import re
 import shutil
 import struct
@@ -49,7 +50,9 @@ OUT_DIR = HERE / "out"
 # Velocity is in km/h and pressures in bar, despite the header saying m/s and MPa.
 COL_TIME = 0
 COL_VELOCITY = 1  # wheel speed: stays at 0 while the wheels are locked in a skid
+COL_TRACTION_FORCE = 5  # N, despite the header saying kN
 COL_BRAKE_PRESS = 8
+COL_MASTER_CONTROLLER = 11  # the position of the master controller
 COL_COMMAND = 16  # text, read as None
 COL_WHEELSLIP = 20
 COL_VEHICLE_VELOCITY = 25  # signed vehicle speed, km/h; only in builds which log it
@@ -155,6 +158,51 @@ def timetable_path(game_dir: Path, case_name: str) -> Path:
     return game_dir / "scenery" / f"{timetable_name(case_name)}.txt"
 
 
+def variant_name(case_name: str, name: str) -> str:
+    """A vehicle variant of the case as a trainset names it: {{variant_<name>}} in the fragment."""
+    return f"autotest_{case_name}_{name}"
+
+
+def variant_paths(game_dir: Path, case_name: str, variant: dict) -> list[Path]:
+    """The .fiz and .mmd of a vehicle variant of the case, beside those of the vehicle it is made from."""
+    folder = (game_dir / "dynamic" / variant["from"]).parent
+    return [folder / f"{variant_name(case_name, variant['name'])}{suffix}" for suffix in (".fiz", ".mmd")]
+
+
+def write_vehicle_variants(case: dict, game_dir: Path, case_name: str) -> None:
+    """Writes the case's vehicle variants into the game's dynamic/ dir: a copy of a vehicle's .fiz with the
+    case's replacements, e.g. a .fiz key the shipped data doesn't have yet, and a copy of its .mmd. The
+    simulator hands the .mmd its type name as (p2), which some pass on to the include that names the
+    model (et42_v2: `include 112e-a.mmd.inc (p2) end`, `models: (p1).t3d`), so the copy has the name of
+    the vehicle it is made from in place of (p2) and looks and loads as that one does."""
+    files = {}
+    for variant in case.get("vehicle_variants", []):
+        source = game_dir / "dynamic" / variant["from"]
+        # the .fiz to copy: the vehicle's own, or another file named in full (fiz_from), e.g. the .fiz.inc a
+        # vehicle's .fiz only includes, as keys added after the include on a second line of the same section
+        # would load that section again
+        fiz_source = game_dir / "dynamic" / variant["fiz_from"] if "fiz_from" in variant else source.with_name(source.name + ".fiz")
+        fiz_name = variant.get("fiz_from", f"{variant['from']}.fiz")
+        # .fiz files are cp1250 like the sceneries; latin-1 round-trips every byte
+        fiz = fiz_source.read_bytes().decode("latin-1")
+        for old, new in variant.get("replace", []):
+            if old not in fiz:
+                sys.exit(f"vehicle_variants: {fiz_name} has no {old!r}")
+            fiz = fiz.replace(old, new)
+        mmd = source.with_name(source.name + ".mmd").read_bytes().decode("latin-1").replace("(p2)", source.name)
+        fiz_path, mmd_path = variant_paths(game_dir, case_name, variant)
+        files[fiz_path], files[mmd_path] = fiz, mmd
+    # written once every variant is made, so a case with a wrong replacement leaves nothing in the game dir
+    for path, text in files.items():
+        path.write_bytes(text.encode("latin-1"))
+
+
+def remove_vehicle_variants(case: dict, game_dir: Path, case_name: str) -> None:
+    for variant in case.get("vehicle_variants", []):
+        for path in variant_paths(game_dir, case_name, variant):
+            path.unlink(missing_ok=True)
+
+
 def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> str:
     """Writes the case scenery into the game's scenery dir and returns its file name."""
     scenery_dir = game_dir / "scenery"
@@ -175,8 +223,9 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
     # a case on a mission of the base scenery may have nothing to add but its test_config
     fragment = (CASES_DIR / case["fragment"]).read_bytes().decode("latin-1") if "fragment" in case else ""
     # vars first: {{vehicle}} and {{timetable}} inside a var's value get filled in the second pass
-    fragment = fill_vars(fragment, case.get("vars", {}), keep={"vehicle", "timetable"})
-    fragment = fill_vars(fragment, {"vehicle": vehicle, "timetable": timetable_name(case_name)})
+    variants = {f"variant_{v['name']}": variant_name(case_name, v["name"]) for v in case.get("vehicle_variants", [])}
+    fragment = fill_vars(fragment, case.get("vars", {}), keep={"vehicle", "timetable", *variants})
+    fragment = fill_vars(fragment, {"vehicle": vehicle, "timetable": timetable_name(case_name), **variants})
     # FirstInit binds event launchers to their events and links the tracks. so launchers and
     # events of the case go in before it (read after it they never fire), trainsets after it
     # (placed before it they stand on unlinked track and derail at once)
@@ -192,6 +241,8 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
     else:
         text += header + before + "\n"
     text += header + trainsets + "\n"
+    # vehicles of the case's own, made from those of the game
+    write_vehicle_variants(case, game_dir, case_name)
     name = f"autotest_{case_name}.scn"
     (scenery_dir / name).write_bytes(text.encode("latin-1"))
     # a timetable of the case's own, for a train whose timetable the sceneries of the game have none like
@@ -199,9 +250,10 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
         shutil.copyfile(CASES_DIR / case["timetable"], timetable_path(game_dir, case_name))
     # the simulator caches the scenery's static geometry in <name>.sbt and reads it instead of
     # the terrain in the .scn (tracks, events and trainsets always come from the .scn), so
-    # drop the cache once the base scenery has changed
+    # drop the cache once the base scenery, or the fragment of the case (its own terrain), has changed
     cache = scenery_cache(game_dir, case_name)
-    if cache.exists() and cache.stat().st_mtime < (scenery_dir / case["base_scenery"]).stat().st_mtime:
+    sources = [scenery_dir / case["base_scenery"]] + ([CASES_DIR / case["fragment"]] if "fragment" in case else [])
+    if cache.exists() and cache.stat().st_mtime < max(source.stat().st_mtime for source in sources):
         cache.unlink()
     return name
 
@@ -255,9 +307,12 @@ def read_text(path: Path | None) -> str:
 # physicslog/<scenery>_<date>.blackbox. A header, then records: a byte of the kind, the length, the content
 BLACKBOX_MAGIC = b"EU07BBX\0"
 BLACKBOX_HEADER = 12  # the magic, the version of the format, two bytes reserved
+BLACKBOX_TRACK = 0x10  # the map: a rail track, or one way of a switch, as points along it
 BLACKBOX_VEHICLE = 0x12  # a vehicle: its number and its name
 BLACKBOX_VEHICLES = 0x21  # once a second: the vehicles which moved, changed speed or got another driver
 BLACKBOX_COUPLING = 0x37  # a coupler of a vehicle coupled, uncoupled, or its hoses and cables changed
+BLACKBOX_DERAILMENT = 0x38  # a vehicle left the track, or came to rest off it (physics.derailment new)
+DERAILMENT_CAUSES = {1: "flange climbed", 2: "overturned", 3: "end of track", 4: "pulled off", 5: "collision"}
 COUPLING_COUPLER = 0x01  # of the bits telling what is coupled: the coupler itself
 BLACKBOX_DRIVERS = {"none": 0, "user": 1, "ai": 2}  # the driver byte of a vehicle state
 
@@ -285,9 +340,37 @@ class VehicleState:
 
 
 @dataclass
+class Derailment:
+    """A derailment record: a vehicle off the track as it left it (phase 0) or came to rest (phase 1)."""
+    time: float
+    vehicle: int
+    phase: int
+    cause: int  # DERAILMENT_CAUSES
+    position: tuple[float, float, float]
+    heading: float  # rad
+    speed: float  # km/h
+    offset: float  # m from the axis of the track, to the left of its front positive
+    roll: float  # rad, to the left positive
+    travelled: float  # m on the ground since it left the rails
+    lying: bool
+
+
+@dataclass
+class Track:
+    """A `track` record: a plain track, or one way of a switch (several records under the number of the switch)."""
+    number: int
+    name: str
+    kind: int  # 0 a plain track, 1 a way of a switch
+    branch: int  # the switch position this way is taken in
+    points: list[tuple[float, float, float]]
+
+
+@dataclass
 class Blackbox:
     vehicles: dict[int, str] = field(default_factory=dict)  # names by number
+    tracks: list[Track] = field(default_factory=list)  # the map, in the order written
     couplings: list[Coupling] = field(default_factory=list)  # in the order written
+    derailments: list[Derailment] = field(default_factory=list)  # in the order written
     states: dict[int, list[VehicleState]] = field(default_factory=dict)  # of each vehicle by number, in time order
     end_time: float = 0.0  # of the last `vehicles` record
 
@@ -302,8 +385,22 @@ def find_blackbox(game_dir: Path, scenery: str, since: float) -> Path | None:
     return max(files, key=lambda p: p.stat().st_mtime, default=None)
 
 
+def _blackbox_text(content: bytes, start: int) -> tuple[str, int]:
+    """A text of a black box record at `start`, and where the field after it begins."""
+    # its length in 7 bit groups, low first, the high bit set on all but the last
+    size, shift = 0, 0
+    while True:
+        byte = content[start]
+        start += 1
+        size |= (byte & 0x7F) << shift
+        shift += 7
+        if byte < 0x80:
+            break
+    return content[start: start + size].decode("utf-8", errors="replace"), start + size
+
+
 def read_blackbox(path: Path | None) -> Blackbox | None:
-    """The vehicles and the coupling records of a black box; None when there is none or it can't be read."""
+    """The map, the vehicles and the coupling records of a black box; None when there is none or it can't be read."""
     try:
         data = path.read_bytes() if path else b""
     except FileNotFoundError:
@@ -321,16 +418,14 @@ def read_blackbox(path: Path | None) -> Blackbox | None:
             at += 5 + length
             if kind == BLACKBOX_VEHICLE:
                 number, = struct.unpack_from("<I", content)
-                # a text: its length in 7 bit groups, low first, the high bit set on all but the last
-                size, shift, start = 0, 0, 4
-                while True:
-                    byte = content[start]
-                    start += 1
-                    size |= (byte & 0x7F) << shift
-                    shift += 7
-                    if byte < 0x80:
-                        break
-                box.vehicles[number] = content[start: start + size].decode("utf-8", errors="replace")
+                box.vehicles[number], _ = _blackbox_text(content, 4)
+            elif kind == BLACKBOX_TRACK:
+                # the number, the name, the kind, the switch position of the way, the category, the points
+                number, = struct.unpack_from("<I", content)
+                name, start = _blackbox_text(content, 4)
+                track_kind, branch, _, count = struct.unpack_from("<BBBI", content, start)
+                points = [struct.unpack_from("<3f", content, start + 7 + 12 * i) for i in range(count)]
+                box.tracks.append(Track(number, name, track_kind, branch, points))
             elif kind == BLACKBOX_VEHICLES:
                 # the time, a keyframe mark, the count, then 25 bytes a vehicle: number, position, heading, speed, driver
                 when, _, count = struct.unpack_from("<dBI", content)
@@ -341,6 +436,11 @@ def read_blackbox(path: Path | None) -> Blackbox | None:
             elif kind == BLACKBOX_COUPLING:
                 # the position of the coupler follows
                 box.couplings.append(Coupling(*struct.unpack_from("<dIBIBBBI", content)))
+            elif kind == BLACKBOX_DERAILMENT:
+                when, number, phase, cause, x, y, z, heading, speed, offset, roll, travelled, lying = \
+                    struct.unpack_from("<dIBB3dfffffB", content)
+                box.derailments.append(Derailment(when, number, phase, cause, (x, y, z), heading, speed, offset, roll,
+                                                  travelled, bool(lying)))
     except (struct.error, IndexError):
         return None  # a record shorter than its kind is
     return box
@@ -442,11 +542,14 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
 # ---------------------------------------------------------------- checks
 
 
-def check_starts(rows, min_speed, within):
+def check_starts(rows, min_speed, within, after=None):
     for r in rows:
         if r[COL_TIME] > within:
             break
         if r[COL_VELOCITY] >= min_speed:
+            # a case can also say the train mustn't leave before something it waits for (a converter starting)
+            if after is not None and r[COL_TIME] < after:
+                return False, f"reached {min_speed} km/h at t={r[COL_TIME]:.1f}s, before {after}s"
             return True, f"reached {min_speed} km/h at t={r[COL_TIME]:.1f}s"
     top = max((r[COL_VELOCITY] for r in rows if r[COL_TIME] <= within), default=0.0)
     return False, f"top speed in the first {within}s was {top:.1f} km/h, wanted {min_speed}"
@@ -482,25 +585,42 @@ def check_brakes(rows, min_pressure, moving_speed=20):
     return False, f"brake cylinder pressure never reached {min_pressure} bar after moving off"
 
 
-def check_stops(rows, moving_speed, stop_speed, hold, min_distance=None, max_distance=None):
+def check_stops(rows, moving_speed, stop_speed, hold, min_distance=None, max_distance=None, max_time=None, nth=1):
+    """The nth stop of `hold` seconds after moving off at `moving_speed` (each stop after the first counts once the
+    train is moving at `moving_speed` again)."""
     start = _first_moving(rows, moving_speed)
     if start is None:
         return False, f"never reached {moving_speed} km/h"
     dist = _distances(rows)
     stopped_at = None
+    held = 0
+    moving = True
     for i in range(start, len(rows)):
         r = rows[i]
+        if not moving:
+            moving = r[COL_VELOCITY] >= moving_speed
+            continue
         if r[COL_VELOCITY] <= stop_speed:
             if stopped_at is None:
                 stopped_at = i
             if r[COL_TIME] - rows[stopped_at][COL_TIME] >= hold:
+                held += 1
+                if held < nth:
+                    stopped_at = None
+                    moving = False
+                    continue
                 where = dist[stopped_at]
-                detail = f"came to a stop at t={rows[stopped_at][COL_TIME]:.1f}s after {where:.0f} m"
+                when = rows[stopped_at][COL_TIME]
+                detail = f"came to a stop at t={when:.1f}s after {where:.0f} m"
                 if (min_distance is not None and where < min_distance) or (max_distance is not None and where > max_distance):
                     return False, f"{detail}, wanted between {min_distance} and {max_distance} m"
+                if max_time is not None and when > max_time:
+                    return False, f"{detail}, wanted by t={max_time}s"
                 return True, detail
         else:
             stopped_at = None
+    if held:
+        return False, f"stopped {held} times for {hold}s after moving off, wanted stop {nth}"
     return False, f"did not stay below {stop_speed} km/h for {hold}s after moving off"
 
 
@@ -567,6 +687,58 @@ def check_ends_moving(rows, min_speed):
     return ok, f"last row t={last[COL_TIME]:.1f}s, v={last[COL_VELOCITY]:.1f} km/h (wanted >= {min_speed})"
 
 
+def check_keeps_moving(rows, moving_speed, min_speed, until_distance, from_distance=0.0):
+    """(*vehicle speed*) Once at moving_speed, the speed stays at or above min_speed between the two distances (metres
+    travelled, from the vehicle speed), e.g. a train doesn't come to a stand on a gradient before a restriction or in
+    it. The vehicle speed, as wheels slipping at the start would count as moving off."""
+    if not rows or len(rows[0]) <= COL_VEHICLE_VELOCITY or rows[0][COL_VEHICLE_VELOCITY] is None:
+        return False, "the physicslog has no vehicle speed column, the build is too old"
+    speed = [abs(r[COL_VEHICLE_VELOCITY]) for r in rows]
+    start = next((i for i, v in enumerate(speed) if v >= moving_speed), None)
+    if start is None:
+        return False, f"never reached {moving_speed} km/h"
+    dist, d = [0.0], 0.0
+    for i in range(1, len(rows)):
+        d += (speed[i - 1] + speed[i]) / 2 / 3.6 * (rows[i][COL_TIME] - rows[i - 1][COL_TIME])
+        dist.append(d)
+    span = [i for i in range(start, len(rows)) if from_distance <= dist[i] <= until_distance]
+    if not span or dist[-1] < until_distance:
+        return False, f"travelled {dist[-1]:.0f} m only, wanted {until_distance} m"
+    low = min(span, key=lambda i: speed[i])
+    r = rows[low]
+    detail = (f"lowest speed {speed[low]:.1f} km/h at t={r[COL_TIME]:.1f}s after {dist[low]:.0f} m "
+              f"(brake cylinder {r[COL_BRAKE_PRESS]:.2f} bar), wanted >= {min_speed} between {from_distance:.0f} and {until_distance} m")
+    return speed[low] >= min_speed, detail
+
+
+def check_starts_again(rows, after, min_speed, within, max_rollback=None):
+    """Standing at the time `after` (e.g. at a signal that clears then), the vehicle reaches min_speed within `within`
+    seconds; with max_rollback (*vehicle speed*), it rolls back no more than that many metres meanwhile."""
+    first = next((i for i, r in enumerate(rows) if r[COL_TIME] >= after), None)
+    if first is None:
+        return False, f"the physicslog ends before t={after}s"
+    if rows[first][COL_VELOCITY] > 1.0:
+        return False, f"moving at {rows[first][COL_VELOCITY]:.1f} km/h at t={after}s, wanted standing"
+    moved = next((r[COL_TIME] for r in rows[first:] if r[COL_VELOCITY] > 1.0), None)
+    reached = next((r[COL_TIME] for r in rows[first:] if r[COL_VELOCITY] >= min_speed), None)
+    rollback, back = 0.0, 0.0
+    if max_rollback is not None:
+        if len(rows[0]) <= COL_VEHICLE_VELOCITY or rows[0][COL_VEHICLE_VELOCITY] is None:
+            return False, "the physicslog has no vehicle speed column, the build is too old"
+        end = reached if reached is not None else after + within
+        for a, b in zip(rows[first:], rows[first + 1:]):
+            if b[COL_TIME] > end:
+                break
+            back += (a[COL_VEHICLE_VELOCITY] + b[COL_VEHICLE_VELOCITY]) / 2 / 3.6 * (b[COL_TIME] - a[COL_TIME])
+            rollback = max(rollback, -back)
+    detail = (f"moved off (1 km/h) {moved - after:.1f}s after t={after}s" if moved is not None else f"didn't move off after t={after}s")
+    detail += f", {min_speed} km/h after {reached - after:.1f}s" if reached is not None else f", never reached {min_speed} km/h"
+    if max_rollback is not None:
+        detail += f", rolled back {rollback:.2f} m (wanted <= {max_rollback})"
+    ok = reached is not None and reached - after <= within and (max_rollback is None or rollback <= max_rollback)
+    return ok, detail + f" (wanted {min_speed} km/h within {within}s)"
+
+
 def check_slip_clears(rows, moving_speed, stop_speed, within):
     """Once the vehicle has stopped after moving off, its wheels stop slipping within `within` seconds
     (a vehicle left skidding on locked wheels keeps its brakes capped by the sliding adhesion)."""
@@ -585,7 +757,68 @@ def check_slip_clears(rows, moving_speed, stop_speed, within):
     return True, f"stopped at t={rows[stop][COL_TIME]:.1f}s, no slipping after t={deadline:.1f}s"
 
 
+def check_traction(rows, from_distance, to_distance, reaches=None, at_most=None, at_least=None):
+    """The traction force of the vehicle in kN (the physicslog has it in N, whatever its header says) while it
+    runs between two points of its way, in metres travelled as in `distance`: the highest there `reaches` a
+    force, e.g. the power taken again behind a section without voltage; it stays `at_most` a force, e.g. none
+    taken where there is no voltage; it stays `at_least` a force, e.g. no power lost under an insulator."""
+    dist = _distances(rows)
+    window = [(d, r) for d, r in zip(dist, rows) if from_distance <= d <= to_distance]
+    if not window:
+        return False, f"never got between {from_distance} and {to_distance} m (travelled {dist[-1] if dist else 0:.0f} m)"
+
+    def describe(item):
+        d, r = item
+        return f"{r[COL_TRACTION_FORCE] / 1000:.1f} kN at {d:.0f} m, t={r[COL_TIME]:.1f}s, v={r[COL_VELOCITY]:.1f} km/h"
+
+    top = max(window, key=lambda item: item[1][COL_TRACTION_FORCE])
+    low = min(window, key=lambda item: item[1][COL_TRACTION_FORCE])
+    detail = (f"between {from_distance} and {to_distance} m (t={window[0][1][COL_TIME]:.1f}-{window[-1][1][COL_TIME]:.1f}s) "
+              f"the traction force was {describe(low)} at its lowest, {describe(top)} at its highest")
+    if reaches is not None and top[1][COL_TRACTION_FORCE] / 1000 < reaches:
+        return False, f"{detail}; wanted it to reach {reaches} kN"
+    if at_most is not None and top[1][COL_TRACTION_FORCE] / 1000 > at_most:
+        return False, f"{detail}; wanted at most {at_most} kN"
+    if at_least is not None and low[1][COL_TRACTION_FORCE] / 1000 < at_least:
+        return False, f"{detail}; wanted at least {at_least} kN"
+    return True, detail
+
+
+def check_master_controller(rows, from_distance, to_distance, at_most):
+    """The master controller of the vehicle stays at or below a position while it runs between two points of its
+    way (metres travelled, as in `distance`), e.g. at 0 where the scenery tells the driver to coast."""
+    dist = _distances(rows)
+    window = [(d, r) for d, r in zip(dist, rows) if from_distance <= d <= to_distance]
+    if not window:
+        return False, f"never got between {from_distance} and {to_distance} m (travelled {dist[-1] if dist else 0:.0f} m)"
+    d, top = max(window, key=lambda item: item[1][COL_MASTER_CONTROLLER])
+    detail = (f"between {from_distance} and {to_distance} m (t={window[0][1][COL_TIME]:.1f}-{window[-1][1][COL_TIME]:.1f}s) "
+              f"the master controller was at {top[COL_MASTER_CONTROLLER]:.0f} at most, at {d:.0f} m, t={top[COL_TIME]:.1f}s")
+    if top[COL_MASTER_CONTROLLER] > at_most:
+        return False, f"{detail}; wanted at most {at_most}"
+    return True, detail
+
+
+def check_traction_power(rows, max_kw, min_peak_kw=None):
+    """The power at the wheels, the traction force times the vehicle speed, stays at or below max_kw
+    and, given min_peak_kw, reaches it, e.g. a dual-mode vehicle on its genset (eu07/maszyna#536)."""
+    if not rows or len(rows[0]) <= COL_VEHICLE_VELOCITY or rows[0][COL_VEHICLE_VELOCITY] is None:
+        return False, "the physicslog has no vehicle speed column"
+    power = [abs(r[COL_TRACTION_FORCE]) * abs(r[COL_VEHICLE_VELOCITY]) / 3.6 / 1000 for r in rows]
+    peak = max(range(len(rows)), key=power.__getitem__)
+    r = rows[peak]
+    detail = (f"peak {power[peak]:.0f} kW at t={r[COL_TIME]:.1f}s, v={r[COL_VEHICLE_VELOCITY]:.1f} km/h, "
+              f"Ft={r[COL_TRACTION_FORCE] / 1000:.1f} kN")
+    if power[peak] > max_kw:
+        return False, f"{detail}, above {max_kw} kW"
+    if min_peak_kw is not None and power[peak] < min_peak_kw:
+        return False, f"{detail}, below {min_peak_kw} kW"
+    return True, detail
+
+
 CHECKS = {
+    "master_controller": check_master_controller,
+    "traction": check_traction,
     "slips": check_slips,
     "slip_clears": check_slip_clears,
     "holds_still": check_holds_still,
@@ -596,6 +829,9 @@ CHECKS = {
     "stays_stopped": check_stays_stopped,
     "distance": check_distance,
     "ends_moving": check_ends_moving,
+    "traction_power": check_traction_power,
+    "keeps_moving": check_keeps_moving,
+    "starts_again": check_starts_again,
 }
 
 
@@ -616,9 +852,35 @@ def check_log_lacks(log, pattern):
 
 
 # checks on the text of the run's log.txt rather than on the physicslog rows
+OVERLAP_LINE = re.compile(r"derailment: the bodies overlap by up to ([\d.]+) m(?: \((.*?)\))? over the last second, "
+                          r"([\d.]+) m now(, all at rest)?")
+
+
+def check_no_overlap(log, max_transient, max_at_rest):
+    """physics.derailment new: the bodies of the vehicles off the track (and of those near them) don't go into each
+    other: the log has the most they overlapped by every second; at most `max_transient` m at any time, and at most
+    `max_at_rest` m once all of them came to rest."""
+    lines = [m for m in (OVERLAP_LINE.search(line) for line in log.splitlines()) if m]
+    if not lines:
+        return False, "no line of the overlap of the bodies in the log"
+    worst = max(lines, key=lambda m: float(m.group(1)))
+    rest = next((m for m in reversed(lines) if m.group(4)), None)
+    detail = f"most {float(worst.group(1)):.2f} m" + (f" ({worst.group(2)})" if worst.group(2) else "")
+    if rest is None:
+        return False, detail + ", the vehicles never all came to rest"
+    detail += f", {float(rest.group(3)):.2f} m at rest"
+    failed = []
+    if float(worst.group(1)) > max_transient:
+        failed.append(f"over {max_transient} m on the way")
+    if float(rest.group(3)) > max_at_rest:
+        failed.append(f"over {max_at_rest} m at rest")
+    return not failed, detail + ("" if not failed else ": " + "; ".join(failed))
+
+
 LOG_CHECKS = {
     "log_contains": check_log_contains,
     "log_lacks": check_log_lacks,
+    "no_overlap": check_no_overlap,
 }
 
 
@@ -705,9 +967,11 @@ def check_driver_changes(box, vehicle, to, after=0.0, before=None):
     return True, f"{vehicle} has driver {to} from t={change.time:.1f}s to the end (t={box.end_time:.1f}s)"
 
 
-def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_creep=1.0, hold=60.0):
+def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_creep=1.0, hold=60.0,
+                           min_deceleration=None, max_deceleration=None):
     """The vehicle loses its driver at `min_speed` or faster, stands `within` seconds later and stays where it
-    stopped, to the end of the recording or until it gets a driver again."""
+    stopped, to the end of the recording or until it gets a driver again. With the decelerations, the mean one of
+    that stop (from the speed and the way to the stop, m/s²) has to be within them: how well the train brakes."""
     states, why = _vehicle_states(box, vehicle)
     if states is None:
         return False, why
@@ -734,8 +998,15 @@ def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_
     if fastest > stop_speed or creep > max_creep:
         return False, f"{vehicle} stood at t={stop.time:.1f}s, then moved {creep:.1f} m at up to {fastest:.1f} km/h with no driver"
     way = sum(math.dist(a.position, b.position) for a, b in zip(after, after[1:]) if b.time <= stop.time)
-    return True, (f"{vehicle} lost its driver at t={left.time:.1f}s at {abs(left.speed):.1f} km/h, stood {stop.time - left.time:.0f}s "
-                  f"and {way:.0f} m later, moved {creep:.2f} m in the {until - stop.time:.0f}s {alone}")
+    stopped = (f"{vehicle} lost its driver at t={left.time:.1f}s at {abs(left.speed):.1f} km/h, stood {stop.time - left.time:.0f}s "
+               f"and {way:.0f} m later")
+    # v² / 2s: the black box lists a vehicle once a second, so the way is closer to the truth than the time
+    deceleration = (abs(left.speed) / 3.6) ** 2 / (2 * way) if way > 0 else math.inf
+    if ((min_deceleration is not None and deceleration < min_deceleration)
+            or (max_deceleration is not None and deceleration > max_deceleration)):
+        bounds = f"{min_deceleration if min_deceleration is not None else 0:g}..{max_deceleration if max_deceleration is not None else 'any'}"
+        return False, f"{stopped}: a mean deceleration of {deceleration:.2f} m/s², outside {bounds}"
+    return True, f"{stopped} ({deceleration:.2f} m/s²), moved {creep:.2f} m in the {until - stop.time:.0f}s {alone}"
 
 
 def check_moves(box, vehicle, min_speed, direction="front"):
@@ -751,13 +1022,244 @@ def check_moves(box, vehicle, min_speed, direction="front"):
     return True, f"{vehicle} runs {direction} end leading: {min_speed} km/h at t={first.time:.1f}s, up to {sign * fastest.speed:.1f} km/h"
 
 
+def check_leaves_track(box, vehicle, cause=None, min_offset=None, max_offset=None, min_distance=None, max_distance=None,
+                       lying=None):
+    """The vehicle leaves the track (physics.derailment new) and comes to rest off it: what derailed it, how far from
+    the axis of the track (either side) and how far it went on the ground, and whether it ends on its side."""
+    numbers = {name.lower(): number for number, name in box.vehicles.items()}
+    number = numbers.get(vehicle.lower())
+    if number is None:
+        return False, f"the black box has no vehicle {vehicle}"
+    records = [d for d in box.derailments if d.vehicle == number]
+    left = next((d for d in records if d.phase == 0), None)
+    if left is None:
+        return False, f"{vehicle} never left the track ({len(box.derailments)} derailment record(s) of others)"
+    rest = next((d for d in records if d.phase == 1 and d.time >= left.time), None)
+    detail = (f"{vehicle} left the track at t={left.time:.1f}s at {abs(left.speed):.0f} km/h "
+              f"({DERAILMENT_CAUSES.get(left.cause, left.cause)})")
+    if rest is None:
+        return False, detail + ", and never came to rest"
+    detail += (f", came to rest at t={rest.time:.1f}s {rest.travelled:.1f} m on, {rest.offset:+.1f} m from the axis of the "
+               f"track, roll {math.degrees(rest.roll):+.0f} deg{', on its side' if rest.lying else ''}")
+    failed = []
+    if cause is not None and DERAILMENT_CAUSES.get(left.cause) != cause:
+        failed.append(f"derailed by {DERAILMENT_CAUSES.get(left.cause, left.cause)}, wanted {cause}")
+    if min_offset is not None and abs(rest.offset) < min_offset:
+        failed.append(f"offset under {min_offset} m")
+    if max_offset is not None and abs(rest.offset) > max_offset:
+        failed.append(f"offset over {max_offset} m")
+    if min_distance is not None and rest.travelled < min_distance:
+        failed.append(f"went under {min_distance} m")
+    if max_distance is not None and rest.travelled > max_distance:
+        failed.append(f"went over {max_distance} m")
+    if lying is not None and rest.lying != lying:
+        failed.append("lying on its side" if rest.lying else "upright")
+    return not failed, detail + ("" if not failed else ": " + "; ".join(failed))
+
+
+def check_consist_folds(box, vehicles, min_bend, min_folds=1, alternate=False, both_sides=False):
+    """The vehicles of a train (names, front to back, comma separated) left the track (physics.derailment new) and came
+    to rest folded up: at least `min_folds` of the bends between neighbours at rest (the angle between their headings,
+    either way along) are `min_bend` degrees or more; with `alternate` the bends of neighbouring joints turn opposite
+    ways, a zigzag; with `both_sides` some of them rest on one side of the track and some on the other."""
+    numbers = {name.lower(): number for number, name in box.vehicles.items()}
+    names = [name.strip() for name in vehicles.split(",") if name.strip()]
+    rests = []
+    for name in names:
+        number = numbers.get(name.lower())
+        rests.append(next((d for d in box.derailments if number is not None and d.vehicle == number and d.phase == 1), None))
+    if all(rest is None for rest in rests):
+        return False, f"none of {', '.join(names)} came to rest off the track"
+    bends = []
+    for first, second in zip(rests, rests[1:]):
+        if first is None or second is None:
+            bends.append(None)
+            continue
+        # either way along: a vehicle turned about in the train has its heading the other way
+        bends.append(math.degrees(math.remainder(math.remainder(second.heading - first.heading, 2 * math.pi), math.pi)))
+    folds = [bend for bend in bends if bend is not None and abs(bend) >= min_bend]
+    sides = {1 if rest.offset > 0 else -1 for rest in rests if rest is not None and abs(rest.offset) > 0.5}
+    detail = "at rest: " + "; ".join(
+        f"{name} " + ("on the track" if rest is None else
+                      f"{rest.travelled:.0f} m on, {rest.offset:+.1f} m, heading {math.degrees(rest.heading):+.0f} deg")
+        for name, rest in zip(names, rests))
+    detail += "; bends " + ", ".join("-" if bend is None else f"{bend:+.0f}" for bend in bends) + " deg"
+    failed = []
+    if len(folds) < min_folds:
+        failed.append(f"{len(folds)} bend(s) of {min_bend} deg or more, wanted {min_folds}")
+    if alternate:
+        pairs = [(a, b) for a, b in zip(bends, bends[1:]) if a is not None and b is not None
+                 and abs(a) >= min_bend and abs(b) >= min_bend]
+        if not pairs or any(a * b > 0 for a, b in pairs):
+            failed.append("the bends don't alternate")
+    if both_sides and len(sides) < 2:
+        failed.append("all on one side of the track")
+    return not failed, detail + ("" if not failed else ": " + "; ".join(failed))
+
+
+def _along_track(track, x, z):
+    """Where the point (x, z) lies by the track: its level distance [m] from the line of the track, and how far along
+    the track [m] from its first point that nearest point of the line is."""
+    best, at, run_length = math.inf, 0.0, 0.0
+    if len(track.points) == 1:
+        return math.hypot(x - track.points[0][0], z - track.points[0][2]), 0.0
+    for (ax, _, az), (bx, _, bz) in zip(track.points, track.points[1:]):
+        dx, dz = bx - ax, bz - az
+        length = dx * dx + dz * dz
+        share = 0.0 if length == 0.0 else max(0.0, min(1.0, ((x - ax) * dx + (z - az) * dz) / length))
+        offset = math.hypot(x - (ax + share * dx), z - (az + share * dz))
+        if offset < best:
+            best, at = offset, run_length + share * math.sqrt(length)
+        run_length += math.sqrt(length)
+    return best, at
+
+
+def _track_length(track):
+    return sum(math.hypot(b[0] - a[0], b[2] - a[2]) for a, b in zip(track.points, track.points[1:]))
+
+
+def _track_label(track):
+    return f"{track.name or '#' + str(track.number)}" + (f" (way {track.branch})" if track.kind == 1 else "")
+
+
+class _TrackMap:
+    """The tracks of a black box as a network: the ends of the tracks (and of the ways of the switches) that meet are
+    one node, each track an edge of its length between its two ends."""
+
+    JOINT = 0.3  # ends closer than this [m], level, meet
+
+    def __init__(self, tracks):
+        self.tracks = tracks
+        self.lengths = [_track_length(t) for t in tracks]
+        nodes = []  # (x, z) of each node
+        self.ends = []  # the nodes of the first and the last point of each track
+        for track in tracks:
+            pair = []
+            for x, _, z in (track.points[0], track.points[-1]):
+                node = next((i for i, (nx, nz) in enumerate(nodes) if math.hypot(nx - x, nz - z) < self.JOINT), None)
+                if node is None:
+                    nodes.append((x, z))
+                    node = len(nodes) - 1
+                pair.append(node)
+            self.ends.append(tuple(pair))
+        self.edges = {}  # node: [(other node, length)]
+        for (a, b), length in zip(self.ends, self.lengths):
+            self.edges.setdefault(a, []).append((b, length))
+            self.edges.setdefault(b, []).append((a, length))
+
+    def places(self, position, max_offset):
+        """The tracks the position lies on: within max_offset [m] of their line, (track index, offset, along)."""
+        x, _, z = position
+        found = [(i, *_along_track(t, x, z)) for i, t in enumerate(self.tracks)]
+        near = [f for f in found if f[1] <= max_offset]
+        return near or [min(found, key=lambda f: f[1])]
+
+    def distance(self, one, other, limit):
+        """The shortest way [m] along the tracks between two places (track index, offset, along), up to `limit`
+        (beyond it, infinity)."""
+        (i, _, s), (j, _, t) = one, other
+        if i == j:
+            return abs(s - t)
+        start = {self.ends[i][0]: s, self.ends[i][1]: self.lengths[i] - s}
+        goal = {self.ends[j][0]: t, self.ends[j][1]: self.lengths[j] - t}
+        reached = dict(start)
+        queue = [(cost, node) for node, cost in start.items()]
+        heapq.heapify(queue)
+        best = math.inf
+        while queue:
+            cost, node = heapq.heappop(queue)
+            if cost > reached.get(node, math.inf) or cost >= min(best, limit):
+                continue
+            if node in goal:
+                best = min(best, cost + goal[node])
+            for nxt, length in self.edges.get(node, []):
+                if cost + length < reached.get(nxt, math.inf):
+                    reached[nxt] = cost + length
+                    heapq.heappush(queue, (cost + length, nxt))
+        return best if best <= limit else math.inf
+
+
+def _coupled_pairs(box, chosen, upto):
+    """The pairs of vehicles (by number) among `chosen` whose couplers hold each other at the time `upto`."""
+    held = {}
+    for c in box.couplings:
+        if c.time > upto:
+            break
+        held[(c.vehicle, c.side)] = (c.other, c.flags)
+    return {tuple(sorted((vehicle, other))) for (vehicle, _), (other, flags) in held.items()
+            if flags & COUPLING_COUPLER and vehicle in chosen and other in chosen}
+
+
+def check_on_track(box, vehicles, max_offset=0.75, max_detour=5.0):
+    """Every vehicle whose name starts with `vehicles` stays on the line of a track in every state the black box has of
+    it, and the vehicles coupled to each other stay on one way: the way along the tracks from one to the other is no
+    more than `max_detour` [m] longer than the straight line between them. A vehicle thrown sideways has its middle off
+    any track; one with its bogies on two tracks that part too, once they are apart; and a train whose vehicles went
+    two ways at a switch runs on with two coupled vehicles on two tracks, side by side, with the way between them back
+    through the switch."""
+    if not box.tracks:
+        return False, "the black box has no map of the tracks"
+    chosen = {number: name for number, name in box.vehicles.items() if name.lower().startswith(vehicles.lower())}
+    if not chosen:
+        return False, f"the black box has no vehicle named {vehicles}..."
+    network = _TrackMap(box.tracks)
+    # the states of the chosen vehicles by time: a vehicle is listed when it moved, or every 60 s
+    times = sorted({s.time for number in chosen for s in box.states.get(number, [])})
+    if not times:
+        return False, f"the black box has no state of {', '.join(chosen.values())}"
+    latest, index, places = {}, {number: 0 for number in chosen}, {}
+    worst_offset, worst_detour, failures = None, None, []
+    for when in times:
+        for number in chosen:
+            states = box.states.get(number, [])
+            while index[number] < len(states) and states[index[number]].time <= when:
+                latest[number] = states[index[number]]
+                index[number] += 1
+        for number, state in latest.items():
+            if (number, state.time) in places:
+                continue
+            places[(number, state.time)] = network.places(state.position, max_offset)
+            nearest = min(places[(number, state.time)], key=lambda p: p[1])
+            if worst_offset is None or nearest[1] > worst_offset[0]:
+                worst_offset = (nearest[1], chosen[number], state, box.tracks[nearest[0]])
+        for one, other in _coupled_pairs(box, chosen, when):
+            if one not in latest or other not in latest:
+                continue
+            straight = math.dist(latest[one].position, latest[other].position)
+            at_one, at_other = places[(one, latest[one].time)], places[(other, latest[other].time)]
+            way = min(network.distance(a, b, straight + 1000.0) for a in at_one for b in at_other)
+            detour = way - straight
+            if worst_detour is None or detour > worst_detour[0]:
+                worst_detour = (detour, chosen[one], chosen[other], when, at_one, at_other)
+    offset, name, state, track = worst_offset
+    where = f"{name} at t={state.time:.1f}s ({abs(state.speed):.1f} km/h) {offset:.2f} m off {_track_label(track)}"
+    if offset > max_offset:
+        failures.append(f"{where}, more than {max_offset} m")
+    detail = f"the farthest off a track {where}"
+    if worst_detour is not None:
+        detour, one, other, when, at_one, at_other = worst_detour
+        tracks = (f"{_track_label(box.tracks[min(at_one, key=lambda p: p[1])[0]])} and "
+                  f"{_track_label(box.tracks[min(at_other, key=lambda p: p[1])[0]])}")
+        length = "no way along the tracks" if math.isinf(detour) else f"the way along the tracks {detour:.1f} m longer than the straight line"
+        said = f"{one} and {other}, coupled, at t={when:.1f}s on {tracks}: {length}"
+        if detour > max_detour:
+            failures.append(f"{said}, more than {max_detour} m")
+        detail += f"; of the coupled ones {said}"
+    if failures:
+        return False, "; ".join(failures)
+    return True, f"{len(chosen)} vehicle(s), {detail}"
+
+
 # checks on the black box of the run rather than on the physicslog rows
 BLACKBOX_CHECKS = {
+    "leaves_track": check_leaves_track,
+    "consist_folds": check_consist_folds,
     "couples": check_couples,
     "parts": check_parts,
     "driver_changes": check_driver_changes,
     "stops_driverless": check_stops_driverless,
     "moves": check_moves,
+    "on_track": check_on_track,
 }
 
 
@@ -830,15 +1332,6 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
     if not with_physicslog and (watch or needs_physicslog):
         sys.exit(f"{name}: with physicslog off a case can have log checks only ({', '.join(LOG_CHECKS)}), "
                  "and can't run with --watch")
-    scenery = build_scenery(case, game_dir, name, vehicle)
-    ini = out / "autotest.ini"
-    # the case's own settings go last, over the common ones; then the seed of this run of the suite, if any
-    settings = [*case.get("ini", []), *([f"randomseed {seed}"] if seed else [])]
-    ini.write_text(TEST_INI.format(timespeed=timespeed, physicslog="yes" if with_physicslog else "no")
-                   + "".join(line + "\n" for line in settings), encoding="ascii")
-    physicslog = game_dir / "physicslog" / f"{vehicle}.dat"
-    started = time.time() - 1
-
     duration = float(case["duration"]) if "duration" in case else None
     # a case that only records `duration` seconds ends on the test timeout; one that says
     # how the test ends (a pass event, a signal passed at danger...) expects that result
@@ -847,10 +1340,24 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
         sys.exit(f"{name}: expect must be one of {', '.join(RESULTS)}")
     if watch and duration is None:
         sys.exit(f"{name}: --watch needs a case with duration")
-    result = run_simulator(exe, game_dir, scenery, ini, physicslog,
-                           duration, float(case.get("timeout", 600)), watch, say,
-                           expect_rows=with_physicslog and not own_vehicle)
-    timetable_path(game_dir, name).unlink(missing_ok=True)
+
+    ini = out / "autotest.ini"
+    # the case's own settings go last, over the common ones; then the seed of this run of the suite, if any
+    settings = [*case.get("ini", []), *([f"randomseed {seed}"] if seed else [])]
+    ini.write_text(TEST_INI.format(timespeed=timespeed, physicslog="yes" if with_physicslog else "no")
+                   + "".join(line + "\n" for line in settings), encoding="ascii")
+    physicslog = game_dir / "physicslog" / f"{vehicle}.dat"
+    started = time.time() - 1
+    # from here on the case has files of its own in the game dir (the vehicle variants, the timetable)
+    try:
+        scenery = build_scenery(case, game_dir, name, vehicle)
+        result = run_simulator(exe, game_dir, scenery, ini, physicslog,
+                               duration, float(case.get("timeout", 600)), watch, say,
+                               expect_rows=with_physicslog and not own_vehicle)
+    finally:
+        # the case's own files go from the game dir also when the run is broken off (ctrl+c)
+        timetable_path(game_dir, name).unlink(missing_ok=True)
+        remove_vehicle_variants(case, game_dir, name)
     # a case that asked for no geometry cache (file.binary.terrain no) leaves none of an earlier run behind
     if any(line.split()[:2] == ["file.binary.terrain", "no"] for line in case.get("ini", [])):
         scenery_cache(game_dir, name).unlink(missing_ok=True)

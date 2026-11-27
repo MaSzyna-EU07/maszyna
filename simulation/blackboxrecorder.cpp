@@ -247,10 +247,9 @@ void blackbox_recorder::update(double const Deltatime) {
 
 	std::scoped_lock lock{m_mutex};
 	m_time += Deltatime;
-	// the tape of the driver the user is with, unless it writes its own: with "physicslog yes" each driver but one of a
-	// road vehicle does. the tapes are files of their own: they go on after the recording ends in the editor, and with
-	// a recording which couldn't be made
-	if (m_time >= m_tapedue) {
+	// with the physics logs on, each driver writes its own all the time. the tapes are files of their own: they go on
+	// after the recording ends in the editor, and with a recording which couldn't be made
+	if (false == WriteLogFlag && m_time >= m_tapedue) {
 		keep_tape_line();
 		m_tapedue = std::max(m_tapedue + tapeinterval, m_time);
 	}
@@ -510,13 +509,10 @@ void blackbox_recorder::keep_tape_line() {
 	auto const *driver{vehicle->Mechanik != nullptr && vehicle->Mechanik->primary() ? vehicle->Mechanik : vehicle->ctOwner};
 	if (driver == nullptr)
 		return;
-	auto const &name{driver->physicslog_name()};
-	// its log, the driver's own or written here, before the logs of the other drivers: the closing drops those it has
-	// no time for, on a hard disk with hundreds of them
-	PhysicsLogs.put_first(name);
 	// a driver writing its own, of a train with "physicslog.trains yes", isn't written twice
 	if (driver->writes_physicslog())
 		return;
+	auto const &name{driver->physicslog_name()};
 	if (m_tapes.insert(name).second) {
 		PhysicsLogs.begin(name, TController::physicslog_header());
 		WriteLog(std::format("Black box: the physics log \"{}\" begun", PhysicsLogs.shown(name)));
@@ -548,6 +544,7 @@ void blackbox_recorder::look_around(bool const Keyframe) {
 	look_at_vehicles(Keyframe);
 	auto const vehicles{clock::now()};
 	look_at_couplers();
+	look_at_derailments();
 	auto const couplers{clock::now()};
 	look_at_switches();
 	auto const switches{clock::now()};
@@ -558,6 +555,59 @@ void blackbox_recorder::look_around(bool const Keyframe) {
 		WriteLog(std::format("Black box: a look around at {:.1f} s took {:.1f} ms: vehicles {:.1f} ({}{}), couplers {:.1f}, switches {:.1f}, signals {:.1f}", m_time,
 		    milliseconds{signals - start}.count(), milliseconds{vehicles - start}.count(), m_vehicles.size(), Keyframe ? ", keyframe" : "",
 		    milliseconds{couplers - vehicles}.count(), milliseconds{switches - couplers}.count(), milliseconds{signals - switches}.count()));
+	}
+}
+
+namespace {
+
+std::uint8_t cause_of(derail_motion::cause const Cause) {
+	switch (Cause) {
+	case derail_motion::cause::overturned:
+		return blackbox::derailment_causes::overturned;
+	case derail_motion::cause::end_of_track:
+		return blackbox::derailment_causes::end_of_track;
+	case derail_motion::cause::pulled_off:
+		return blackbox::derailment_causes::pulled_off;
+	case derail_motion::cause::collision:
+		return blackbox::derailment_causes::collision;
+	default:
+		return blackbox::derailment_causes::flange_climbed;
+	}
+}
+
+} // namespace
+
+void blackbox_recorder::look_at_derailments() {
+	for (auto *vehicle : simulation::Vehicles.sequence()) {
+		if (false == vehicle->bEnabled)
+			continue;
+		auto const &motion{vehicle->MoverParameters->OffTrack};
+		auto const id{vehicle_id(vehicle)};
+		auto &entry{m_vehicles[vehicle]};
+		if (false == motion.active()) {
+			entry.derailment = 0;
+			continue;
+		}
+		auto const phase{motion.at_rest() ? 2 : 1};
+		if (entry.derailment >= phase)
+			continue;
+		blackbox::derailment_state state;
+		state.time = m_time;
+		state.vehicle = id;
+		state.cause = cause_of(motion.reason());
+		state.position = vehicle->GetPosition();
+		state.heading = static_cast<float>(std::atan2(vehicle->VectorFront().x, vehicle->VectorFront().z));
+		state.speed_kmh = static_cast<float>(vehicle->MoverParameters->V * 3.6);
+		state.offset = static_cast<float>(vehicle->off_track_offset());
+		state.roll = static_cast<float>(motion.roll());
+		state.travelled = static_cast<float>(motion.travelled());
+		state.lying = motion.lying();
+		// seen first at rest, it left the track before
+		for (auto written = entry.derailment + 1; written <= phase; ++written) {
+			state.phase = (written == 1 ? blackbox::derailment_phases::left_track : blackbox::derailment_phases::at_rest);
+			m_writer->derailment(state);
+		}
+		entry.derailment = phase;
 	}
 }
 
@@ -726,8 +776,9 @@ std::uint32_t blackbox_recorder::known_id(TDynamicObject const *Vehicle) {
 	return Vehicle != nullptr && Vehicle->bEnabled ? vehicle_id(Vehicle) : blackbox::no_vehicle;
 }
 
-std::uint32_t blackbox_recorder::signal_at(glm::dvec3 const &Location) const {
-	auto const found{std::ranges::find_if(m_signals, [&Location](signal_entry const &Signal) { return glm::distance(Signal.location, Location) < 0.01; })};
+std::uint32_t blackbox_recorder::signal_of(TMemCell const *Cell) const {
+	// by the memory cell, not by its position: two signals can have their cells at one point
+	auto const found{std::ranges::find(m_signals, Cell, &signal_entry::cell)};
 	if (found == m_signals.end())
 		return blackbox::no_signal;
 	return static_cast<std::uint32_t>(std::distance(m_signals.begin(), found));
@@ -756,7 +807,7 @@ void blackbox_recorder::signal_passed(TDynamicObject const *Vehicle, basic_event
 	if (m_writer == nullptr || Vehicle == nullptr)
 		return;
 	auto const location{Event.input_location()};
-	m_writer->signal_passed({m_time, vehicle_id(Vehicle), signal_at(location), text_of(Event.name()), location, static_cast<float>(Speed1), static_cast<float>(Speed2),
+	m_writer->signal_passed({m_time, vehicle_id(Vehicle), signal_of(Event.input_cell()), text_of(Event.name()), location, static_cast<float>(Speed1), static_cast<float>(Speed2),
 	    static_cast<float>(Trainspeed), static_cast<float>(Overrun), Flags});
 }
 

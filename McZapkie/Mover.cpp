@@ -14,12 +14,19 @@ http://mozilla.org/MPL/2.0/.
 #include "Oerlikon_ESt.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/Timer.h"
 #include "utilities/parser.h"
 #include "simulation/simulation.h"
+#include "vehicle/fieldshunting.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <format>
+#include <functional>
+#include <limits>
+#include <utility>
+#include <vector>
 //---------------------------------------------------------------------------
 
 // Ra: tu należy przenosić funcje z mover.pas, które nie są z niego wywoływane.
@@ -80,6 +87,15 @@ bool legacy_derailed_slides(TMoverParameters const &Vehicle)
 {
 	return Global.collisions == global_settings::collision_model::physical && TestFlag(Vehicle.CategoryFlag, 1) && TestFlag(Vehicle.DamageFlag, dtrain_out) &&
 	       Vehicle.Derailed == derailment::outcome::none;
+}
+
+// a derailed vehicle tears its brake hoses: the brake pipe vents and the rest of the train brakes in emergency
+void tear_brake_hoses(TMoverParameters &Vehicle)
+{
+	if (std::any_of(std::begin(Vehicle.Couplers), std::end(Vehicle.Couplers), [](auto const &Coupler) { return (Coupler.CouplingFlag & coupling::brakehose) == coupling::brakehose; }))
+	{
+		Vehicle.AlarmChainFlag = true;
+	}
 }
 
 } // namespace
@@ -940,7 +956,7 @@ void TMoverParameters::UpdatePantVolume(double dt)
 			// Ra 2013-12: Niebugocław mówi, że w EZT nie ma potrzeby odcinać kurkiem
 			PantPress = ScndPipePress;
 			// ograniczenie ciśnienia do MaxPress (tylko w pantografach!)
-			PantPress = std::clamp(ScndPipePress, 0.0, EnginePowerSource.CollectorParameters.MaxPress);
+			PantPress = safe_clamp(ScndPipePress, 0.0, EnginePowerSource.CollectorParameters.MaxPress);
 			PantVolume = (PantPress + 1.0) * 0.1; // objętość, na wypadek odcięcia kurkiem
 		}
 		else
@@ -952,7 +968,7 @@ void TMoverParameters::UpdatePantVolume(double dt)
 				              // Ra 2013-12: Niebugocław mówi, że w EZT nabija 1.5 raz wolniej niż jak było 0.005
 				              * (TrainType == dt_EZT ? 0.003 : 0.005) / std::max(1.0, PantPress) * (0.45 - (0.1 / PantVolume / 10 - 0.1)) / 0.45;
 			}
-			PantPress = std::clamp(10.0 * PantVolume - 1.0, 0.0, EnginePowerSource.CollectorParameters.MaxPress); // tu by się przydała objętość zbiornika
+			PantPress = safe_clamp(10.0 * PantVolume - 1.0, 0.0, EnginePowerSource.CollectorParameters.MaxPress); // tu by się przydała objętość zbiornika
 		}
 		if (!PantCompFlag && PantVolume > 0.1)
 			PantVolume -= dt * 0.0003 * std::max(1.0, PantPress * 0.5); // nieszczelności: 0.0003=0.3l/s
@@ -1006,7 +1022,8 @@ void TMoverParameters::PantPressureSwitchTrip()
 	if (TrainType != dt_EZT)
 	{
 		// pressure switch safety measure -- open the line breaker, unless there's alternate source of traction voltage
-		if (GetTrainsetHighVoltage() < EnginePowerSource.CollectorParameters.MinV)
+		// (the genset of a dual-mode vehicle, when the selector is on it, doesn't need the pantographs)
+		if (GetTrainsetHighVoltage() < EnginePowerSource.CollectorParameters.MinV && false == GensetSelected())
 		{
 			// TODO: check whether line breaker should be open EMU-wide
 			MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local);
@@ -1605,6 +1622,9 @@ void TMoverParameters::derail_in_collision(DerailReason const Reason, std::strin
 	}
 	// upright, it slides on the sleepers and keeps passing the forces on
 	Derailed = derailment::outcome::off_rails;
+	DerailCause = derail_motion::cause::collision;
+	DerailAcceleration = 0.0;
+	DerailSide = 0;
 	CollisionDerail = Reason;
 	EventFlag = true;
 	MainSwitch(false, range_t::local);
@@ -1615,10 +1635,7 @@ void TMoverParameters::derail_in_collision(DerailReason const Reason, std::strin
 		SlippingWheels = false;
 	}
 	// the brake hoses tear: the brake pipe vents and the rest of the train brakes in emergency
-	if (std::any_of(std::begin(Couplers), std::end(Couplers), [](auto const &Coupler) { return (Coupler.CouplingFlag & coupling::brakehose) == coupling::brakehose; }))
-	{
-		AlarmChainFlag = true;
-	}
+	tear_brake_hoses(*this);
 	derailment_monitor.reset();
 	pushed_off_monitor.reset();
 	ErrorLog(std::format("Bad driving: {} derailed in a collision, {}: {}", Name, Reason == COLLISION_OVERRIDE ? "overriding" : "pushed off the track", Why));
@@ -2082,13 +2099,14 @@ void TMoverParameters::derail(derailment::verdict const &Verdict, derailment::ve
 		return;
 	}
 	Derailed = Verdict.result;
+	DerailCause = Verdict.result == derailment::outcome::overturned ? derail_motion::cause::overturned : derail_motion::cause::off_rails;
+	// out of the curve; a buckle bending the line against the curve more than the curve does throws it into the curve
+	DerailAcceleration = std::abs(Track.radius) > 1e-3 && derailment::line_curvature(Track) < 0.0 ? -Verdict.acceleration : Verdict.acceleration;
+	DerailSide = 0;
 	EventFlag = true;
 	MainSwitch(false, range_t::local);
 	// the brake hoses tear: the brake pipe vents and the rest of the train brakes in emergency
-	if (std::any_of(std::begin(Couplers), std::end(Couplers), [](auto const &Coupler) { return (Coupler.CouplingFlag & coupling::brakehose) == coupling::brakehose; }))
-	{
-		AlarmChainFlag = true;
-	}
+	tear_brake_hoses(*this);
 	ErrorLog("Bad driving: " + Name + " " + derailment::report(Verdict, Vehicle, Track, V, TrackName != nullptr ? *TrackName : std::string{}));
 	if (Track.buckle_curvature != 0.0)
 	{
@@ -2101,6 +2119,11 @@ void TMoverParameters::rerail()
 {
 	ClearFlag(DamageFlag, dtrain_out);
 	Derailed = derailment::outcome::none;
+	// and back on the track; what derailed it before has no say in how it leaves the track the next time
+	OffTrack.reset();
+	DerailCause = derail_motion::cause::off_rails;
+	DerailAcceleration = 0.0;
+	DerailSide = 0;
 	derailment_monitor.reset();
 	derailment_distance = 0.0;
 	derailment_reported.reset();
@@ -2114,6 +2137,10 @@ void TMoverParameters::rerail()
 		OffsetTrackH = 0.0;
 		OffsetTrackV = 0.0;
 	}
+	// a derailed vehicle which stopped sleeps (Global.physics_sleepheld) with the friction of the derailment in FStand and
+	// where the derailment put it, until something wakes it: the physics on, for the friction of the rails and its place on
+	// them. it is put back by a command (resetconsist, SetDamage) or by the road spawner, which sets it going anyway
+	switch_physics(true, wake_cause::command);
 }
 
 void TMoverParameters::repair_damage()
@@ -2154,6 +2181,16 @@ void TMoverParameters::Derail(DerailReason const Reason)
 			nrot = 0.0;
 			SlippingWheels = false;
 		}
+		// physics.derailment new: off the end of the track the vehicle runs on straight on its wheels, sliding on the
+		// ground as the vehicles the criteria derail do, and its brake hoses tear
+		if (Reason == END_OF_TRACK && Global.derailment == global_settings::derailment_model::physical && TestFlag(CategoryFlag, 1))
+		{
+			Derailed = derailment::outcome::off_rails;
+			DerailCause = derail_motion::cause::end_of_track;
+			DerailAcceleration = 0.0;
+			DerailSide = 0;
+			tear_brake_hoses(*this);
+		}
 
 		// Print a message in the log.
 		if (Reason == END_OF_TRACK)
@@ -2169,6 +2206,30 @@ void TMoverParameters::Derail(DerailReason const Reason)
 		else if (Reason == TRAILED_SWITCH)
 			ErrorLog("Bad driving: " + Name + " derailed trailing through a switch with a movable nose set the other way");
 	}
+}
+
+bool TMoverParameters::leaves_track() const
+{
+	return Global.derailment == global_settings::derailment_model::physical && TestFlag(CategoryFlag, 1) && TestFlag(DamageFlag, dtrain_out) && Derailed != derailment::outcome::none &&
+	       false == OffTrack.active();
+}
+
+void TMoverParameters::pull_off(int const Side, double const Acceleration, std::string const &Why)
+{
+	if (Global.derailment != global_settings::derailment_model::physical || false == SetFlag(DamageFlag, dtrain_out))
+	{
+		return;
+	}
+	// upright, its flange climbs the rail the coupling pulls it over
+	Derailed = derailment::outcome::off_rails;
+	DerailCause = derail_motion::cause::pulled_off;
+	DerailAcceleration = Acceleration;
+	DerailSide = Side;
+	EventFlag = true;
+	MainSwitch(false, range_t::local);
+	tear_brake_hoses(*this);
+	derailment_monitor.reset();
+	ErrorLog(std::format("Bad driving: {} pulled off the track by the vehicle coupled to it, {}", Name, Why));
 }
 
 void TMoverParameters::change_train_velocity(double const Change)
@@ -2214,6 +2275,11 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		//         ElectricTraction.TractionVoltage /*-
 		//         abs(ElectricTraction.TractionResistivity * Itot *
 		//             0)*/; // zasadniczo ED oporowe nie zmienia napięcia w sieci
+	}
+	else if (OffTrack.active())
+	{
+		// off the track the grade is that of the ground under it, along its heading
+		RunningShape.dHtrack = Shape.dHtrack;
 	}
 
 	if (CategoryFlag == 4)
@@ -2472,6 +2538,7 @@ void TMoverParameters::compute_movement_(double const Deltatime)
 	LowVoltagePowerCheck(Deltatime);
 	// power sources
 	PantographsCheck(Deltatime);
+	GensetCheck(Deltatime);
 	// main circuit
 	MainsCheck(Deltatime);
 	// traction motors
@@ -2557,6 +2624,11 @@ void TMoverParameters::MainsCheck(double const Deltatime)
 	{
 		break;
 	}
+	}
+	if (GensetSelected())
+	{
+		// the traction selector of a dual-mode vehicle on the genset isolates the pantographs
+		localvoltage = Genset.voltage;
 	}
 	// a line breaker closed ahead of the pantographs gets ready on the low voltage circuits
 	auto const maincircuitpowersupply{std::abs(localvoltage) > 0.1 || GetTrainsetHighVoltage() > 0.1 || (PantographsRequireMains && (Power24vIsAvailable || Power110vIsAvailable))};
@@ -2675,7 +2747,8 @@ double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
 			case TPowerSource::Main:
 			{
 				// HACK: main circuit can be fed through couplers, so we explicitly check pantograph supply here
-				localvoltage = MainCircuitPowered() ? PantographVoltage : 0.0;
+				// (or the genset's, where the traction selector of a dual-mode vehicle is on it)
+				localvoltage = MainCircuitPowered() ? TractionSourceVoltage() : 0.0;
 				break;
 			}
 			default:
@@ -2684,10 +2757,10 @@ double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
 			}
 			}
 		}
-		// high voltage power sources
+		// high voltage power sources: the pantographs, or the genset of a dual-mode vehicle, by its traction selector
 		if (EnginePowerSource.SourceType == TPowerSource::CurrentCollector)
 		{
-			localvoltage = std::max(localvoltage, PantographVoltage);
+			localvoltage = std::max(localvoltage, TractionSourceVoltage());
 		}
 		break;
 	}
@@ -2994,7 +3067,7 @@ void TMoverParameters::HeatingCheck(double const /*Timestep*/)
 	}
 	case TPowerSource::Main:
 	{
-		voltage = MainCircuitPowered() ? std::max(GetTrainsetHighVoltage(), PantographVoltage) : 0.0;
+		voltage = MainCircuitPowered() ? TractionSupplyVoltage() : 0.0;
 		break;
 	}
 	default:
@@ -3183,6 +3256,63 @@ void TMoverParameters::PantographsCheck(double const /*Timestep*/)
 		pantograph.is_active = valve.is_active && PantsValve.is_active && pantographexists;
 
 		pant_id++;
+	}
+}
+
+// the genset of a dual-mode vehicle: started on request with the battery on, it cranks for start_time, then runs at
+// idle and up to full revolutions with the traction demand; stopped, it coasts down. regulated voltage from idle up
+void TMoverParameters::GensetCheck(double const Deltatime)
+{
+	if (false == Genset.fitted())
+	{
+		return;
+	}
+	auto &genset{Genset};
+	auto const wasactive{genset.is_active};
+	auto const lowvoltagepower{Power24vIsAvailable || Power110vIsAvailable};
+	auto const requested{lowvoltagepower && false == genset.is_disabled && (genset.start_type == start_t::automatic ? GensetSelected() : genset.is_enabled)};
+	if (false == requested)
+	{
+		genset.is_active = false;
+		genset.is_cranking = false;
+		genset.timer = 0.0;
+	}
+	else if (false == genset.is_active)
+	{
+		genset.is_cranking = true;
+		genset.timer += Deltatime;
+		if (genset.timer >= genset.start_time)
+		{
+			genset.is_cranking = false;
+			genset.is_active = true;
+		}
+	}
+	// revolutions: the start brings them up to idle in start_time; running they follow the traction demand, stopped
+	// they coast down to 0, both with the time constant spinup_time
+	if (genset.is_cranking)
+	{
+		genset.revolutions = std::max(genset.revolutions, genset.revolutions_idle * std::min(1.0, genset.timer / std::max(genset.start_time, 0.01)));
+	}
+	else if (genset.is_active && false == wasactive)
+	{
+		genset.revolutions = std::max(genset.revolutions, genset.revolutions_idle);
+	}
+	else
+	{
+		auto const demand{GensetSelected() && Mains ? std::clamp(eimv_pr, 0.0, 1.0) : 0.0};
+		auto const target{genset.is_active ? genset.revolutions_idle + (genset.revolutions_max - genset.revolutions_idle) * demand : 0.0};
+		genset.revolutions += (target - genset.revolutions) * std::min(1.0, Deltatime / genset.spinup_time);
+		if (genset.revolutions < 0.001)
+		{
+			genset.revolutions = 0.0;
+		}
+	}
+	// no excitation while cranking; running or coasting down, regulated from idle up, proportional below it
+	genset.voltage = genset.is_cranking ? 0.0 : genset.voltage_nominal * std::clamp(genset.revolutions / genset.revolutions_idle, 0.0, 1.0);
+
+	if (genset.is_active != wasactive)
+	{
+		WriteLog("Genset of " + Name + (genset.is_active ? ": running" : ": stopped"));
 	}
 }
 
@@ -3660,7 +3790,8 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 		{
 			// TBD, TODO: refactor this validation as part of relay check routine (currently in tractionforce()
 			// TBD, TODO: diesel electric engine utilize scndctrlactualpos like the other types?
-			if (EngineType == TEngineType::DieselElectric && (IsMainCtrlNoPowerPos() || AutoRelayFlag || ShuntMode || false == Mains))
+			if (EngineType == TEngineType::DieselElectric &&
+			    (IsMainCtrlNoPowerPos() || fieldshunting::diesel_electric(AutoRelayType, FieldShuntSwitch, AutoRelayFlag) != fieldshunting::control::manual || ShuntMode || false == Mains))
 			{
 				OK = false;
 			}
@@ -4139,6 +4270,7 @@ bool TMoverParameters::SpringBrakeActivate(bool State)
 		if (SpringBrake.Activate != State)
 		{
 			SpringBrake.Activate = State;
+			wake_for_brake();
 			return true;
 		}
 	}
@@ -4169,6 +4301,7 @@ bool TMoverParameters::SpringBrakeRelease()
 	if (SpringBrake.IsReady && SpringBrake.Cylinder->P() < SpringBrake.MinForcePressure)
 	{
 		SpringBrake.IsReady = false;
+		wake_for_brake();
 		return true;
 	}
 	else
@@ -4620,6 +4753,7 @@ void TMoverParameters::MainSwitch_(bool const State)
 		if (Mains != initialstate)
 		{
 			LastSwitchingTime = 0;
+			Timer::subsystem.switching.note(Timer::switching_counter::mains, this, &TypeName, &Name);
 		}
 	}
 }
@@ -4653,6 +4787,11 @@ bool TMoverParameters::MainSwitchCheck() const
 	{
 		break;
 	}
+	}
+	if (GensetSelected())
+	{
+		// on the genset of a dual-mode vehicle the line breaker closes only on a running one, whatever the pantographs give
+		powerisavailable = Genset.is_active && Genset.voltage >= TractionSupplyMinVoltage();
 	}
 
 	return powerisavailable && (ScndCtrlPos == 0 || EngineType == ElectricInductionMotor) && MainsInitTimeCountdown <= 0.0 &&
@@ -4719,7 +4858,7 @@ bool TMoverParameters::ChangeCompressorPreset(int const State, range_t const Not
 
 	auto const initialstate{CompressorListPos};
 
-	CompressorListPos = std::clamp(State, 0, CompressorListPosNo);
+	CompressorListPos = safe_clamp(State, 0, CompressorListPosNo);
 
 	if (Notify != range_t::local)
 	{
@@ -4753,11 +4892,88 @@ void TMoverParameters::HeatingSwitch_(bool const State)
 	HeatingAllow = State;
 }
 
+// the traction selector of a dual-mode vehicle: moves only with the line breaker open, and only where a genset is
+bool TMoverParameters::TractionModeSwitch(traction_mode const Mode, range_t const Notify)
+{
+	auto const initialstate{TractionMode};
+	// refused with the line breaker closed, and then not passed on either, so the train stays on one source
+	auto const accepted{false == Mains};
+
+	if (Genset.fitted() && accepted)
+	{
+		TractionMode = Mode;
+	}
+
+	if (Notify != range_t::local && accepted)
+	{
+		SendCtrlToNext("TractionMode", Mode == traction_mode::genset ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+	}
+
+	return TractionMode != initialstate;
+}
+
+// the start request of the genset of a dual-mode vehicle; one which starts on its own ignores it, but passes it on to
+// the cars behind, which may start theirs on request
+bool TMoverParameters::GensetSwitch(bool const State, range_t const Notify)
+{
+	auto const initialstate{Genset.is_enabled};
+
+	if (Genset.start_type != start_t::automatic)
+	{
+		Genset.is_enabled = State;
+	}
+
+	if (Notify != range_t::local)
+	{
+		SendCtrlToNext("GensetSwitch", State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+	}
+
+	return Genset.is_enabled != initialstate;
+}
+
+// the voltage of the vehicle's own source the traction selector picks: the catenary through the pantographs, or the
+// genset of a dual-mode vehicle
+double TMoverParameters::TractionSourceVoltage() const
+{
+	return GensetSelected() ? Genset.voltage : PantographVoltage;
+}
+
+// the voltage the traction circuit gets: from the vehicle's own source, or through the train's high voltage line
+double TMoverParameters::TractionSupplyVoltage() const
+{
+	return std::max(GetTrainsetHighVoltage(), TractionSourceVoltage());
+}
+
+// below it the undervoltage trip opens the line breaker
+double TMoverParameters::TractionSupplyMinVoltage() const
+{
+	return GensetSelected() ? 0.5 * Genset.voltage_nominal : EnginePowerSource.CollectorParameters.MinV;
+}
+
+// the power the traction may take [kW, at the wheels]: the genset's share at its present revolutions on the genset,
+// no limit otherwise
+double TMoverParameters::GensetTractionPowerLimit() const
+{
+	return GensetSelected() ? Genset.available_power() * Genset.traction_share : std::numeric_limits<double>::max();
+}
+
+// the current the vehicle draws through its pantographs [A], if they touch the wire: the traction's (none while
+// braking on the resistors) and the heating's. on the genset the genset feeds the traction circuit, so only a heating
+// fed straight from the pantographs is left
+double TMoverParameters::CatenaryCurrent() const
+{
+	if (GensetSelected())
+	{
+		return HeatingPowerSource.SourceType == TPowerSource::CurrentCollector ? TotalCurrent : 0.0;
+	}
+	return (DynamicBrakeFlag && ResistorsFlag ? 0 : std::abs(Itot) * IsVehicleEIMBrakingFactor()) + TotalCurrent;
+}
+
 // returns voltage of defined main engine power source
 double TMoverParameters::EnginePowerSourceVoltage() const
 {
 
-	return EnginePowerSource.SourceType == TPowerSource::CurrentCollector ? std::max(GetTrainsetHighVoltage(), PantographVoltage) :
+	return EnginePowerSource.SourceType == TPowerSource::CurrentCollector ? TractionSupplyVoltage() :
 	       EnginePowerSource.SourceType == TPowerSource::Accumulator      ? Power24vVoltage :
 	                                                                        0.0;
 }
@@ -4778,7 +4994,7 @@ bool TMoverParameters::MainCircuitPowered() const
 	}
 	// closed ahead of the pantographs the line breaker holds without the voltage, which the undervoltage trip isn't
 	// there to vouch for
-	return EnginePowerSourceVoltage() >= EnginePowerSource.CollectorParameters.MinV;
+	return EnginePowerSourceVoltage() >= TractionSupplyMinVoltage();
 }
 
 // *************************************************************************************************
@@ -4844,6 +5060,7 @@ bool TMoverParameters::IncLocalBrakeLevel(float const CtrlSpeed)
 	if (LocalBrakePosA < 1.0 /*and (BrakeCtrlPos<1)*/)
 	{
 		LocalBrakePosA = std::min(1.0, LocalBrakePosA + CtrlSpeed / LocalBrakePosNo);
+		wake_for_brake();
 		IBL = true;
 	}
 	else
@@ -4862,6 +5079,7 @@ bool TMoverParameters::DecLocalBrakeLevel(float const CtrlSpeed)
 	if (LocalBrakePosA > 0)
 	{
 		LocalBrakePosA = std::max(0.0, LocalBrakePosA - CtrlSpeed / LocalBrakePosNo);
+		wake_for_brake();
 		DBL = true;
 	}
 	else
@@ -4956,6 +5174,7 @@ bool TMoverParameters::IncManualBrakeLevel(int CtrlSpeed)
 			ManualBrakePos++;
 			CtrlSpeed--;
 		}
+		wake_for_brake();
 		IMBL = true;
 	}
 	else
@@ -4978,6 +5197,7 @@ bool TMoverParameters::DecManualBrakeLevel(int CtrlSpeed)
 			ManualBrakePos--;
 			CtrlSpeed--;
 		}
+		wake_for_brake();
 		DMBL = true;
 	}
 	else
@@ -5300,7 +5520,14 @@ void TMoverParameters::UpdateBrakePressure(double dt)
 
 	Hamulec->ForceLeak(dt * AirLeakRate * 0.25); // fake air leaks from brake system reservoirs
 
+	auto const brakepress{BrakePress};
 	BrakePress = Hamulec->GetBCP();
+	if (dt > 0.0)
+	{
+		// averaged over about a second: the valves move the cylinder in pulses, quicker than that within a single step
+		auto const rate{std::abs(BrakePress - brakepress) / dt};
+		BrakePressRate += (rate - BrakePressRate) * std::min(1.0, dt / 1.0);
+	}
 	//  BrakePress:=(Hamulec as TEst4).ImplsRes.pa;
 	Volume = Hamulec->GetBRP();
 }
@@ -5404,6 +5631,10 @@ void TMoverParameters::CompressorCheck(double dt)
 	{
 		// jeśli została załączona to trzeba ograniczyć ponowne włączenie
 		LastSwitchingTime = 0;
+	}
+	if (CompressorFlag != compressorflag)
+	{
+		Timer::subsystem.switching.note(CompressorFlag ? Timer::switching_counter::compressor_on : Timer::switching_counter::compressor_off, this, &TypeName, &Name);
 	}
 
 	if (false == CompressorFlag)
@@ -5866,6 +6097,33 @@ void TMoverParameters::UpdateSpringBrake(double /*dt*/)
 	SpringBrake.SBP = SpringBrake.Cylinder->P();
 }
 
+namespace
+{
+// whether the air flowing to a coupled vehicle along a pipe wakes its physics: any flow did, but a vehicle standing next to one
+// whose physics is on gets a trickle of it all the time, as their pressures settle, and each wake kept it on for 5 s. with
+// Global.physics_pipewake only a flow which leaves its pressure, with what has flown in while it slept, that much away from the
+// pressure of the vehicle the air comes from, or which has changed it by that much since it fell asleep: a pressure followed in
+// small steps would never reach the valves of a vehicle asleep otherwise
+bool pipe_wakes(double const Flow, double const Pressure, TReservoir const &Pipe)
+{
+	if (Flow * Flow <= 0.00000000000001)
+		return false;
+	return (Global.physics_pipewake <= 0.f)
+	    || (std::abs(Pressure - Pipe.P_pending()) > Global.physics_pipewake)
+	    || (std::abs(Pipe.P_pending() - Pipe.P_applied()) > Global.physics_pipewake);
+}
+
+// the pressure in the pipe of a coupled vehicle the flow to it goes by. the pressure the vehicle keeps is the one of its last step:
+// with Global.physics_pipewake one asleep can take air for a long time without waking, and the flow, going by that pressure, would
+// carry on past the pressure of the vehicle it comes from. so of one asleep, the pressure with what has flown in since
+double neighbour_pipe_pressure(TMoverParameters const &Neighbour, double const Pressure, TReservoir const &Pipe)
+{
+	if ((Global.physics_pipewake <= 0.f) || Neighbour.PhysicActivation)
+		return Pressure;
+	return Pipe.P_pending();
+}
+} // namespace
+
 // *************************************************************************************************
 // Q: 20160715
 // oblicza i zwraca przepływ powietrza pomiędzy pojazdami
@@ -5883,19 +6141,19 @@ double TMoverParameters::GetDVc(double dt)
 	if (Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic))
 	{ //*0.85
 		c = Couplers[0].Connected; // skrot           //0.08           //e/D * L/D = e/D^2 * L
-		dv1 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
-		if (dv1 * dv1 > 0.00000000000001)
-			c->switch_physics(true);
+		dv1 = 0.5 * dt * PF(PipePress, neighbour_pipe_pressure(*c, c->PipePress, *c->Pipe), Spg / (1.0 + 0.015 / Spg * Dim.L));
 		c->Pipe->Flow(-dv1);
+		if (pipe_wakes(dv1, PipePress, *c->Pipe))
+			c->switch_physics(true, wake_cause::mainpipe);
 	}
 	// sprzeg 2
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
-		dv2 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
-		if (dv2 * dv2 > 0.00000000000001)
-			c->switch_physics(true);
+		dv2 = 0.5 * dt * PF(PipePress, neighbour_pipe_pressure(*c, c->PipePress, *c->Pipe), Spg / (1.0 + 0.015 / Spg * Dim.L));
 		c->Pipe->Flow(-dv2);
+		if (pipe_wakes(dv2, PipePress, *c->Pipe))
+			c->switch_physics(true, wake_cause::mainpipe);
 	}
 	// if ((Couplers[1].Connected != NULL) && (Couplers[0].Connected != NULL))
 	//     if ((TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic)) &&
@@ -5926,19 +6184,19 @@ double TMoverParameters::GetScndDVc(double dt)
 	if (Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic))
 	{
 		c = Couplers[0].Connected; // skrot
-		dv1 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
-		if (dv1 * dv1 > 0.00000000000001)
-			c->switch_physics(true);
+		dv1 = 0.5 * dt * PF(ScndPipePress, neighbour_pipe_pressure(*c, c->ScndPipePress, *c->Pipe2), Spz * 0.75);
 		c->Pipe2->Flow(-dv1);
+		if (pipe_wakes(dv1, ScndPipePress, *c->Pipe2))
+			c->switch_physics(true, wake_cause::scndpipe);
 	}
 	// sprzeg 2
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
-		dv2 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
-		if (dv2 * dv2 > 0.00000000000001)
-			c->switch_physics(true);
+		dv2 = 0.5 * dt * PF(ScndPipePress, neighbour_pipe_pressure(*c, c->ScndPipePress, *c->Pipe2), Spz * 0.75);
 		c->Pipe2->Flow(-dv2);
+		if (pipe_wakes(dv2, ScndPipePress, *c->Pipe2))
+			c->switch_physics(true, wake_cause::scndpipe);
 	}
 	if (Couplers[1].Connected != nullptr && Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic) && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 	{
@@ -6002,34 +6260,100 @@ int hose_substeps(TMoverParameters const &Vehicle, train_pipe const &Pipe, doubl
 	return std::min(substeps, 10);
 }
 
-// the air exchange through the hoses of the pipe, for the vehicles which stepped it since the last call, in the order
-// they stepped: in as many sub-steps of dt as the vehicle needing the most of them takes, each going through the
-// vehicles one after another, as the step of the vehicles does
-void exchange_through_hoses(std::vector<TMoverParameters *> const &Vehicles, train_pipe const &Pipe, double const dt)
+// the vehicles of the list which stepped the pipe, each with the number of the train it is in: the ones joined by the hoses
+// of the pipe, directly, numbered in the order of their first vehicle in the list. a vehicle which didn't step the pipe
+// (its physics sleeps) takes the air sent to it without passing it on, so it ends a train
+std::vector<std::size_t> hose_trains(std::vector<TMoverParameters *> const &Vehicles, train_pipe const &Pipe)
 {
-	auto substeps{1};
-	for (auto const *vehicle : Vehicles)
+	auto constexpr none{std::numeric_limits<std::size_t>::max()};
+	std::vector<std::size_t> trains(Vehicles.size(), none);
+	// the vehicles by their address, for finding the neighbours in the list
+	std::vector<std::pair<TMoverParameters const *, std::size_t>> byaddress;
+	byaddress.reserve(Vehicles.size());
+	for (std::size_t index = 0; index < Vehicles.size(); ++index)
 	{
-		if (vehicle->*Pipe.pending)
+		if (Vehicles[index]->*Pipe.pending)
 		{
-			substeps = std::max(substeps, hose_substeps(*vehicle, Pipe, dt));
+			byaddress.emplace_back(Vehicles[index], index);
 		}
 	}
-	auto const substep{dt / substeps};
-	for (auto i = 0; i < substeps; ++i)
+	std::ranges::sort(byaddress);
+	auto const find = [&byaddress](TMoverParameters const *Vehicle) {
+		auto const found{std::ranges::lower_bound(byaddress, Vehicle, std::less<>{}, &std::pair<TMoverParameters const *, std::size_t>::first)};
+		return (found != byaddress.end() && found->first == Vehicle) ? found->second : none;
+	};
+	std::size_t count{0};
+	std::vector<std::size_t> stack;
+	for (std::size_t first = 0; first < Vehicles.size(); ++first)
 	{
-		for (auto *vehicle : Vehicles)
+		if (false == Vehicles[first]->*Pipe.pending || trains[first] != none)
 		{
-			if (false == vehicle->*Pipe.pending)
+			continue;
+		}
+		trains[first] = count;
+		stack.assign(1, first);
+		while (false == stack.empty())
+		{
+			auto const &vehicle{*Vehicles[stack.back()]};
+			stack.pop_back();
+			for (auto const &hose : vehicle.Couplers)
 			{
-				continue;
+				if (hose.Connected == nullptr || false == TestFlag(hose.CouplingFlag, Pipe.hose))
+				{
+					continue;
+				}
+				if (auto const other{find(hose.Connected)}; other != none && trains[other] == none)
+				{
+					trains[other] = count;
+					stack.push_back(other);
+				}
 			}
-			auto &pipe{*(vehicle->*Pipe.reservoir)};
-			pipe.Act(); // what the neighbours have sent in the meantime
-			vehicle->*Pipe.pressure = pipe.P();
-			pipe.Flow((vehicle->*Pipe.exchange)(substep));
-			pipe.Act();
-			vehicle->*Pipe.pressure = pipe.P();
+		}
+		++count;
+	}
+	return trains;
+}
+
+// the air exchange through the hoses of the pipe, for the vehicles which stepped it since the last call, in the order
+// they stepped: each train in as many sub-steps of dt as its vehicle needing the most of them takes, each going through
+// its vehicles one after another, as the step of the vehicles does. the air of a train stays in it, so a train comes out
+// the same whichever other vehicles are exchanged in the same call: all of them, or the ones of a group of
+// vehicle_table::update_steps_parallel()
+void exchange_through_hoses(std::vector<TMoverParameters *> const &Vehicles, train_pipe const &Pipe, double const dt)
+{
+	auto const trains{hose_trains(Vehicles, Pipe)};
+	std::vector<int> substeps;
+	for (std::size_t index = 0; index < Vehicles.size(); ++index)
+	{
+		if (false == Vehicles[index]->*Pipe.pending)
+		{
+			continue;
+		}
+		if (substeps.size() <= trains[index])
+		{
+			substeps.resize(trains[index] + 1, 1);
+		}
+		substeps[trains[index]] = std::max(substeps[trains[index]], hose_substeps(*Vehicles[index], Pipe, dt));
+	}
+	for (std::size_t train = 0; train < substeps.size(); ++train)
+	{
+		auto const substep{dt / substeps[train]};
+		for (auto i = 0; i < substeps[train]; ++i)
+		{
+			for (std::size_t index = 0; index < Vehicles.size(); ++index)
+			{
+				if (false == Vehicles[index]->*Pipe.pending || trains[index] != train)
+				{
+					continue;
+				}
+				auto *vehicle{Vehicles[index]};
+				auto &pipe{*(vehicle->*Pipe.reservoir)};
+				pipe.Act(); // what the neighbours have sent in the meantime
+				vehicle->*Pipe.pressure = pipe.P();
+				pipe.Flow((vehicle->*Pipe.exchange)(substep));
+				pipe.Act();
+				vehicle->*Pipe.pressure = pipe.P();
+			}
 		}
 	}
 	for (auto *vehicle : Vehicles)
@@ -6177,17 +6501,26 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	// McZapkie-031103: sprawdzanie czy warto liczyc fizyke i inne updaty
 	// ABu 300105: cos tu mieszalem , dziala teraz troche lepiej, wiec zostawiam
 	{
-		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || std::abs(AccS) > 0.0001 || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU};
+		// asleep, the brake force is the one of the step it fell asleep in: a vehicle whose brakes have changed since, released
+		// or applied, wakes for the 5 s of LastSwitchingTime, which take the new force into FStand, and sleeps again if it's
+		// still held. none of the causes of the test below, so as "other"
+		if (brakes_changed_asleep())
+			switch_physics(true, wake_cause::other);
+
+		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || accelerating() || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU};
 
 		auto const movingvehicleahead{Neighbours[end::front].vehicle != nullptr &&
-		                              (Neighbours[end::front].vehicle->MoverParameters->Vel > 0.0001 || std::abs(Neighbours[end::front].vehicle->MoverParameters->AccS) > 0.0001)};
+		                              (Neighbours[end::front].vehicle->MoverParameters->Vel > 0.0001 || Neighbours[end::front].vehicle->MoverParameters->accelerating())};
 
 		auto const movingvehiclebehind{Neighbours[end::rear].vehicle != nullptr &&
-		                               (Neighbours[end::rear].vehicle->MoverParameters->Vel > 0.0001 || std::abs(Neighbours[end::rear].vehicle->MoverParameters->AccS) > 0.0001)};
+		                               (Neighbours[end::rear].vehicle->MoverParameters->Vel > 0.0001 || Neighbours[end::rear].vehicle->MoverParameters->accelerating())};
 
 		auto const calculatephysics{vehicleisactive || movingvehicleahead || movingvehiclebehind};
 
-		switch_physics(calculatephysics);
+		switch_physics(calculatephysics, Vel > 0.0001                     ? wake_cause::speed :
+		                                 accelerating()                   ? wake_cause::acceleration :
+		                                 vehicleisactive                  ? wake_cause::rest :
+		                                                                    wake_cause::neighbour);
 	}
 
 	if (false == PhysicActivation)
@@ -6201,8 +6534,10 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	{
 		if (Derailed != derailment::outcome::none)
 		{
-			// off the rails by the physical criteria: the vehicle slides on the sleepers and the ballast, or on its side
-			FStand = derailment::sliding_friction(Derailed) * (TotalMass - Mred) * g;
+			// off the rails by the physical criteria: the vehicle slides on the sleepers and the ballast, or on its side;
+			// off the track on the ground, as far as it tipped over (physics.derailment new)
+			auto const friction{OffTrack.active() ? OffTrack.friction() : derailment::sliding_friction(Derailed)};
+			FStand = friction * (TotalMass - Mred) * g;
 		}
 		else if (legacy_derailed_slides(*this))
 		{
@@ -6247,7 +6582,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	} // bo nie dzialalo
 	else
 	{
-		EngineVoltage = Power > 1.0 ? std::max(GetTrainsetHighVoltage(), PantographVoltage) : 0.0;
+		EngineVoltage = Power > 1.0 ? TractionSupplyVoltage() : 0.0;
 	}
 
 	FTrain = Power > 0 ? TractionForce(dt) : 0;
@@ -6579,7 +6914,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 	if (thiscoupler.CouplingFlag != coupling::faux || initialdistance < 0)
 	{
 
-		thiscoupler.Dist = std::clamp(newdistance, thiscoupler.has_adapter() ? 0 : -thiscoupler.DmaxB, thiscoupler.DmaxC);
+		thiscoupler.Dist = safe_clamp(newdistance, thiscoupler.has_adapter() ? 0 : -thiscoupler.DmaxB, thiscoupler.DmaxC);
 
 		double BetaAvg = 0;
 		double Fmax = 0;
@@ -6955,7 +7290,7 @@ double TMoverParameters::UpdateEngineRevolutions(double dt, double &dtrans, doub
 
 		if (enrot != tmp)
 		{
-			enrot = std::clamp(enrot + dt / dizel_AIM * (enrot < tmp ? 1.0 : -1.0 * dizel_RevolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
+			enrot = safe_clamp(enrot + dt / dizel_AIM * (enrot < tmp ? 1.0 : -1.0 * dizel_RevolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
 			              0.0, std::max(tmp, enrot));
 			if (std::abs(tmp - enrot) < 0.001)
 			{
@@ -7182,8 +7517,9 @@ void TMoverParameters::VoltageRelaysCheck()
 		// TODO: check if we can use instead the code for electricseriesmotor
 		// nie wchodzić w funkcję bez potrzeby
 		// (a line breaker closed ahead of the pantographs holds without voltage)
-		if (Mains && ((std::max(GetTrainsetHighVoltage(), PantographVoltage) < EnginePowerSource.CollectorParameters.MinV && false == PantographsRequireMains) ||
-			    std::max(GetTrainsetHighVoltage(), PantographVoltage) > EnginePowerSource.CollectorParameters.MaxV + 200))
+		// (the source by the traction selector of a dual-mode vehicle: the pantographs or the genset)
+		if (Mains && ((TractionSupplyVoltage() < TractionSupplyMinVoltage() && false == PantographsRequireMains) ||
+			    TractionSupplyVoltage() > EnginePowerSource.CollectorParameters.MaxV + 200))
 		{
 			MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
 		}
@@ -7414,12 +7750,14 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 		EngineVoltage = 0;
 
 	// przekazniki bocznikowania, kazdy inny dla kazdej pozycji
-	if (false == StLinFlag || ShuntMode)
+	if (auto const fieldshuntingcontrol{fieldshunting::diesel_electric(AutoRelayType, FieldShuntSwitch, AutoRelayFlag)};
+	    false == StLinFlag || ShuntMode || fieldshuntingcontrol == fieldshunting::control::off)
 	{
 		ScndCtrlPos = 0;
 	}
 	else if (AutoRelayFlag)
 	{
+		// the shunting relays set the field shunting (fieldshunting::control::automatic)
 		ShuntFieldRelaysCheck(tmpV, PosRatio, tmp);
 	}
 }
@@ -7999,6 +8337,11 @@ void TMoverParameters::InductionMotorDrive(double dt)
 	else
 	{
 		eimv[eimv_Pmax] = std::min(eimc[eimc_p_Pmax], 0.001 * EngineVoltage * (eimc[eimc_p_Imax] - eimc[eimc_f_I0]) * Pirazy2 * eimc[eimc_s_cim] / eimc[eimc_s_p] / eimc[eimc_s_cfu]);
+		if (GensetSelected())
+		{
+			// on the genset of a dual-mode vehicle the traction takes no more than the genset gives
+			eimv[eimv_Pmax] = std::min(eimv[eimv_Pmax], GensetTractionPowerLimit());
+		}
 	}
 	eimv[eimv_FMAXMAX] = 0.001 *
 	                     square(std::min(1.0, eimv[eimv_fkr] / std::max(abs(enrot) * eimc[eimc_s_p] + eimc[eimc_s_dfmax] * eimv[eimv_ks], eimc[eimc_s_dfmax])) * f_cfu / eimc[eimc_s_cfu]) *
@@ -8031,6 +8374,8 @@ void TMoverParameters::InductionMotorDrive(double dt)
 	Im = eimv[eimv_If];
 	if (eimv[eimv_Ipoj] >= 0)
 		Vadd *= 1.0 - 2.0 * dt;
+	else if (GensetSelected())
+		Vadd = 1.0; // the genset of a dual-mode vehicle takes nothing back: all the braking energy to the resistors
 	else if (std::abs(EngineVoltage) < EnginePowerSource.CollectorParameters.MaxV)
 		Vadd *= 1.0 - dt;
 	else
@@ -9089,7 +9434,9 @@ double stepped_uc_value(double const Current, double const Ramped, TUniversalCtr
 	{
 		Progress = 0.0;
 	}
-	return safe_clamp(value, Position.MinCtrlVal, Position.MaxCtrlVal);
+	// added after the move to std::clamp: bounds given the other way round are put in order, as master did it
+	auto const [lowest, highest] = std::minmax(Position.MinCtrlVal, Position.MaxCtrlVal);
+	return std::clamp(value, lowest, highest);
 }
 } // namespace
 
@@ -9203,18 +9550,18 @@ void TMoverParameters::EIMICFromFourPositions(double dt)
 		{
 		case 0:
 		case 1:
-			eimic -= std::clamp(1.0 + eimic, 0.0, delta); // odejmuj do -1
+			eimic -= safe_clamp(1.0 + eimic, 0.0, delta); // odejmuj do -1
 			if (eimic > 0)
 				eimic = 0;
 			break;
 		case 2:
-			eimic -= std::clamp(0.0 + eimic, 0.0, delta); // odejmuj do 0
+			eimic -= safe_clamp(0.0 + eimic, 0.0, delta); // odejmuj do 0
 			break;
 		case 3:
-			eimic += std::clamp(0.0 - eimic, 0.0, delta); // dodawaj do 0
+			eimic += safe_clamp(0.0 - eimic, 0.0, delta); // dodawaj do 0
 			break;
 		case 4:
-			eimic += std::clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
+			eimic += safe_clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
 			if (eimic < 0)
 				eimic = 0;
 			break;
@@ -9336,7 +9683,7 @@ void TMoverParameters::EIMICLimit()
 			eimic_max = 0.001;
 		}
 	}
-	eimic = std::clamp(eimic, -1.0, eimicpowerenabled ? eimic_max : 0.0);
+	eimic = safe_clamp(eimic, -1.0, eimicpowerenabled ? eimic_max : 0.0);
 }
 
 bool TMoverParameters::UpdateStopBrakeRelease(double const Demand, double const Dt)
@@ -9443,7 +9790,7 @@ void TMoverParameters::SpeedCtrlRegulator(double dt, double const accfactor)
 			eimicSpeedCtrlIntegral = 0;
 		}
 		auto const DesiredeimicSpeedCtrl{safe_clamp(eimicSpeedCtrlIntegral + eSCP, -SpeedCtrlUnit.DesiredPower, accfactor)};
-		eimicSpeedCtrl = std::clamp(DesiredeimicSpeedCtrl, eimicSpeedCtrl - SpeedCtrlUnit.PowerDownSpeed * dt, eimicSpeedCtrl + SpeedCtrlUnit.PowerUpSpeed * dt);
+		eimicSpeedCtrl = safe_clamp(DesiredeimicSpeedCtrl, eimicSpeedCtrl - SpeedCtrlUnit.PowerDownSpeed * dt, eimicSpeedCtrl + SpeedCtrlUnit.PowerUpSpeed * dt);
 		if (Vel < SpeedCtrlUnit.FullPowerVelocity)
 		{
 			eimicSpeedCtrl = std::min(eimicSpeedCtrl, SpeedCtrlUnit.InitialPower);
@@ -9807,6 +10154,7 @@ bool TMoverParameters::dizel_Update(double dt)
 		dizel_ignition = false;
 		// TODO: split engine and main circuit state indicator in two separate flags
 		LastSwitchingTime = 0;
+		Timer::subsystem.switching.note(Timer::switching_counter::diesel, this, &TypeName, &Name);
 		Mains = true;
 		dizel_spinup = true;
 		dizel_FiringCountdown = dizel_SmokeDelay;
@@ -10451,7 +10799,7 @@ bool TMoverParameters::AssignLoad(std::string const &Loadname, float const Amoun
 	}
 	LoadTypeChange = LoadType.name != Loadname;
 	LoadType = *loadattributes;
-	LoadAmount = std::clamp(Amount, 0.f, MaxLoad);
+	LoadAmount = safe_clamp(Amount, 0.f, MaxLoad);
 	ComputeMass();
 	return true;
 }
@@ -10496,7 +10844,7 @@ bool TMoverParameters::LoadingDone(double const LSpeed, std::string_view Loadnam
 			{
 				// pusto lub rozładowano żądaną ilość
 				LoadStatus = 4; // skończony rozładunek
-				LoadAmount = std::clamp(LoadAmount, 0.f, MaxLoad); // ładunek nie może być ujemny
+				LoadAmount = safe_clamp(LoadAmount, 0.f, MaxLoad); // ładunek nie może być ujemny
 			}
 			if (LoadAmount == 0.f)
 			{
@@ -11072,9 +11420,51 @@ double TMoverParameters::GetTrainsetHighVoltage() const
 }
 
 // *************************************************************************************************
+// whether the vehicle accelerates, for the test which turns the physics off in vehicles standing still
+// *************************************************************************************************
+bool TMoverParameters::accelerating() const
+{
+	if (std::abs(AccS) <= 0.0001)
+		return false;
+	// standing still and held by the brakes and the resistance, against the slope and the couplers: the test ComputeMovement()
+	// sets the speed to zero by. the forces are of the last ComputeTotalForce(), the ones the movement went by. a vehicle whose
+	// brake cylinders still fill or release isn't held yet: asleep, it would keep the brake force (and the pressure the AI waits on
+	// to set off) it had when it fell asleep. 0.05 bar/s is less than a distributor moves the cylinder when it applies or releases, and
+	// more than the leaks take
+	auto const held{Global.physics_sleepheld && Vel <= 0.0001 && std::abs(FStand) > std::abs(FTrain) && BrakePressRate <= 0.05};
+	return false == held;
+}
+
+void TMoverParameters::wake_for_brake()
+{
+	if (Global.physics_sleepheld)
+	{
+		switch_physics(true, wake_cause::command);
+	}
+}
+
+// *************************************************************************************************
+// whether the brakes of a vehicle whose physics sleeps have changed since it fell asleep: the pressure in the brake cylinders
+// or in the one of the spring brake by more than 0.05 bar, the hand brake by a notch, or the local brake by 1 percent. the brake system
+// itself steps on while asleep in the vehicle the user is in (TDynamicObject::Update(), MechInside); the settings change by
+// hand or by a command in any vehicle. 0.05 bar is less than what a distributor applying or releasing moves the cylinder by in
+// a second, and much less than the pressure the cylinder's return spring takes (BrakeCylSpring, some tenths of a bar), below
+// which the cylinder gives no force: a release ends with the vehicle asleep and no force left. a cylinder holding its
+// pressure, or settling within that, leaves the vehicle asleep
+// *************************************************************************************************
+bool TMoverParameters::brakes_changed_asleep() const
+{
+	if (PhysicActivation)
+		return false;
+	constexpr double pressure_change{0.05}; // [bar]
+	return std::abs(BrakePress - sleep_brakes.cylinder) > pressure_change || std::abs(SpringBrake.SBP - sleep_brakes.spring) > pressure_change ||
+	       ManualBrakePos != sleep_brakes.manual || std::abs(LocalBrakePosA - sleep_brakes.local) > 0.01;
+}
+
+// *************************************************************************************************
 // Kasowanie zmiennych pracy fizyki
 // *************************************************************************************************
-bool TMoverParameters::switch_physics(bool const State) // DO PRZETLUMACZENIA NA KONCU
+bool TMoverParameters::switch_physics(bool const State, wake_cause const Cause) // DO PRZETLUMACZENIA NA KONCU
 {
 	if (PhysicActivation == State)
 	{
@@ -11085,6 +11475,12 @@ bool TMoverParameters::switch_physics(bool const State) // DO PRZETLUMACZENIA NA
 	if (true == State)
 	{
 		LastSwitchingTime = 0;
+		Timer::subsystem.switching.note(static_cast<Timer::switching_counter::source>(Timer::switching_counter::wake + static_cast<std::size_t>(Cause)), this, &TypeName, &Name);
+	}
+	else
+	{
+		// what the brake force of the last step came from, which it keeps while asleep (brakes_changed_asleep())
+		sleep_brakes = {BrakePress, SpringBrake.SBP, ManualBrakePos, LocalBrakePosA};
 	}
 
 	return true;
@@ -13249,6 +13645,9 @@ void TMoverParameters::LoadFIZ_CntrlControllers(std::string const &line)
 	{
 		AutoRelayType = 0;
 	}
+	// a key of its own rather than a new AutoRelay value: an exe that doesn't know it reads the line as before, and the value
+	// stays Optional, which every check of the switch looks for
+	extract_value(FieldShuntSwitch, "FieldShuntSwitch", line, "");
 
 	extract_value(CoupledCtrl, "CoupledCtrl", line, "");
 	extract_value(HasCamshaft, "Camshaft", line, "");
@@ -13372,6 +13771,11 @@ void TMoverParameters::LoadFIZ_CntrlStarts(std::string const &line)
 	{
 		auto lookup = starts.find(extract_value("OilStart", line));
 		OilPump.start_type = lookup != starts.end() ? lookup->second : manual;
+	}
+	// genset of a dual-mode vehicle: Manual (the default) needs GensetSwitch, Automatic runs whenever the selector is on it
+	{
+		auto lookup = starts.find(extract_value("GensetStart", line));
+		Genset.start_type = lookup != starts.end() ? lookup->second : manual;
 	}
 	// water pump
 	{
@@ -13500,9 +13904,38 @@ void TMoverParameters::LoadFIZ_Power(std::string const &Line)
 		// jeśli nie ma mocy, np. rozrządcze EZT
 		EnginePowerSource.SourceType = TPowerSource::NotDefined;
 	}
+	else
+	{
+		LoadFIZ_Genset(Line);
+	}
 
 	SystemPowerSource.SourceType = LoadFIZ_SourceDecode(extract_value("SystemPower", Line));
 	LoadFIZ_PowerParamsDecode(SystemPowerSource, "", Line);
+}
+
+// the genset of a dual-mode vehicle (eu07/maszyna#536), on the Power: line; all optional, no genset without GensetPower
+void TMoverParameters::LoadFIZ_Genset(std::string const &Line)
+{
+	extract_value(Genset.power, "GensetPower", Line, "");
+	if (false == Genset.fitted())
+	{
+		return;
+	}
+	extract_value(Genset.voltage_nominal, "GensetVoltage", Line, "");
+	if (Genset.voltage_nominal <= 0.0)
+	{
+		Genset.voltage_nominal = EnginePowerSource.MaxVoltage > 0.0 ? 0.65 * EnginePowerSource.MaxVoltage : 3000.0;
+	}
+	extract_value(Genset.revolutions_idle, "GensetIdleRPM", Line, "600");
+	extract_value(Genset.revolutions_max, "GensetMaxRPM", Line, "1800");
+	Genset.revolutions_max = std::max(Genset.revolutions_max, 1.0) / 60.0;
+	Genset.revolutions_idle = std::clamp(Genset.revolutions_idle / 60.0, 1.0 / 60.0, Genset.revolutions_max);
+	extract_value(Genset.start_time, "GensetStartTime", Line, "8");
+	extract_value(Genset.spinup_time, "GensetSpinUpTime", Line, "3");
+	extract_value(Genset.traction_share, "GensetPmaxRatio", Line, "1");
+	Genset.start_time = std::max(Genset.start_time, 0.0);
+	Genset.spinup_time = std::max(Genset.spinup_time, 0.01);
+	Genset.traction_share = std::clamp(Genset.traction_share, 0.0, 1.0);
 }
 
 void TMoverParameters::LoadFIZ_SpeedControl(std::string const &Line)
@@ -13757,7 +14190,11 @@ void TMoverParameters::LoadFIZ_EngineInductionMotor(std::string const &Input)
 	extract_value(eimc[eimc_f_DU], "DU", Input, "");
 	extract_value(eimc[eimc_f_I0], "I0", Input, "");
 	extract_value(eimc[eimc_f_cfu], "fcfu", Input, "");
-	extract_value(eimc[eimc_f_cfuH], "fcfuH", Input, std::to_string(eimc[eimc_f_cfu]));
+	if (false == extract_value(eimc[eimc_f_cfuH], "fcfuH", Input, ""))
+	{
+		// without its own figure the dynamic brake takes the one of the traction
+		eimc[eimc_f_cfuH] = eimc[eimc_f_cfu];
+	}
 	extract_value(eimc[eimc_p_F0], "F0", Input, "");
 	extract_value(eimc[eimc_p_a1], "a1", Input, "");
 	extract_value(eimc[eimc_p_Pmax], "Pmax", Input, "");
@@ -14263,6 +14700,13 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 	if (CompressorListPosNo > 0)
 		CompressorListPos = CompressorListDefPos;
 
+	// the genset of a dual-mode vehicle is a second source of the traction circuit of an induction motor vehicle
+	if (Genset.fitted() && (EngineType != TEngineType::ElectricInductionMotor || EnginePowerSource.SourceType != TPowerSource::CurrentCollector))
+	{
+		WriteLog("GensetPower ignored: a genset works only with EngineType=ElectricInductionMotor and EnginePower=CurrentCollector");
+		Genset = genset_device{};
+	}
+
 	// NOTE: legacy compatibility behaviour for vehicles without defined heating power source
 	if (EnginePowerSource.SourceType == TPowerSource::CurrentCollector && HeatingPowerSource.SourceType == TPowerSource::NotDefined)
 	{
@@ -14370,7 +14814,7 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 	{
 		SecuritySystem.MagnetLocation = Dim.L / 2 - 0.5;
 	}
-	SecuritySystem.MagnetLocation = std::clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
+	SecuritySystem.MagnetLocation = safe_clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
 
 	return OK;
 }
@@ -14996,7 +15440,7 @@ bool TMoverParameters::RunAuxiliariesCommand(std::string const &Command, double 
 	}
 	else if (Command == "CompressorPreset")
 	{
-		CompressorListPos = std::clamp(static_cast<int>(CValue1), 0, CompressorListPosNo);
+		CompressorListPos = safe_clamp(static_cast<int>(CValue1), 0, CompressorListPosNo);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
 	else
@@ -15220,6 +15664,16 @@ bool TMoverParameters::RunPowerCommand(std::string const &Command, double CValue
 		DropAllPantographs(CValue1 == 1, range_t::local);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
+	else if (Command == "TractionMode")
+	{
+		TractionModeSwitch(CValue1 > 0.5 ? traction_mode::genset : traction_mode::catenary, range_t::local);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "GensetSwitch")
+	{
+		GensetSwitch(CValue1 > 0.5, range_t::local);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
 	else
 	{
 		return false;
@@ -15385,7 +15839,7 @@ bool TMoverParameters::RunInternalCommand()
 			CommandIn.Location.X = 0;
 			CommandIn.Location.Y = 0;
 			CommandIn.Location.Z = 0;
-			switch_physics(true);
+			switch_physics(true, wake_cause::command);
 		}
 	}
 	else

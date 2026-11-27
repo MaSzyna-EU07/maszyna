@@ -14,6 +14,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "world/Traction.h"
+#include "world/catenary_span.h"
+#include "world/TractionTail.h"
 
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
@@ -137,19 +139,18 @@ TTraction::Load( cParser *parser, glm::dvec3 const &pOrigin ) {
         >> WireOffset;
     m_visible = parser->getToken<std::string>() == "vis";
 
-    std::string token { parser->getToken<std::string>() };
-    if( token == "parallel" ) {
-        // jawne wskazanie innego przęsła, na które może przestawić się pantograf
-        parser->getTokens();
-        *parser >> asParallel;
-    }
-    while( false == token.empty()
-        && token != "endtraction" ) {
-
-        token = parser->getToken<std::string>();
-    }
+    // dopiski: "parallel" (jawne wskazanie innego przęsła, na które może przestawić się pantograf), "type" (symbol typu sieci,
+    // np. YwsC120-2C; starsze wersje symulatora pomijają ten dopisek), "rope2" (koniec drugiej liny nośnej przy kotwieniu),
+    // "tension" (naciąg liny nośnej i przewodów jezdnych w daN inny niż w typie sieci, brakujące ciężary w kotwieniu)
+    traction_tail tail;
+    tail.parallel = asParallel;
+    read_traction_tail( *parser, pOrigin, tail );
+    asParallel = tail.parallel;
+    // zapamiętane, żeby zapis z edytora ich nie zgubił
+    m_tail = tail;
 
     Init(); // przeliczenie parametrów
+    catenary_span_assign( *this, tail.type, tail.tension[ 0 ], tail.tension[ 1 ], tail.rope2.data(), tail.rope2set.data() );
 
     // calculate traction location
     location( glm::mix( pPoint2, pPoint1, 0.5 ) );
@@ -169,6 +170,14 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Geometrybank ) {
     }
 
     gfx::vertex_array vertices;
+
+    if( catenary_span_lines( *this, vertices ) ) {
+        // przęsło z typem sieci: lina nośna, podwieszenie Y i wieszaki policzone, zamiast przybliżenia poniżej
+        auto const elementcount = vertices.size() / 2;
+        gfx::userdata_array empty_userdata{};
+        m_geometry = GfxRenderer->Insert( vertices, empty_userdata, Geometrybank, GL_LINES );
+        return elementcount;
+    }
 
     double ddp = std::hypot( pPoint2.x - pPoint1.x, pPoint2.z - pPoint1.z );
     if( Wires == 2 )
@@ -567,6 +576,10 @@ TTraction::wire_color() const {
             }
             default: {break; }
         }
+        if( TestFlag( DamageFlag, 2 ) && false == TestFlag( DamageFlag, 1 ) ) {
+            // stan przejściowy między nową a zaśniedziałą: ciemniejsza
+            color *= 0.75f;
+        }
 		color *= 0.2;
         // w zaleźności od koloru swiatła
         color.r *= Global.DayLight.ambient[ 0 ];
@@ -670,10 +683,11 @@ TTraction::export_as_text_( std::ostream &Output ) const {
     // visibility
     // NOTE: 'invis' would be less wrong than 'unvis', but potentially incompatible with old 3rd party tools
     Output << ( m_visible ? "vis" : "unvis" ) << ' ';
-    // optional attributes
-    if( false == asParallel.empty() ) {
-        Output << "parallel " << asParallel << ' ';
-    }
+    // optional attributes, all that Load() reads
+    auto tail { m_tail };
+    tail.parallel = asParallel;
+    tail.type = catenary_span_symbol( *this );
+    write_traction_tail( Output, tail );
     // footer
     Output
         << "endtraction"

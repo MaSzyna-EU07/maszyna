@@ -52,6 +52,7 @@ enum class record : std::uint8_t {
 	station = 0x35,
 	horn_request = 0x36,
 	coupling = 0x37,
+	derailment = 0x38,
 	end = 0x3f
 };
 
@@ -324,6 +325,35 @@ struct coupling_change {
 	glm::dvec3 position{0.0}; // of the coupler
 };
 
+// what put a vehicle off the rails, for the derailment record (vehicle/derailmotion.h)
+namespace derailment_causes {
+inline constexpr std::uint8_t flange_climbed{1};
+inline constexpr std::uint8_t overturned{2};
+inline constexpr std::uint8_t end_of_track{3};
+inline constexpr std::uint8_t pulled_off{4}; // by the coupling of a vehicle off the track
+inline constexpr std::uint8_t collision{5};
+} // namespace derailment_causes
+
+namespace derailment_phases {
+inline constexpr std::uint8_t left_track{0}; // it left the track
+inline constexpr std::uint8_t at_rest{1}; // it came to rest off the track
+} // namespace derailment_phases
+
+// a vehicle off the track (physics.derailment new): as it leaves it, and where it comes to rest
+struct derailment_state {
+	double time{0.0};
+	std::uint32_t vehicle{no_vehicle};
+	std::uint8_t phase{derailment_phases::left_track};
+	std::uint8_t cause{derailment_causes::flange_climbed};
+	glm::dvec3 position{0.0}; // of the vehicle
+	float heading{0.0f}; // [rad] of its front, from +z towards +x
+	float speed_kmh{0.0f}; // signed: positive along its front
+	float offset{0.0f}; // [m] from the axis of the track at the place nearest to it, to the left of its front positive
+	float roll{0.0f}; // [rad] of its body against the level, to the left positive; 90 degrees on its side
+	float travelled{0.0f}; // [m] on the ground since it left the rails
+	bool lying{false}; // on its side
+};
+
 struct vehicle_state {
 	std::uint32_t id{no_vehicle};
 	glm::vec3 position{0.0f};
@@ -378,6 +408,7 @@ public:
 	void horn_request(double Time, std::uint32_t Vehicle, float Duration, float Tone, glm::dvec3 const &Position);
 	void camera(camera_state const &Camera);
 	void coupling(coupling_change const &Change);
+	void derailment(derailment_state const &State);
 	void vehicle(vehicle_data const &Vehicle);
 	void vehicle_removed(double Time, std::uint32_t Id);
 	void cab(cab_sample const &Sample);

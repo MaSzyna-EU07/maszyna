@@ -17,7 +17,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/physicslog.h"
 #include "utilities/utilities.h"
-#include "vehicle/Driver.h"
 #include "vehicle/DynObj.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
@@ -46,15 +45,6 @@ double elapsed_wall_time()
 	return std::chrono::duration<double>(std::chrono::steady_clock::now() - Global.startTimestamp).count();
 }
 
-// the physics log of the driver of the vehicle, or of its train's when that one is passive, written before the logs of
-// the other drivers: the closing at the end of the run drops those it has no time for
-void put_physicslog_first(TDynamicObject const &Vehicle)
-{
-	auto const *driver { Vehicle.Mechanik != nullptr && Vehicle.Mechanik->primary() ? Vehicle.Mechanik : Vehicle.ctOwner };
-	if (driver != nullptr)
-		PhysicsLogs.put_first(driver->physicslog_name());
-}
-
 } // namespace
 
 namespace simulation {
@@ -71,7 +61,6 @@ void apply_test_mode_settings()
 	Global.editor_session = false;
 	Global.local_start_vehicle = "ghostview";
 	Global.GfxRenderer = "null";
-	Global.NvRenderer = false;
 	Global.bSoundEnabled = false;
 	Global.python_enabled = false;
 	Global.bInactivePause = false;
@@ -79,7 +68,6 @@ void apply_test_mode_settings()
 	Global.fullscreen_windowed = false;
 	Global.VSync = false;
 	Global.iMultisampling = 0;
-	Global.gfx_usegles = false;
 	Global.minframetime = std::chrono::duration<float>(0.0f);
 	Global.extra_viewports.clear();
 	Global.headtrack_conf.joy.clear();
@@ -102,8 +90,10 @@ void apply_test_mode_settings()
 	Global.iMultiplayer = 0;
 	Global.exec_on_exit.clear();
 	// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
-	if (!Global.random_seed)
+	if (false == Global.random_seed_given) {
 		Global.random_seed = seed_of("test");
+		Global.random_seed_given = true;
+	}
 	// the real time limit, which the scenery may set too
 	test().watch_wall_clock(wall_clock_limit(Global.test.wall_timeout, Global.test.timeout));
 }
@@ -135,13 +125,11 @@ void test_manager::start()
 	}
 	for (auto const &name : Global.test.vehicles)
 	{
-		auto const *vehicle { simulation::Vehicles.find(name) };
-		if (vehicle == nullptr)
+		if (simulation::Vehicles.find(name) == nullptr)
 		{
 			finish(test_result::error, std::format("the scenery has no vehicle {} (test.vehicle)", name));
 			return;
 		}
-		put_physicslog_first(*vehicle);
 	}
 	// a pause set by the scenery or the settings would never be lifted, nobody is there to press the key
 	Global.iPause = 0;

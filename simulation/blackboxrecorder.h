@@ -69,6 +69,8 @@ private:
 		bool listed{false};
 		std::array<coupler_entry, 2> couplers; // as seen last
 		bool couplers_known{false};
+		// off the track: 0 not, 1 written as leaving it, 2 written as at rest
+		int derailment{0};
 	};
 	struct switch_entry {
 		TTrack *track{nullptr};
@@ -88,9 +90,8 @@ private:
 	void write_map();
 	static std::vector<std::pair<glm::dvec3, float>> stop_point_headings();
 	void write_cab();
-	// the line of the log of the driver the user is with, unless that driver writes its own (the physics logs, a road
-	// vehicle's driver not even with "physicslog yes"), to its log, physicslog/<vehicle>.dat, as the physics logs would
-	// have it. a driver's log is begun at the first line given for that driver, and goes on
+	// with the physics logs off, the line of the log of the driver the user is with, to its log, physicslog/<vehicle>.dat,
+	// as the physics logs would have it. a driver's log is begun at the first line given for that driver, and goes on
 	// while the user looks around outside or is in another vehicle of that driver; back with it, after the gap
 	void keep_tape_line();
 	// the clock, the user's vehicle, the vehicles, the switches and the signals
@@ -100,6 +101,8 @@ private:
 	void look_at_signals();
 	// the couplers of every vehicle against the last look: those coupled at the first look, then the changes
 	void look_at_couplers();
+	// the vehicles leaving the track and coming to rest off it (physics.derailment new)
+	void look_at_derailments();
 	void write_camera();
 	// the timetable of the train the user is in, written again when it is another one; none isn't written
 	void look_at_timetable(TDynamicObject const &Vehicle, std::uint32_t Id);
@@ -107,7 +110,8 @@ private:
 	std::uint32_t vehicle_id(TDynamicObject const *Vehicle);
 	// the number of a vehicle still on the scenery, no_vehicle for none or one taken off it
 	std::uint32_t known_id(TDynamicObject const *Vehicle);
-	std::uint32_t signal_at(glm::dvec3 const &Location) const;
+	// the number of the signal whose aspect the memory cell tells, no_signal for one which isn't on the map
+	std::uint32_t signal_of(TMemCell const *Cell) const;
 
 	std::mutex m_mutex;
 	std::array<char, 256 * 1024> m_filebuffer{};

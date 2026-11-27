@@ -2,8 +2,16 @@
 #include "doctest.h"
 #include "scratch.h"
 
+#include <cmath>
+#include <limits>
+
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+
+#include <cmath>
+#include <memory>
+#include <optional>
+#include <type_traits>
 
 // the helpers of utilities/utilities.cpp and utilities.h as they behave now: the numbers and texts they give, their
 // oddities included. the ones which look like mistakes are listed in COVERAGE.md. the helpers which read from a
@@ -112,16 +120,31 @@ TEST_CASE("utilities: clearing a flag needs all of its bits set") {
 TEST_CASE("utilities: random whole numbers are within the bounds, both included, given in any order") {
 	std::set<int> seen;
 	for (auto draw{0}; draw < 200; ++draw) {
-		auto const value{Random(3, 7)};
+		auto const value{RandomInt(3, 7)};
 		CHECK(value >= 3);
 		CHECK(value <= 7);
 		seen.insert(value);
-		auto const swapped{Random(7, 3)};
+		auto const swapped{RandomInt(7, 3)};
 		CHECK(swapped >= 3);
 		CHECK(swapped <= 7);
 	}
 	CHECK(seen.size() == 5);
-	CHECK(Random(5, 5) == 5);
+	CHECK(RandomInt(5, 5) == 5);
+}
+
+TEST_CASE("utilities: whole-number bounds still give a real number in between") {
+	// the wind, the wheel flats, the truck hunting and the tachometer draw with whole-number bounds
+	static_assert(std::is_same_v<decltype(Random(0, 4)), double>);
+	auto fractions{0};
+	for (auto draw{0}; draw < 50; ++draw) {
+		auto const value{Random(0, 4)};
+		CHECK(value >= 0.0);
+		CHECK(value <= 4.0);
+		if (value != std::floor(value)) {
+			++fractions;
+		}
+	}
+	CHECK(fractions > 0);
 }
 
 TEST_CASE("utilities: random numbers are within the bounds given in any order") {
@@ -154,17 +177,37 @@ TEST_CASE("utilities: random numbers are within the bounds given in any order") 
 }
 
 TEST_CASE("utilities: the same seed gives the same random numbers") {
-	std::vector<int> first;
+	std::vector<double> first;
 	Global.random_engine.seed(42);
 	for (auto draw{0}; draw < 5; ++draw) {
-		first.push_back(Random(0, 1000000));
+		first.push_back(Random(0.0, 1000000.0));
 	}
-	std::vector<int> second;
+	std::vector<double> second;
 	Global.random_engine.seed(42);
 	for (auto draw{0}; draw < 5; ++draw) {
-		second.push_back(Random(0, 1000000));
+		second.push_back(Random(0.0, 1000000.0));
 	}
 	CHECK(first == second);
+	std::vector<int> localfirst;
+	Global.local_random_engine.seed(42);
+	for (auto draw{0}; draw < 5; ++draw) {
+		localfirst.push_back(RandomInt(0, 1000000));
+	}
+	std::vector<int> localsecond;
+	Global.local_random_engine.seed(42);
+	for (auto draw{0}; draw < 5; ++draw) {
+		localsecond.push_back(RandomInt(0, 1000000));
+	}
+	CHECK(localfirst == localsecond);
+}
+
+TEST_CASE("utilities: the whole numbers are drawn from the local engine, not from that of the run's seed") {
+	// the trivia of the loading screen is drawn before a network client gets the seed of the session
+	Global.random_engine.seed(5);
+	auto const first{Random()};
+	Global.random_engine.seed(5);
+	RandomInt(0, 9);
+	CHECK(Random() == first);
 }
 
 TEST_CASE("utilities: the local random numbers have an engine of their own") {
@@ -193,10 +236,39 @@ TEST_CASE("utilities: the seed a text stands for is its number, or its hash the 
 	// a number which isn't a seed is a word: negative, or too big
 	CHECK(seed_of("-5") == 1448u);
 	CHECK(seed_of("4294967296") == 3632702254u);
+	CHECK(seed_of("+5") == 1386u);
+	CHECK(seed_of("-0") == 1443u);
 	// the bytes over ascii count as positive
 	CHECK(seed_of("\xB9") == 185u);
-	// a word starting with digits is taken for the number in front of it
-	CHECK(seed_of("12abc") == 12u);
+	// leading zeros are the same number
+	CHECK(seed_of("007") == 7u);
+	CHECK(seed_of("00") == 0u);
+}
+
+TEST_CASE("utilities: a seed is the whole text as a number, or the whole text as a word") {
+	// digits with something after them are a word, not the number in front of them
+	CHECK(seed_of("4242abc") == 386617702u);
+	CHECK(seed_of("4242abc") != 4242u);
+	CHECK(seed_of("12abc") == 46838433u);
+	CHECK(seed_of("0x10") == 1546855u);
+	// a space is part of the word as well: the settings and the command line give the seed without them
+	CHECK(seed_of("4242 ") == 49564196u);
+	CHECK(seed_of(" 4242") == 31151516u);
+	// so two words starting with the same digits stand for two seeds
+	CHECK(seed_of("12abc") != seed_of("12xyz"));
+}
+
+TEST_CASE("utilities: randomseed and -seed give a seed, 0 too, and an empty text none") {
+	CHECK(seed_given("0") == std::optional<std::uint32_t>{0u});
+	CHECK(seed_given("00") == std::optional<std::uint32_t>{0u});
+	CHECK(seed_given("4242") == std::optional<std::uint32_t>{4242u});
+	CHECK(seed_given("hello") == std::optional<std::uint32_t>{99162322u});
+	CHECK(seed_given("4242abc") == std::optional<std::uint32_t>{386617702u});
+	CHECK_FALSE(seed_given("").has_value());
+	// a seed which is given is not the same as none, whatever its number
+	CHECK(seed_given("0").has_value());
+	// and the settings start without one, to be drawn
+	CHECK(std::make_unique<global_settings>()->random_seed_given == false);
 }
 
 TEST_CASE("utilities: a version 4 uuid is drawn from the random numbers of the simulation") {
@@ -656,9 +728,82 @@ TEST_CASE("utilities: the folders of the user's settings and of the cache are na
 #if defined(_WIN32)
 	CHECK(user_config_path("eu07.ini").empty() == (std::getenv("APPDATA") == nullptr));
 	CHECK(user_cache_path("x").empty() == (std::getenv("LOCALAPPDATA") == nullptr));
-#else
+#elif defined(__APPLE__)
 	CHECK(user_config_path("eu07.ini").empty() == (std::getenv("HOME") == nullptr));
+#else
+	// the folders the XDG variables of this environment give, or the ones in the home folder
+	auto const expected{[](char const *Variable, char const *Fallback, char const *Filename) {
+		auto const base{xdg_base_directory(std::getenv(Variable), std::getenv("HOME"), Fallback)};
+		return base.empty() ? std::filesystem::path{} : base / "MaSzyna" / Filename;
+	}};
+	auto const config{xdg_config_folder(std::getenv("XDG_CONFIG_HOME"), std::getenv("HOME"))};
+	CHECK(user_config_path("eu07.ini") == (config.empty() ? std::filesystem::path{} : config / "eu07.ini"));
+	CHECK(user_cache_path("geoportal") == expected("XDG_CACHE_HOME", ".cache", "geoportal"));
 #endif
+}
+
+TEST_CASE("utilities: the folders of the XDG base directory spec, as Linux finds them") {
+	using path = std::filesystem::path;
+	SUBCASE("the variable, when it is set to an absolute path") {
+		CHECK(xdg_base_directory("/srv/config", "/home/user", ".config") == path{"/srv/config"});
+		CHECK(xdg_base_directory("/srv/config", nullptr, ".config") == path{"/srv/config"});
+		CHECK(xdg_base_directory("/srv/config", "", ".config") == path{"/srv/config"});
+		CHECK(xdg_base_directory("/", "/home/user", ".cache") == path{"/"});
+	}
+	SUBCASE("the folder in the home one, when the variable isn't set, is empty or holds a relative path") {
+		CHECK(xdg_base_directory(nullptr, "/home/user", ".config") == path{"/home/user"} / ".config");
+		CHECK(xdg_base_directory("", "/home/user", ".config") == path{"/home/user"} / ".config");
+		CHECK(xdg_base_directory("config", "/home/user", ".config") == path{"/home/user"} / ".config");
+		CHECK(xdg_base_directory("./cache", "/home/user", ".cache") == path{"/home/user"} / ".cache");
+		CHECK(xdg_base_directory("~/cache", "/home/user", ".cache") == path{"/home/user"} / ".cache");
+	}
+	SUBCASE("none, without the variable and without the home folder") {
+		CHECK(xdg_base_directory(nullptr, nullptr, ".config").empty());
+		CHECK(xdg_base_directory("", "", ".cache").empty());
+		CHECK(xdg_base_directory("relative", nullptr, ".cache").empty());
+	}
+	SUBCASE("the settings and the cache: each of its own variable, the same home") {
+		auto const config{xdg_base_directory("/xdg/config", "/home/user", ".config")};
+		auto const cache{xdg_base_directory(nullptr, "/home/user", ".cache")};
+		CHECK(config / "MaSzyna" / "eu07.ini" == path{"/xdg/config/MaSzyna/eu07.ini"});
+		CHECK(cache / "MaSzyna" / "geoportal" == path{"/home/user/.cache/MaSzyna/geoportal"});
+	}
+}
+
+TEST_CASE("utilities: the settings stay in ~/.config/MaSzyna while XDG_CONFIG_HOME has no MaSzyna folder") {
+	using path = std::filesystem::path;
+	// in the working folder, as the other tests do: a fixed name in the shared temp folder could be taken over by another user
+	auto const home{std::filesystem::current_path() / "eu07_unit_xdg_config_home"};
+	std::filesystem::remove_all(home);
+	auto const homename{home.string()};
+	// an absolute posix path which doesn't exist, on every system the tests run on
+	char const *const xdg{"/eu07_test_xdg_config_nowhere"};
+	SUBCASE("without the old folder the settings go where XDG says") {
+		CHECK(xdg_config_folder(xdg, homename.c_str()) == path{xdg} / "MaSzyna");
+		CHECK(xdg_config_folder(nullptr, homename.c_str()) == home / ".config" / "MaSzyna");
+	}
+	SUBCASE("the old folder is kept while the new one doesn't exist") {
+		std::filesystem::create_directories(home / ".config" / "MaSzyna");
+		CHECK(xdg_config_folder(xdg, homename.c_str()) == home / ".config" / "MaSzyna");
+		CHECK(xdg_config_folder(nullptr, homename.c_str()) == home / ".config" / "MaSzyna");
+		// the old folder needs the home folder to be found
+		CHECK(xdg_config_folder(xdg, nullptr) == path{xdg} / "MaSzyna");
+	}
+	SUBCASE("a file of that name isn't the old folder") {
+		std::filesystem::create_directories(home / ".config");
+		std::ofstream{home / ".config" / "MaSzyna"} << "x";
+		CHECK(xdg_config_folder(xdg, homename.c_str()) == path{xdg} / "MaSzyna");
+	}
+#ifndef _WIN32
+	SUBCASE("the new folder is taken once it exists") {
+		auto const config{home / "xdg"};
+		std::filesystem::create_directories(config / "MaSzyna");
+		std::filesystem::create_directories(home / ".config" / "MaSzyna");
+		auto const configname{config.string()};
+		CHECK(xdg_config_folder(configname.c_str(), homename.c_str()) == config / "MaSzyna");
+	}
+#endif
+	std::filesystem::remove_all(home);
 }
 
 // numbers -------------------------------------------------------------------------------------------------------------
@@ -681,12 +826,30 @@ TEST_CASE("utilities: the sign of a number, and a number rounded to a whole one"
 	CHECK(Round(-2.5) == -2);
 }
 
-TEST_CASE("utilities: a value is kept within bounds, given in any order") {
+TEST_CASE("utilities: a value is kept within bounds; inverted bounds give the upper one, as the old clamp did") {
 	CHECK(safe_clamp(5, 0, 3) == 3);
-	CHECK(safe_clamp(5, 3, 0) == 3);
-	CHECK(safe_clamp(-1, 3, 0) == 0);
-	CHECK(safe_clamp(2.0, 3.0, 1.0) == 2.0);
+	CHECK(safe_clamp(-1, 0, 3) == 0);
+	CHECK(safe_clamp(2, 0, 3) == 2);
 	CHECK(safe_clamp(2.0, 2.0, 2.0) == 2.0);
+	// inverted bounds: always the upper bound, whatever the value
+	CHECK(safe_clamp(5, 3, 0) == 0);
+	CHECK(safe_clamp(-1, 3, 0) == 0);
+	CHECK(safe_clamp(2.0, 3.0, 1.0) == 1.0);
+	// NaN as the old clamp had it: a NaN value stays NaN, a NaN bound doesn't clamp
+	auto const notanumber{std::numeric_limits<double>::quiet_NaN()};
+	CHECK(std::isnan(safe_clamp(notanumber, 0.0, 1.0)));
+	CHECK(safe_clamp(2.0, 0.0, notanumber) == 2.0);
+	CHECK(safe_clamp(-1.0, notanumber, 1.0) == -1.0);
+	// what the helper gives for arguments in the order and of the signs of two calls (these checks don't call
+	// them): the AI braking test, whose demand is the stronger of the two (negative) bounds, as up to 26.05.1
+	double const threshold{-0.45};
+	CHECK(safe_clamp(0.3, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
+	CHECK(safe_clamp(-0.6, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
+	// and the bump at a rail joint, 0 in place of the value as up to 26.05.1: the figure is capped from above
+	// only, and above 68% of the top speed it is negative
+	CHECK(safe_clamp(0.0, 160.0, 160.0 - (150.0 + 160.0 * 0.32)) == doctest::Approx(-41.2));
+	CHECK(safe_clamp(0.0, 4.0, -0.5) == -0.5);
+	CHECK(safe_clamp(0.0, 4.0, 5.0) == 4.0);
 }
 
 TEST_CASE("utilities: a value is wrapped into a range, as an angle into the full circle") {

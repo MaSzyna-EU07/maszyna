@@ -1,5 +1,5 @@
 {
-  "description": "EU07 on td.scn on the td/rozklad timetable; at 10:35, as it leaves, the curve tdo_n222 about 950 m ahead buckles with a trackbuckle event (30 mm out of the curve, as the heat does: an equivalent radius of 330 m, too little to derail it). The track is laid again during the game and the train keeps on it to Przystanek.",
+  "description": "EU07 on td.scn on the td/rozklad timetable; at 10:35, as it leaves, the curve tdo_n222 about 950 m ahead buckles with a trackbuckle event (30 mm out of the curve, as the heat does: an equivalent radius of 330 m, too little to derail it). The track is laid again during the game and the train keeps on it to Przystanek, with physics.derailment new: the criteria decide, as in eu07_td_buckle_derails.",
   "base_scenery": "td.scn",
   "time": "10:34",
   "fragment": "td_buckle_event.scn",
@@ -7,7 +7,7 @@
     "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic",
     "amplitude": "30"
   },
-  "ini": ["gfxrenderer null"],
+  "ini": ["gfxrenderer null", "physics.derailment new"],
   "duration": 240,
   "timeout": 600,
   "checks": [

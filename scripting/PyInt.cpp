@@ -120,7 +120,7 @@ void render_task::run()
 			const auto screenWidth = static_cast<int>(PyLong_AsLong(outputWidth));
 			const auto screenHeight = static_cast<int>(PyLong_AsLong(outputHeight));
 
-			const bool useRgb = false && !Global.gfx_usegles;
+			const bool useRgb = false;
 
 			const int glFormat = useRgb ? GL_SRGB8 : GL_SRGB8_ALPHA8;
 			const int glComponents = useRgb ? GL_RGB : GL_RGBA;
@@ -142,18 +142,24 @@ void render_task::run()
 			}
 			else
 			{
-				std::lock_guard guard(m_target->mutex);
+				// the lock may be held by the drawing thread for a whole upload: waited for without the gil. the bytes stay
+				// valid without it, the object is immutable and held by its reference here
+				Py_BEGIN_ALLOW_THREADS
+				{
+					std::scoped_lock guard(m_target->mutex);
 
-				if (m_target->image.size() != expectedBytes)
-					m_target->image.resize(expectedBytes);
+					if (m_target->image.size() != expectedBytes)
+						m_target->image.resize(expectedBytes);
 
-				std::memcpy(m_target->image.data(), pythonBufferPtr, expectedBytes);
+					std::memcpy(m_target->image.data(), pythonBufferPtr, expectedBytes);
 
-				m_target->width = screenWidth;
-				m_target->height = screenHeight;
-				m_target->components = glComponents;
-				m_target->format = glFormat;
-				m_target->timestamp = std::chrono::high_resolution_clock::now();
+					m_target->width = screenWidth;
+					m_target->height = screenHeight;
+					m_target->components = glComponents;
+					m_target->format = glFormat;
+					m_target->timestamp = std::chrono::high_resolution_clock::now();
+				}
+				Py_END_ALLOW_THREADS
 			}
 		}
 
@@ -230,6 +236,35 @@ void render_task::upload() const
 	{
 		m_target->shared_tex->update_from_memory(m_target->width, m_target->height, reinterpret_cast<const uint8_t *>(m_target->image.data()));
 	}
+}
+
+void render_task::upload_from_thread()
+{
+	m_uploadedbyworker = true;
+	if (Global.python_uploadmain && m_target && m_target->shared_tex)
+	{
+		m_target->shared_tex->upload_from_thread(m_target->width, m_target->height, reinterpret_cast<const uint8_t *>(m_target->image.data()));
+	}
+}
+
+bool render_task::finish_upload() const
+{
+	if (false == Global.python_uploadmain || nullptr == m_target || nullptr == m_target->shared_tex)
+		return true;
+	// the old texture is deleted and the new name published under the lock the windows of python.displaywindows bind under,
+	// so none of them binds the old name once it is gone: a name bound before stays alive in its context while bound there
+	std::scoped_lock lock(m_target->mutex);
+	if (m_uploadedbyworker)
+	{
+		if (false == m_target->shared_tex->commit_thread_upload())
+			return false;
+	}
+	else
+	{
+		upload();
+	}
+	m_target->texture_id = m_target->shared_tex->get_id();
+	return true;
 }
 
 void render_task::cancel() const { /* nothing to do */ }
@@ -569,9 +604,11 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 					// execute python code
 					task->run();
 					if (Context)
-						task->upload();
-					else
 					{
+						task->upload_from_thread();
+					}
+					{
+						// the drawing thread uploads the image, or puts in place the one uploaded here
 						std::scoped_lock lock(Upload_Tasks.mutex);
 						Upload_Tasks.data.push_back(task);
 					}
@@ -609,10 +646,8 @@ void python_taskqueue::update()
 {
 	std::scoped_lock lock(m_uploadtasks.mutex);
 
-	for (auto const &task : m_uploadtasks.data)
-		task->upload();
-
-	m_uploadtasks.data.clear();
+	// a task whose image a worker uploaded stays until the gpu has the image
+	std::erase_if(m_uploadtasks.data, [](std::shared_ptr<render_task> const &Task) { return Task->finish_upload(); });
 }
 
 void python_taskqueue::error()

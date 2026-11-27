@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include "world/TrackRails.h"
+#include "world/TrackSleepers.h"
+#include "world/TrackBlend.h"
 #include "rendering/renderer.h"
 
 namespace track_rails {
@@ -268,7 +270,9 @@ reused_chunks::~reused_chunks() {
     reused_pool() = m_previous;
 }
 
-gfx::geometry_handle insert_chunk( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Bank, int const Type ) {
+namespace {
+
+gfx::geometry_handle insert_weighed( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Bank, int const Type ) {
 
     auto *const reused { reused_pool() };
     if( reused == nullptr ) {
@@ -291,6 +295,19 @@ gfx::geometry_handle insert_chunk( gfx::vertex_array &Vertices, gfx::userdata_ar
         reused->push_back( { Type, handle, true } );
     }
     return handle;
+}
+
+} // namespace
+
+gfx::geometry_handle insert_chunk( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Bank, int const Type ) {
+
+    if( auto const *blending { track_blend::weighed() }; blending != nullptr ) {
+        // the weights of the textures the track blends into near its ends; the user data given are the caller's own, often shared
+        auto weighed { Userdata };
+        blending->weigh( Vertices, weighed );
+        return insert_weighed( Vertices, weighed, Bank, Type );
+    }
+    return insert_weighed( Vertices, Userdata, Bank, Type );
 }
 
 void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, gfx::geometrybank_handle const &Bank, TTrack::geometryhandle_sequence &Geometry, bool const Worn ) {
@@ -442,6 +459,8 @@ struct rail_piece {
     bool walls { false };
     float lift { 0.f };
     float wallu { -1.f };
+    knots::line rises;
+    knots::line lows;
 };
 
 struct top_band {
@@ -641,6 +660,8 @@ struct cut_span {
     bool capfrom { false };
     bool capto { false };
     piece_ends ends;
+    knots::line rises; // how far the foot of the rail is raised along it
+    knots::line lows; // how much of the low section of the blades it's of along it
 };
 
 // the points of the body of a grooved rail on the floor of the groove, and the texture of those of the profile there, summed up
@@ -939,6 +960,7 @@ private:
     void lay_treads( rail_piece const &Whole, std::vector<rail_tread> const &Treads, piece_ends const &Ends );
     void lay_cuts( gfx::vertex_array const &Shape, std::vector<rail_cut> Cuts, bool const Wheels, std::vector<rail_tread> const &Treads, float const Wallu = -1.f );
     cut_span between_cuts( double const Start, rail_cut_part const &From, rail_cut const &Next, bool const Own ) const;
+    void wing_section( cut_span &Between, rail_cut const *Before, rail_cut const *After, bool const Wheels ) const;
     void lay_between( gfx::vertex_array const &Shape, cut_span const &Between, bool const Wheels, std::vector<rail_tread> const &Treads, float const Wallu );
     material_handle brighter( material_handle const A, material_handle const B ) const;
     void lay_grooved( gfx::vertex_array const &Outline );
@@ -975,6 +997,9 @@ private:
     TSegment const &m_segment;
     double const m_length;
     double const m_guardoffset;
+    double const m_rise; // of the feet of the wing rails of the low section
+    glm::dvec2 const m_stock; // the stretch the rail is the stock rail of a blade along
+    double const m_heel; // of the blade the rail goes on from
     std::size_t m_topfirst;
     std::size_t m_toplast { 0 };
     std::vector<material_handle> m_tints;
@@ -996,6 +1021,9 @@ TTrack::rail_layer::rail_layer( TTrack &Track, rail_layout const &Layout, rail_d
     m_segment { track_rails::path_segment( Track, Course.path ) },
     m_length { m_segment.GetLength() },
     m_guardoffset { -( flangeway + Drawing.size.head ) },
+    m_rise { track_sleepers::wing_rise( Track ) },
+    m_stock { track_sleepers::stock_stretch( Track, Course.path, Course.side ) },
+    m_heel { track_sleepers::blade_heel( Track, Course.path, Course.side ) },
     m_topfirst { Profile.size() } {
     // the running surface on top of the head is split along the edge of the wheel treads, the part of it out of their reach goes matte; the rest of the profile and the end faces are laid whole
     for( std::size_t j = 0; j < Profile.size(); ++j ) {
@@ -1175,7 +1203,8 @@ void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<r
         // a piece carved between two cuts has the same lines at both
         auto const own { i < Cuts.size() && false == ( i > 0 && Cuts[ i - 1 ].carved && Cuts[ i ].carved ) };
         auto const &next { i < Cuts.size() ? Cuts[ i ] : beyond };
-        if( auto const between { between_cuts( start, *from, next, own ) }; between.to - between.from > 0.01 ) {
+        if( auto between { between_cuts( start, *from, next, own ) }; between.to - between.from > 0.01 ) {
+            wing_section( between, i > 0 ? &Cuts[ i - 1 ] : nullptr, i < Cuts.size() ? &Cuts[ i ] : nullptr, Wheels );
             lay_between( Shape, between, Wheels, Treads, Wallu );
         }
         start = next.start;
@@ -1220,6 +1249,16 @@ cut_span TTrack::rail_layer::between_cuts( double const Start, rail_cut_part con
         .ends = ends };
 }
 
+// the low section of the blades along the piece of a wing rail between the cuts Before and After, and how far the foot of the rail is raised
+// along it and past the heel of a blade; none of either on a rail the wheels don't run on
+void TTrack::rail_layer::wing_section( cut_span &Between, rail_cut const *Before, rail_cut const *After, bool const Wheels ) const {
+
+    if( Wheels && m_rise > 0.0 ) {
+        Between.lows = wing_shares( Before, After, m_stock );
+    }
+    Between.rises = part_rises( Between.lows, Wheels ? m_rise : 0.0, m_heel );
+}
+
 // the piece of a rail between two cuts, split at the edges of the treads along it
 void TTrack::rail_layer::lay_between( gfx::vertex_array const &Shape, cut_span const &Between, bool const Wheels, std::vector<rail_tread> const &Treads, float const Wallu ) {
 
@@ -1237,7 +1276,9 @@ void TTrack::rail_layer::lay_between( gfx::vertex_array const &Shape, cut_span c
             .capfrom = k == 1 && Between.capfrom,
             .capto = k + 1 == splits.size() && Between.capto,
             .walls = false == Wheels,
-            .wallu = Wallu };
+            .wallu = Wallu,
+            .rises = Between.rises,
+            .lows = Between.lows };
         if( Wheels && tread != nullptr && false == tread->edge.empty() && m_topfirst < m_toplast ) {
             treaded( whole, *tread, Between.ends );
         }
@@ -1558,6 +1599,12 @@ loft_span TTrack::rail_layer::span( rail_piece const &Piece, piece_ends const &E
     result.rampwidth = ( Piece.ramp.empty() ? 0.0 : Piece.fade );
     result.walls = Piece.walls;
     result.wallu = Piece.wallu;
+    result.rises = Piece.rises;
+    result.lows = Piece.lows;
+    if( false == Piece.rises.empty() ) {
+        result.head = { m_drawing.size.neck, m_drawing.size.crest };
+        result.low = { low_web, low_inward, low_outward, low_edge, low_root };
+    }
     if( std::abs( Piece.from - Ends.from ) < 1e-6 ) {
         result.fromend = Ends.fromend;
     }

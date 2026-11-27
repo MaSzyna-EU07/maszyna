@@ -10,18 +10,25 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
+#include <memory>
 
 #include "scene/scenenode.h"
 #include "world/Segment.h"
 #include "model/material.h"
 #include "utilities/Names.h"
+#include "world/TractionTail.h"
 
 class TTractionPowerSource;
+namespace gfx
+{
+class scene_walk;
+}
+struct catenary_span;
 
 class TTraction : public scene::basic_node
 {
-    friend opengl_renderer;
-    friend opengl33_renderer;
+    friend opengl46_renderer;
+    friend gfx::scene_walk;
 
   public: // na razie
     TTractionPowerSource *psPower[ 2 ] { nullptr, nullptr }; // najbliższe zasilacze z obu kierunków
@@ -54,6 +61,10 @@ class TTraction : public scene::basic_node
     // visualization data
     glm::dvec3 m_origin;
     gfx::geometry_handle m_geometry;
+    // stan przęsła rysowanego wg typu sieci (dopisek "type"); pusty = przęsło rysowane po staremu. szczegóły w world/catenary_span.h
+    std::shared_ptr<catenary_span> m_catenaryspan;
+    // dopiski wpisu "tension" i "rope2" w postaci wczytanej, zapisywane z powrotem przez export_as_text_
+    traction_tail m_tail;
 
     explicit TTraction( scene::node_data const &Nodedata );
 

@@ -282,6 +282,7 @@ void editor_mode::render_switch_ui()
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", tool.status.c_str());
 		ImGui::PopTextWrapPos();
 	}
+	render_stray_drives();
 
 	if (ImGui::Button(STR_C("Template editor...")))
 		m_switch_designer.open = true;

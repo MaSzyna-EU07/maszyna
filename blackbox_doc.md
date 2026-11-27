@@ -9,9 +9,8 @@ starter, a viewer) can replay the session on the map, or set the user's driving 
 
 `blackbox yes` in `eu07.ini` writes it, with the physics logs on or off; `blackbox no` never does. With no
 `blackbox` entry it is written along with the physics logs, `physicslog yes` or `physicslog.trains yes`.
-The former writes the `.dat` log of every driver but those of the road vehicles, which on a big scenery are
-hundreds and nobody reads. The latter writes the `.dat` logs of the trains only: of each driver who drives rail
-vehicles, not of the passengers either, so a big scenery gives far fewer of them still. It is never written in an
+The latter writes the `.dat` logs of the trains only: of each driver who drives rail vehicles, not of the
+passengers nor of the vehicles of the roads, so a big scenery gives far fewer of them. It is never written in an
 editor session. The file goes to `physicslog/<scenery>_<YYYY-MM-DD_HH-MM-SS>.blackbox` (the local time the
 recording started at), next to the `.dat` logs of the vehicles when those are on; they stay as they are.
 
@@ -27,17 +26,10 @@ goes on in that driver's log, begun then if it is the first time. Back with a dr
 the gap in its time. A vehicle with no driver of its own, or whose own driver is passive, takes the log of
 the driver of its train. So the speed recorder's tape can be read from them as before, also while the
 simulator runs, without a log of every vehicle. A driver who writes a log of its own, with
-`physicslog.trains yes` or `physicslog yes`, isn't written twice; with `physicslog yes` it is a road vehicle the
-user drives whose log the black box writes, so with the black box off (`blackbox no`, or in the editor) a car the
-user drives has no log. Like those of `physicslog yes`, they are written every
+`physicslog.trains yes`, isn't written twice. Like those of `physicslog yes`, they are written every
 two seconds, each file opened only for the moment it is written to; a crash loses the last two seconds
-of real time of them (at a higher time speed, more of the simulated time), up to ten on a disk which can't keep up. A file another program holds
+of real time of them (at a higher time speed, more of the simulated time). A file another program holds
 for a while doesn't lose its lines: they are written once it can be, the last 64 MB of all such logs at most.
-The writing of all the logs goes after the simulator's own reading of the disk. When it takes over a third of
-those two seconds, hundreds of logs on a hard disk say, they are written less often from then on, three times as
-long after a writing as it took and every ten seconds at most, and the simulator's log tells it once.
-Closing the simulator waits for the logs' last lines a second at most: what isn't written by then is lost,
-and the simulator's log tells how many logs were left unwritten.
 
 The recording starts once the scenery is loaded and ends when the simulator closes. Going into the
 editor (F11) ends it too, since the editor may take away the tracks and the vehicles it refers to; no
@@ -557,6 +549,26 @@ vehicles of a coupling see it; the one with the lower number tells it.
 What is coupled: 0x01 the coupler, 0x02 the brake pipe, 0x04 the control (multiple unit), 0x08 the high
 voltage, 0x10 the gangway, 0x20 the main reservoir pipe, 0x40 the train heating, 0x80 a coupling not to be
 undone in shunting (between the cars of a unit).
+
+### 0x38 derailment
+
+A vehicle off the track, with `physics.derailment new` in `eu07.ini`: it doesn't follow the track any more
+and moves on the ground by itself until it stops. Written when it leaves the track, and when it comes to
+rest off it, looked at every second. A vehicle put back on the rails and derailed again is written again.
+
+| type    | field                                                                          |
+|---------|--------------------------------------------------------------------------------|
+| `f64`   | t                                                                              |
+| `u32`   | number of the vehicle                                                          |
+| `u8`    | 0 it left the track, 1 it came to rest off it                                  |
+| `u8`    | what derailed it: 1 the flange climbed the rail, 2 it overturned in a curve, 3 the end of the track, 4 a coupling of a vehicle off the track pulled it off, 5 a collision |
+| `dvec3` | position of the vehicle                                                        |
+| `f32`   | heading [rad] of its front, from +z towards +x                                 |
+| `f32`   | speed [km/h], positive along its front                                         |
+| `f32`   | offset [m] from the axis of the track at the place nearest to it, to the left of its front positive |
+| `f32`   | roll [rad] of its body, to the left positive: about 1.57 on its side           |
+| `f32`   | distance [m] it went on the ground since it left the rails                     |
+| `u8`    | 1 lying on its side, 0 upright                                                 |
 
 ### 0x3F end
 

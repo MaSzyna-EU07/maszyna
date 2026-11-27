@@ -81,6 +81,18 @@ class terrain_streamer
 	std::string stats() const;
 	// chunks in the pack files and in memory, less the removed ones; the files known so far
 	bool exists(chunk_key const &Key) const;
+	// the chunks of all the pack files in the folder of the terrain, each with the cells along its side (0: unknown), ordered
+	// by key, as the files are on the disk: the chunks added or removed since the last save are as they were. reads the
+	// headers of the files, so it's for a list made now and then, not for every frame
+	std::vector<std::pair<chunk_key, int>> stored_chunks();
+	// removed in the editor, still in the files until saved
+	bool removed(chunk_key const &Key) const { return m_removed.count(Key) > 0; }
+	// the chunk in memory, or nullptr; Load: read from its pack file if it isn't in memory yet
+	editor_terrain *chunk(chunk_key const &Key, bool const Load = false);
+	// true while a chunk over an XZ rectangle (Low/High are x,z) is still to come at this distance of the camera: being loaded, or
+	// within the walk around the camera and in its pack or with its pack not read yet. False where all of them are in memory, where
+	// none is nor will be, and where the walk doesn't reach
+	bool ground_coming(glm::dvec2 const &Low, glm::dvec2 const &High) const;
 
 	// editing; the chunks changed are written to the files by save()
 	heightmap::manifest const &manifest() const { return m_manifest; }
@@ -121,6 +133,26 @@ class terrain_streamer
 	// Feather: metres across the outline the material blends in over, half of them inside; 0: a sharp edge, as sharp as
 	// the paint samples of the chunks go. the chunks are loaded where needed
 	bool fill(std::vector<glm::dvec2> const &Outline, double Feather, std::uint16_t Layer, double Strength = 1.0);
+	// the same with the edge shifted by up to Noise metres, in waves of about NoiseScale metres, so it isn't drawn with a ruler
+	bool fill(std::vector<glm::dvec2> const &Outline, double Feather, std::uint16_t Layer, double Strength, double Noise, double NoiseScale);
+	// holes, for the portals of tunnels and the like: cut in the ground (Cut true) within Radius of (X,Z), or closed again
+	bool cut(double X, double Z, double Radius, bool Cut);
+	// the same within Outline (x, z); the chunks are loaded where needed
+	bool cut(std::vector<glm::dvec2> const &Outline, bool Cut);
+	// the hole of a field of its own surface cut (Cut true) or closed: marked as the field's, so closing it leaves the holes
+	// cut otherwise (the Holes tool) there as they are; a hole of a field cut before the mark is closed whole
+	bool cut_field(std::vector<glm::dvec2> const &Outline, bool Cut);
+	// grass: grows the kind of the grass palette Kind within Radius of (X,Z), Strength (0..1) of the way at the centre;
+	// Erase: takes every kind of grass away there instead
+	bool grass(double X, double Z, double Radius, double Strength, std::uint16_t Kind, bool Erase);
+	// the same within Outline (x, z), fully; the chunks are loaded where needed
+	bool grass(std::vector<glm::dvec2> const &Outline, std::uint16_t Kind, bool Erase);
+	// the grass palette
+	std::vector<heightmap::grass_def> const &grass_kinds() const { return m_manifest.grass; }
+	// adds a kind to the grass palette; returns: its index
+	std::uint16_t add_grass_kind(heightmap::grass_def Kind);
+	// changes a kind of the grass palette; the grass of that kind changes with it
+	void grass_kind(std::uint16_t Index, heightmap::grass_def Kind);
 	// palette entry of the material (repeated at Size, 0: any, turned by Rotation degrees), added to the palette if needed
 	std::uint16_t layer(std::string const &Material, float Size = 0.f, float Rotation = 0.f);
 	void layer_size(std::uint16_t Layer, float Size);
@@ -135,6 +167,9 @@ class terrain_streamer
 	void water(std::vector<heightmap::water_body> Water);
 	// material of the bodies of water which don't name their own
 	void water_material(std::string const &Material);
+	// pieces of the ground cut out of the terrain with a material of their own (the fields), drawn with the water
+	std::vector<heightmap::surface_patch> const &patches() const { return m_manifest.patches; }
+	void patches(std::vector<heightmap::surface_patch> Patches);
 	// modifiers: added or replaced by name
 	void modifier(heightmap::modifier Modifier);
 	// many at once, as the formation of all the tracks: each chunk they reach is led anew once
@@ -158,8 +193,10 @@ class terrain_streamer
 		bool manifest{false}; // the palette, the water (and its material) and the modifiers below were changed
 		std::vector<heightmap::layer_def> layers;
 		std::vector<heightmap::water_body> water;
+		std::vector<heightmap::surface_patch> patches;
 		std::string water_material;
 		std::vector<heightmap::modifier> modifiers;
+		std::vector<heightmap::grass_def> grass;
 
 		bool empty() const { return chunks.empty() && false == manifest; }
 	};
@@ -226,6 +263,7 @@ class terrain_streamer
 		gfx::geometry_handle geometry{0, 0};
 		int cells{0};
 		int stride{0};
+		bool cut{false}; // the indices are of a chunk with holes, filled anew with every mesh
 		bool used{false};
 	};
 	struct water_shape
@@ -234,6 +272,11 @@ class terrain_streamer
 		scene::basic_section *section{nullptr};
 		scene::basic_cell *cell{nullptr};
 	};
+
+	// within the circle of chunks the last walk of update() asked for
+	bool in_walk(chunk_key const &Key) const;
+	// the chunk is still to come at this distance of the camera (see ground_coming)
+	bool chunk_coming(chunk_key const &Key) const;
 
 	void start_workers();
 	void stop_workers();
@@ -255,6 +298,19 @@ class terrain_streamer
 	// paints the material of the palette entry Layer over the paint samples within the rectangle, Amount (0..1) of the way
 	// at each, as Amount gives it for the place of the sample. Load: chunks not in memory are loaded
 	bool paint_area(glm::dvec2 const &Min, glm::dvec2 const &Max, std::uint16_t Layer, bool Load, std::function<double(double X, double Z)> const &Amount);
+	// cuts (Cut true) or closes the holes at the hole samples within the rectangle where Inside says so. Load: chunks not in
+	// memory are loaded
+	// Mark: the value of a hole sample, 255 of the holes cut by hand, kFieldHole of the fields; with Mark other than 255 only
+	// the samples of that mark are closed, and a hole already there isn't marked over; with 255 the holes of the fields are left
+	// as they are
+	bool cut_area(glm::dvec2 const &Min, glm::dvec2 const &Max, bool Cut, bool Load, std::function<bool(double X, double Z)> const &Inside,
+	              std::uint8_t Mark = 255);
+	static std::uint8_t constexpr kFieldHole{254};
+	// grows the kind Kind of the grass palette (or takes all grass away, Erase) over the grass samples within the rectangle,
+	// Amount (0..1) of the way at each
+	bool grass_area(glm::dvec2 const &Min, glm::dvec2 const &Max, std::uint16_t Kind, bool Erase, bool Load, std::function<double(double X, double Z)> const &Amount);
+	// hands the renderer the grass of the chunks near the camera
+	void publish_grass(glm::dvec3 const &Camera);
 	// chunk loaded right away from its pack file, for editing far from the camera
 	editor_terrain *load_now(chunk_key const &Key);
 	// chunks in memory or in the files overlapping the rectangle, loaded if needed
@@ -266,6 +322,9 @@ class terrain_streamer
 	void apply_modifiers(glm::dvec2 const &Min, glm::dvec2 const &Max);
 	std::vector<std::pair<glm::dvec2, glm::dvec2>> modifier_bounds() const;
 	void build_water();
+	// the vertices of a shape of the water or of a field in the geometry of the water: one made before filled anew, or a new one;
+	// a handle of chunk 0 if it failed
+	gfx::geometry_handle water_geometry(gfx::vertex_array Vertices);
 	void clear_water(bool const Touch);
 	std::string pack_path(heightmap::pack_key const &Key) const;
 	// the state of a chunk (null: no chunk) or of the description is kept for the change in progress, if it's the first time
@@ -287,6 +346,7 @@ class terrain_streamer
 	std::set<chunk_key> m_loading; // asked from a worker
 	std::set<chunk_key> m_removed; // removed in the editor, still in the files until saved
 	std::vector<geometry_slot> m_slots;
+	bool m_nocut{false}; // the renderer can't change the indices of the chunks: the holes are cut by the materials alone
 	std::map<std::uint64_t, int> m_slotofgeometry; // geometry key -> slot
 	std::map<std::uint16_t, material_handle> m_palette;
 	std::vector<water_shape> m_watershapes;
@@ -301,6 +361,23 @@ class terrain_streamer
 	glm::dvec3 m_velocity{0.0};
 	double m_cameratime{0.0};
 	bool m_hascamera{false};
+	// the pieces cut out of the terrain are made around where the camera was, within patch_reach, again when it moves patch_move away
+	static constexpr double patch_reach{1500.0}; // at least; as far as the chunks are drawn
+	// a chunk under the piece is in the files but not loaded yet
+	bool waits_for_ground(heightmap::surface_patch const &Patch) const;
+	static constexpr double patch_move{200.0};
+	glm::dvec2 m_patchcentre{1e12};
+	bool m_patchpending{false}; // some waited for chunks not loaded
+	bool m_patchloaded{false}; // a chunk came since they were made
+	double m_patchtried{0.0};
+	std::vector<std::size_t> m_patchesbuilt; // the separate pieces (not laid into the paint) within the reach of m_patchcentre, made
+	// how far around the camera the pieces are made: as far as the chunks are drawn, patch_reach at least
+	static double reach_of_patches();
+	// the separate pieces within the reach of Centre, in the order of the manifest
+	std::vector<std::size_t> patches_in_reach(glm::dvec2 const &Centre) const;
+	// the pieces to be made anew: some wait for their ground and a chunk came, or the camera moved on so far that a separate piece
+	// came within the reach or left it. A move that changes nothing only moves the centre the next move is measured from
+	bool patches_due(glm::dvec3 const &Camera, double Now);
 	std::vector<chunk_key> m_ring; // offsets of the chunks around a point, the nearest first
 	int m_ringradius{-1};
 	double m_pixel{0.0}; // metres a pixel of the top view spans; none in the 3D view

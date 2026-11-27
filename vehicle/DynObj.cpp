@@ -27,10 +27,20 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <format>
+#include <random>
 #include <iterator>
+#include <numbers>
+#include <optional>
+#include <string_view>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
+#include "utilities/workerpool.h"
 #include "utilities/Logs.h"
 #include "utilities/glmHelpers.h"
 #include "Console.h"
@@ -40,6 +50,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/Model3d.h"
 #include "vehicle/doorwings.h"
 #include "rendering/renderer.h"
+#include "editor/editorTerrainStreamer.hpp"
 #include "application/uitranscripts.h"
 #include "input/messaging.h"
 #include "application/application.h"
@@ -943,6 +954,18 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
     // NBMX wrzesien, MC listopad: zuniwersalnione
     btnOn = false; // czy przywrócić stan domyślny po renderowaniu
 
+    // the submodels set below are shared with whatever else is drawn with the same models
+    for( auto *model : { mdModel, mdLoad, mdLowPolyInt, mdKabina } ) {
+        if( model != nullptr ) {
+            model->state_changed();
+        }
+    }
+    for( auto *model : mdAttachments ) {
+        if( model != nullptr ) {
+            model->state_changed();
+        }
+    }
+
     if (mdLoad) // tymczasowo ładunek na poziom podłogi
         if (vFloor.z > 0.0)
             mdLoad->GetSMRoot()->SetTranslate(modelShake + vFloor);
@@ -1162,7 +1185,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                     continue;
                 }
 
-                auto const dist { std::clamp( MoverParameters->Couplers[ i ].Dist / 2.0, -MoverParameters->Couplers[ i ].DmaxB, 0.0 ) };
+                auto const dist { safe_clamp( MoverParameters->Couplers[ i ].Dist / 2.0, -MoverParameters->Couplers[ i ].DmaxB, 0.0 ) };
 
                 if( dist >= 0.0 ) { continue; }
 
@@ -1588,6 +1611,14 @@ void TDynamicObject::ABuBogies()
 { // Obracanie wozkow na zakretach. Na razie
     // uwzględnia tylko zakręty,
     // bez zadnych gorek i innych przeszkod.
+    if( smBogie[ 0 ] != nullptr && smBogie[ 1 ] != nullptr && MoverParameters->OffTrack.active() ) {
+        // off the track the bogies stay straight under the body, they don't follow the track any more
+        bogieRot[ 0 ] = glm::vec3 { 0.f };
+        bogieRot[ 1 ] = glm::vec3 { 0.f };
+        smBogie[ 0 ]->SetRotateXYZ( bogieRot[ 0 ] );
+        smBogie[ 1 ]->SetRotateXYZ( bogieRot[ 1 ] );
+        return;
+    }
     if (smBogie[0] != nullptr && smBogie[1] != nullptr)
     {
         // modelRot.z=ABuAcos(Axle0.pPosition-Axle1.pPosition); //kąt obrotu pojazdu
@@ -1624,7 +1655,7 @@ void TDynamicObject::ABuCheckMyTrack()
 
 // Ra: w poniższej funkcji jest problem ze sprzęgami
 TDynamicObject *
-TDynamicObject::ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int const Direction, int const Mycoupler ) const
+TDynamicObject::ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int const Direction, int const Mycoupler, bool const InLine ) const
 { // Zwraca wskaźnik najbliższego obiektu znajdującego się
     // na torze w określonym kierunku, ale tylko wtedy, kiedy
     // obiekty mogą się zderzyć, tzn. nie mijają się.
@@ -1666,6 +1697,10 @@ TDynamicObject::ABuFindObject( int &Foundcoupler, double &Distance, TTrack const
     for( auto dynamic : Track->Dynamics ) {
 
         if( dynamic == this ) { continue; } // szukający się nie liczy
+        // physics.derailment new: one of the two off the track beside the other one, they don't meet
+        if( InLine && ( MoverParameters->OffTrack.active() || dynamic->MoverParameters->OffTrack.active() ) && false == in_line_with( *dynamic ) ) {
+            continue;
+        }
 /*
         if( ( ( dynamic == PrevConnected ) && ( MoverParameters->Couplers[ TMoverParameters::side::front ].CouplingFlag != coupling::faux ) )
          || ( ( dynamic == NextConnected ) && ( MoverParameters->Couplers[ TMoverParameters::side::rear  ].CouplingFlag != coupling::faux ) )  ){
@@ -2446,6 +2481,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     ShakeSpring.Init( 125.0 );
     BaseShake = baseshake_config {};
     ShakeState = shake_state {};
+    ShakeStateBefore = shake_state {};
 
     // McZapkie-250202
 /*
@@ -2604,7 +2640,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     initial_track = MyTrack;
     iNumAxles = 2;
     // McZapkie-090402: odleglosc miedzy czopami skretu lub osiami
-    fAxleDist = std::clamp(
+    fAxleDist = safe_clamp(
             std::max( MoverParameters->BDist, MoverParameters->ADist ),
             0.2, //żeby się dało wektory policzyć
             MoverParameters->Dim.L - 0.2 ); // nie mogą być za daleko bo będzie "walenie w mur"
@@ -2769,6 +2805,22 @@ void TDynamicObject::FastMove(double fDistance)
 }
 
 void TDynamicObject::Move(double fDistance)
+{
+    if( MoverParameters->OffTrack.active() ) {
+        // physics.derailment new: off the track it goes on the ground
+        move_off_track( fDistance );
+        return;
+    }
+    move_axles( fDistance );
+    if( fDistance != 0.0 || m_offtrackplaced ) // nie liczyć ponownie, jeśli stoi
+    { // liczenie pozycji pojazdu tutaj, bo jest używane w wielu miejscach
+        // (also once the vehicle off the track is back on the rails)
+        m_offtrackplaced = false;
+        place_by_axles();
+    }
+}
+
+void TDynamicObject::move_axles(double fDistance)
 { // przesuwanie pojazdu po
     // trajektorii polega na
     // przesuwaniu poszczególnych osi
@@ -2800,8 +2852,10 @@ void TDynamicObject::Move(double fDistance)
         bEnabled &= Axle1.Move(fDistance, iAxleFirst != 0); // oś z tyłu pojazdu prusza się pierwsza
         bEnabled &= Axle0.Move(fDistance, iAxleFirst == 0); // oś z przodu pojazdu
     }
-    if (fDistance != 0.0) // nie liczyć ponownie, jeśli stoi
-    { // liczenie pozycji pojazdu tutaj, bo jest używane w wielu miejscach
+}
+
+void TDynamicObject::place_by_axles()
+{ // liczenie pozycji pojazdu tutaj, bo jest używane w wielu miejscach
         vPosition = 0.5 * (Axle1.pPosition + Axle0.pPosition); //środek między skrajnymi osiami
         vFront = Axle0.pPosition - Axle1.pPosition; // wektor pomiędzy skrajnymi osiami
         // Ra 2F1J: to nie jest stabilne (powoduje rzucanie taborem) i wymaga
@@ -2911,8 +2965,448 @@ void TDynamicObject::Move(double fDistance)
                 }
             }
         }
+}
+
+namespace {
+
+using ground_triangles = std::vector<derail_motion::mesh_ground::triangle>;
+
+bool outside( glm::dvec3 const &Centre, double const Radius, glm::dvec2 const &Min, glm::dvec2 const &Max ) {
+    return Centre.x + Radius < Min.x || Centre.x - Radius > Max.x || Centre.z + Radius < Min.y || Centre.z - Radius > Max.y;
+}
+
+void add_triangle( glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C, glm::dvec2 const &Min, glm::dvec2 const &Max, ground_triangles &Out ) {
+    if( std::max( { A.x, B.x, C.x } ) < Min.x || std::min( { A.x, B.x, C.x } ) > Max.x
+     || std::max( { A.z, B.z, C.z } ) < Min.y || std::min( { A.z, B.z, C.z } ) > Max.y ) {
+        return;
     }
-};
+    Out.push_back( { A, B, C } );
+}
+
+// the triangles of a piece of the scenery's geometry within the rectangle (x, z), as the editor gathers the ground
+void add_shape( scene::shape_node const &Shape, glm::dvec2 const &Min, glm::dvec2 const &Max, ground_triangles &Out ) {
+    auto const &data { Shape.data() };
+    if( data.area.radius >= 0.f && outside( data.area.center, data.area.radius, Min, Max ) ) {
+        return;
+    }
+    if( false == data.vertices.empty() ) {
+        for( std::size_t i = 0; i + 2 < data.vertices.size(); i += 3 ) {
+            add_triangle( data.vertices[ i ].position, data.vertices[ i + 1 ].position, data.vertices[ i + 2 ].position, Min, Max, Out );
+        }
+        return;
+    }
+    // once the shape is uploaded its world-space source is released; the renderer keeps an origin-relative copy
+    if( data.geometry.bank == 0 && data.geometry.chunk == 0 ) {
+        return;
+    }
+    auto const &vertices { GfxRenderer->Vertices( data.geometry ) };
+    auto const &indices { GfxRenderer->Indices( data.geometry ) };
+    auto const point = [ &data, &vertices ]( std::size_t const Index ) { return data.origin + glm::dvec3 { vertices[ Index ].position }; };
+    if( indices.empty() ) {
+        for( std::size_t i = 0; i + 2 < vertices.size(); i += 3 ) {
+            add_triangle( point( i ), point( i + 1 ), point( i + 2 ), Min, Max, Out );
+        }
+        return;
+    }
+    for( std::size_t i = 0; i + 2 < indices.size(); i += 3 ) {
+        if( std::max( { indices[ i ], indices[ i + 1 ], indices[ i + 2 ] } ) >= vertices.size() ) {
+            continue;
+        }
+        add_triangle( point( indices[ i ] ), point( indices[ i + 1 ] ), point( indices[ i + 2 ] ), Min, Max, Out );
+    }
+}
+
+// the ground of the scenery within the rectangle (x, z): its terrain and the other opaque geometry of its sections,
+// and the heightmap terrain where it is loaded. the models aren't ground
+ground_triangles scenery_ground( glm::dvec2 const &Min, glm::dvec2 const &Max ) {
+    ground_triangles triangles;
+    if( simulation::Region == nullptr ) {
+        return triangles;
+    }
+    auto const centre { 0.5 * ( Min + Max ) };
+    std::vector<scene::basic_section *> sections;
+    simulation::Region->sections( glm::dvec3 { centre.x, 0.0, centre.y }, static_cast<float>( 0.5 * glm::length( Max - Min ) ), sections );
+    for( auto const *section : sections ) {
+        for( auto const &shape : section->m_shapes ) {
+            add_shape( shape, Min, Max, triangles );
+        }
+        for( auto const &cell : section->m_cells ) {
+            if( outside( cell.m_area.center, cell.m_area.radius, Min, Max ) ) {
+                continue;
+            }
+            for( auto const &shape : cell.m_shapesopaque ) {
+                add_shape( shape, Min, Max, triangles );
+            }
+        }
+    }
+    if( EditorTerrain.active() ) {
+        EditorTerrain.gather_triangles( Min, Max, triangles );
+    }
+    return triangles;
+}
+
+glm::dvec3 level_left_of( glm::dvec3 const &Front ) {
+    return glm::dvec3 { Front.z, 0.0, -Front.x };
+}
+
+// the end of the vehicle where it meets the one coupled to it: the middle of its buffer beam, the way it faces. off the
+// track, over its base on the ground as it stands: rolled over, its ends go with it as far as the coupling holds them,
+// and the buffers of the side it rolled to miss those of an upright one
+derail_motion::end_point end_point_of( TDynamicObject const &Vehicle, int const End ) {
+    auto const facing { End == end::front ? 1.0 : -1.0 };
+    auto const &motion { Vehicle.MoverParameters->OffTrack };
+    glm::dvec3 const front { Vehicle.VectorFront().x, 0.0, Vehicle.VectorFront().z };
+    auto const length { glm::length( front ) };
+    auto const axis { length > 1e-6 ? front / length : glm::dvec3 { 0.0, 0.0, 1.0 } };
+    auto const middle { motion.active() ? motion.base() : Vehicle.GetPosition() };
+    return derail_motion::end_point {
+        middle + glm::dvec3 { 0.0, derail_motion::buffer_height, 0.0 } + axis * ( facing * 0.5 * Vehicle.MoverParameters->Dim.L ),
+        axis * facing,
+        motion.active() ? motion.tipping() : 0.0 };
+}
+
+// the push of the buffers on the end of the vehicle [N], negative the pull of its coupling
+double compression_of( TMoverParameters const &Vehicle, int const End ) {
+    return ( End == end::front ? -1.0 : 1.0 ) * Vehicle.Couplers[ End ].CForce;
+}
+
+// the time spent off the track in a frame which makes it worth a warning [s]
+constexpr double off_track_slow { 0.02 };
+
+using off_track_clock = std::chrono::steady_clock;
+
+double seconds_since( off_track_clock::time_point const Start ) {
+    return std::chrono::duration<double>( off_track_clock::now() - Start ).count();
+}
+
+std::string_view side_name( int const Side ) {
+    if( Side > 0 ) {
+        return "left";
+    }
+    return Side < 0 ? "right" : "none";
+}
+
+} // namespace
+
+double TDynamicObject::off_track_gap( int const End ) const {
+
+    auto const *neighbour { MoverParameters->Neighbours[ End ].vehicle };
+    if( neighbour == nullptr ) {
+        return 0.0;
+    }
+    return derail_motion::meet( end_point_of( *this, End ), end_point_of( *neighbour, MoverParameters->Neighbours[ End ].vehicle_end ) ).gap;
+}
+
+double TDynamicObject::off_track_offset() const {
+
+    if( false == MoverParameters->OffTrack.active() ) {
+        return 0.0;
+    }
+    auto const middle { 0.5 * ( Axle0.pPosition + Axle1.pPosition ) };
+    auto const offset { vPosition - middle };
+    return glm::dot( glm::dvec3 { offset.x, 0.0, offset.z }, level_left_of( track_front() ) );
+}
+
+glm::dvec3 TDynamicObject::track_front() const {
+
+    auto const along { Axle0.pPosition - Axle1.pPosition };
+    glm::dvec3 const flat { along.x, 0.0, along.z };
+    auto const length { glm::length( flat ) };
+    return length > 1e-6 ? flat / length : glm::dvec3 { 0.0, 0.0, 1.0 };
+}
+
+derail_motion::formation TDynamicObject::track_bed() const {
+
+    derail_motion::formation bed;
+    bed.point = 0.5 * ( Axle0.pPosition + Axle1.pPosition );
+    bed.direction = track_front();
+    if( auto const *track { RaTrackGet() }; track != nullptr ) {
+        // the ballast out of the rails, as wide as the track draws it
+        bed.half_width = std::clamp( 0.5 * std::abs( track->fTrackWidth ) + std::abs( track->fTexWidth ), 1.2, 3.5 );
+    }
+    return bed;
+}
+
+int TDynamicObject::outward_side() const {
+
+    // the track as designed turns from the rear axle to the front one: the outside of its curve, or its inside where a
+    // buckle bends the line the other way more than the curve does (the criteria of derailment, McZapkie/derailment.h)
+    if( auto const design { std::sin( Axle1.vAngles.z - Axle0.vAngles.z ) }; std::abs( design ) >= 1e-4 ) {
+        auto const outside { design > 0.0 ? -1 : 1 };
+        return MoverParameters->DerailAcceleration < 0.0 ? -outside : outside;
+    }
+    // a straight track: the path under the vehicle as it is, a buckle on it, turns from the rear axle to the front one
+    auto const front { Axle0.PathDirection() };
+    auto const rear { Axle1.PathDirection() };
+    auto const turn { glm::dot( front, level_left_of( rear ) ) };
+    // a turn under a tenth of a milliradian is a straight track
+    if( std::abs( turn ) < 1e-4 ) {
+        return 0;
+    }
+    // turning left, the outside of the curve is on the right
+    return turn > 0.0 ? -1 : 1;
+}
+
+void TDynamicObject::gather_off_track_terrain() {
+
+    auto const &mover { *MoverParameters };
+    auto const &position { mover.OffTrack.active() ? mover.OffTrack.current().position : vPosition };
+    // as far as it may slide, and some
+    auto const slide { derail_motion::stopping_distance( mover.V, derailment::off_rails_friction ).value_or( 0.0 ) };
+    auto const reach { std::min( slide + mover.Dim.L + 50.0, 600.0 ) };
+    m_offtrackgathered = m_offtracktotal;
+    m_offtrackcropped = false;
+    // the terrain of another vehicle, where it covers the way this one goes: around it and around where it stops going
+    // straight on, by its length and the margin the terrain is gathered again at
+    glm::dvec3 heading { vFront.x, 0.0, vFront.z };
+    if( mover.OffTrack.active() ) {
+        heading = mover.OffTrack.heading();
+    }
+    auto const length { glm::length( heading ) };
+    auto const stop { length > 1e-6 ? position + heading * ( std::copysign( std::max( reach - mover.Dim.L - 50.0, 0.0 ), mover.V ) / length ) : position };
+    auto const margin { mover.Dim.L + 30.0 };
+    if( auto shared { simulation::Vehicles.off_track_terrain(
+            glm::dvec2 { std::min( position.x, stop.x ) - margin, std::min( position.z, stop.z ) - margin },
+            glm::dvec2 { std::max( position.x, stop.x ) + margin, std::max( position.z, stop.z ) + margin } ) };
+        shared != nullptr ) {
+        m_offtrackterrain = std::move( shared );
+        m_offtrackmin = m_offtrackterrain->minimum();
+        m_offtrackmax = m_offtrackterrain->maximum();
+        m_offtracksite.terrain( m_offtrackterrain.get() );
+        return;
+    }
+    m_offtrackmin = glm::dvec2 { position.x - reach, position.z - reach };
+    m_offtrackmax = glm::dvec2 { position.x + reach, position.z + reach };
+    auto const started { off_track_clock::now() };
+    auto triangles { scenery_ground( m_offtrackmin, m_offtrackmax ) };
+    auto const trimmed { triangles.size() > off_track_triangles };
+    if( trimmed ) {
+        // a scenery dense enough to make it slow: the triangles nearest to it are enough
+        std::nth_element( triangles.begin(), triangles.begin() + off_track_triangles, triangles.end(),
+            [ &position ]( auto const &Left, auto const &Right ) {
+                auto const distance = [ &position ]( auto const &Triangle ) {
+                    auto const middle { ( Triangle[ 0 ] + Triangle[ 1 ] + Triangle[ 2 ] ) / 3.0 };
+                    return std::max( std::abs( middle.x - position.x ), std::abs( middle.z - position.z ) ); };
+                return distance( Left ) < distance( Right ); } );
+        triangles.resize( off_track_triangles );
+        ErrorLog( std::format( "derailment: warning: {} found more than {} triangles of terrain around it, took the nearest", MoverParameters->Name, off_track_triangles ) );
+    }
+    if( triangles.empty() ) {
+        // a scenery without terrain: level with the top of the ballast
+        m_offtrackterrain.reset();
+    }
+    else {
+        m_offtrackterrain = std::make_shared<derail_motion::mesh_ground const>( triangles, m_offtrackmin, m_offtrackmax );
+        // the vehicles sliding over it take it as it is; the nearest triangles of a dense scenery are its own
+        if( false == trimmed ) {
+            simulation::Vehicles.share_off_track_terrain( m_offtrackterrain );
+        }
+    }
+    m_offtracksite.terrain( m_offtrackterrain.get() );
+    auto const took { seconds_since( started ) };
+    if( took > off_track_slow ) {
+        ErrorLog( std::format( "derailment: warning: gathering the terrain of {:.0f} m around {} took {:.0f} ms ({} triangles)", reach, MoverParameters->Name, took * 1000.0, triangles.size() ) );
+    }
+}
+
+void TDynamicObject::crop_off_track_terrain() {
+
+    if( m_offtrackcropped || m_offtrackterrain == nullptr ) {
+        return;
+    }
+    m_offtrackcropped = true;
+    // the ground under it, and as far around as it gathers the terrain anew once it moves again
+    auto const &position { MoverParameters->OffTrack.current().position };
+    auto const reach { 0.5 * MoverParameters->Dim.L + 40.0 };
+    m_offtrackmin = glm::dvec2 { position.x - reach, position.z - reach };
+    m_offtrackmax = glm::dvec2 { position.x + reach, position.z + reach };
+    m_offtrackterrain = std::make_shared<derail_motion::mesh_ground const>( m_offtrackterrain->cropped( m_offtrackmin, m_offtrackmax ) );
+    m_offtracksite.terrain( m_offtrackterrain.get() );
+}
+
+void TDynamicObject::begin_off_track() {
+
+    auto &mover { *MoverParameters };
+    derail_motion::vehicle_shape shape;
+    shape.length = mover.Dim.L;
+    shape.width = mover.Dim.W > 0.5 ? mover.Dim.W : 3.0;
+    // a height up to 2 m in the definition is the height of the floor, the older meaning of the key
+    shape.height = mover.Dim.H > 2.0 ? mover.Dim.H : 4.0;
+    shape.centre_of_gravity = mover.centre_of_gravity();
+    shape.contact_spacing = derailment::contact_spacing( mover.TrackW );
+    shape.base = std::max( static_cast<double>( fAxleDist ), 1.0 );
+    shape.mass = mover.TotalMass;
+
+    derail_motion::start start;
+    start.position = vPosition;
+    start.front = vFront;
+    start.line = track_front();
+    start.speed = mover.V;
+    start.reason = mover.DerailCause;
+    start.outward = ( mover.DerailSide != 0 ? mover.DerailSide : outward_side() );
+    start.acceleration = mover.DerailAcceleration;
+
+    // the terrain as far as it may slide, and some
+    m_offtracktotal = 0.0;
+    gather_off_track_terrain();
+    m_offtracksite = derail_motion::site { m_offtrackterrain.get(), track_bed() };
+    // each vehicle its own way of going off, from the seed of the run (the same seed, the same way)
+    auto const scatter { derail_motion::draw_scatter( derail_motion::seed_of( Global.random_seed, mover.Name ) ) };
+    mover.OffTrack.begin( start, shape, m_offtracksite, scatter );
+    m_pulledoff = {};
+    m_offtracklogdue = 0.0;
+    m_offtrackslowdue = 0.0;
+    m_offtrackaxles = 0.0;
+    m_offtrackfrom = mover.OffTrack.current().position;
+
+    auto const heading { mover.OffTrack.heading() };
+    auto const front { glm::dvec3 { vFront.x, 0.0, vFront.z } };
+    auto const turn { std::asin( std::clamp( glm::dot( heading, level_left_of( glm::normalize( front ) ) ), -1.0, 1.0 ) ) };
+    std::string terrain { "no terrain, level ground" };
+    if( m_offtrackterrain != nullptr ) {
+        terrain = std::format( "{} triangles of terrain", m_offtrackterrain->size() );
+    }
+    WriteLog( std::format(
+        "derailment: {} leaves the track at {:.0f} km/h on track {}, heading turned {:.1f} deg to the {}, the outside of the curve to the {}; {} around it",
+        mover.Name, std::abs( mover.V ) * 3.6, MyTrack != nullptr ? MyTrack->name() : std::string { "(none)" },
+        std::abs( glm::degrees( turn ) ), side_name( turn >= 0.0 ? 1 : -1 ), side_name( start.outward ), terrain ) );
+    WriteLog( std::format(
+        "derailment: {} scattered by {:+.2f} deg of departure, {:+.2f} deg of yaw at {:+.3f} rad/s, the friction under its ends x{:.2f} / x{:.2f}{}",
+        mover.Name, glm::degrees( scatter.departure ), glm::degrees( scatter.yaw ), scatter.yaw_rate, scatter.friction_front, scatter.friction_rear,
+        scatter.dig_in >= 0.0 ? std::format( ", its leading end digs in after {:.2f} s, x{:.2f} for {:.2f} s", scatter.dig_in, scatter.dig_in_friction, scatter.dig_in_time ) : std::string {} ) );
+}
+
+void TDynamicObject::move_off_track( double const Distance ) {
+
+    auto const started { off_track_clock::now() };
+    auto &motion { MoverParameters->OffTrack };
+    auto const time { std::exchange( m_offtracktime, 0.0 ) };
+    m_offtracktotal += time;
+    // near the edge of the terrain gathered, the terrain further on; not more than once a second, whatever happens
+    if( m_offtrackterrain != nullptr && Distance != 0.0 && m_offtracktotal - m_offtrackgathered >= 1.0 ) {
+        auto const &position { motion.current().position };
+        constexpr double margin { 30.0 };
+        if( position.x - margin < m_offtrackmin.x || position.x + margin > m_offtrackmax.x
+         || position.z - margin < m_offtrackmin.y || position.z + margin > m_offtrackmax.y ) {
+            gather_off_track_terrain();
+        }
+    }
+    m_offtracksite.bed( track_bed() );
+    // the buffers and the couplings of its ends push and pull it, at an angle to it where the vehicle coupled there is
+    std::array<derail_motion::end_force, 2> ends {};
+    for( int end = end::front; end <= end::rear; ++end ) {
+        auto const *neighbour { MoverParameters->Neighbours[ end ].vehicle };
+        auto const compression { compression_of( *MoverParameters, end ) };
+        if( neighbour == nullptr || compression == 0.0 ) {
+            continue;
+        }
+        ends[ end ] = derail_motion::force_on(
+            derail_motion::meet( end_point_of( *this, end ), end_point_of( *neighbour, MoverParameters->Neighbours[ end ].vehicle_end ) ), compression );
+    }
+    auto const reversals { motion.reversals() };
+    motion.step( time, Distance, MoverParameters->V, m_offtracksite, ends );
+    if( ( motion.reversals() - reversals ) % 2 != 0 ) {
+        // the body turned about against the way it goes: the vehicle goes rear first, its speed the other way along it
+        MoverParameters->V = -MoverParameters->V;
+    }
+    auto const &pose { motion.current() };
+    // the axles go along the track as far as the vehicle went along it, for the track nearest to it: the vehicles on it
+    // find it there, the events of the track are passed. by 10 cm at least: a body turning or rocking in place moves
+    // the axles back and forth by millimetres, which over the end of a track would fire its events every frame. from
+    // where it was the last time, so the moves out of the other bodies between the frames go into the axles too
+    m_offtrackaxles += glm::dot( pose.position - std::exchange( m_offtrackfrom, pose.position ), track_front() );
+    if( std::abs( m_offtrackaxles ) >= 0.1 ) {
+        move_axles( std::exchange( m_offtrackaxles, 0.0 ) );
+    }
+
+    place_off_track();
+    if( motion.at_rest() ) {
+        crop_off_track_terrain();
+    }
+
+    pull_neighbours( Distance );
+
+    // what it cost: a frame of the vehicle off the track should take well under a millisecond
+    auto const took { seconds_since( started ) };
+    m_offtrackslowdue -= time;
+    if( took > off_track_slow && m_offtrackslowdue <= 0.0 ) {
+        m_offtrackslowdue = 1.0;
+        ErrorLog( std::format( "derailment: warning: moving {} off the track took {:.0f} ms in a frame of {:.3f} s", MoverParameters->Name, took * 1000.0, time ) );
+    }
+}
+
+void TDynamicObject::place_off_track() {
+
+    auto const &pose { MoverParameters->OffTrack.current() };
+    vPosition = pose.position;
+    vFront = pose.front;
+    vLeft = pose.left;
+    vUp = pose.up;
+    modelRot.z = std::atan2( -vFront.x, vFront.z );
+    mMatrix = glm::inverse( BasisChange( vLeft, vUp, vFront ) );
+    auto const half { 0.5 * MoverParameters->Dim.L * vFront };
+    vCoulpler[ end::front ] = vPosition + half;
+    vCoulpler[ end::rear ] = vPosition - half;
+    m_offtrackplaced = true;
+}
+
+void TDynamicObject::pull_neighbours( double const Distance ) {
+
+    for( int end = end::front; end <= end::rear; ++end ) {
+        auto const &coupler { MoverParameters->Couplers[ end ] };
+        auto *neighbour { MoverParameters->Neighbours[ end ].vehicle };
+        if( coupler.CouplingFlag == coupling::faux || neighbour == nullptr || neighbour->MoverParameters->OffTrack.active()
+         || TestFlag( neighbour->MoverParameters->DamageFlag, dtrain_out ) ) {
+            m_pulledoff[ end ].reset();
+            continue;
+        }
+        auto &other { *neighbour->MoverParameters };
+        auto const otherend { MoverParameters->Neighbours[ end ].vehicle_end };
+        glm::dvec3 const otherfront { neighbour->vFront.x, 0.0, neighbour->vFront.z };
+        if( glm::length( otherfront ) < 1e-6 ) {
+            continue;
+        }
+        // the coupling pulls the end of the other vehicle towards the beam of this one, the buffers push it along the
+        // bisector of the bend between them: at an angle to its axis, the part across it on its leading wheels
+        auto const compression { compression_of( other, otherend ) };
+        auto const force { derail_motion::force_on( derail_motion::meet( end_point_of( *neighbour, otherend ), end_point_of( *this, end ) ), compression ).force };
+        auto const axis { glm::normalize( otherfront ) };
+        auto const across { glm::dot( force, level_left_of( axis ) ) };
+        auto const angle { std::atan2( std::abs( across ), std::abs( glm::dot( force, axis ) ) ) };
+        auto const magnitude { glm::length( glm::dvec3 { force.x, 0.0, force.z } ) };
+        auto const mass { other.TotalMass - other.Mred };
+        auto const ratio { derail_motion::pull_ratio( magnitude, angle, mass, other.NAxles ) };
+        if( false == m_pulledoff[ end ].update( ratio >= derailment::climbing_limit, Distance ) ) {
+            continue;
+        }
+        // the way the force across it goes: towards this one pulled, away from it pushed
+        auto const side { across >= 0.0 ? 1 : -1 };
+        other.pull_off(
+            side,
+            mass > 0.0 ? std::abs( across ) / mass : 0.0,
+            std::format( "Y/Q {:.2f} from the {} of {} at {:.0f} deg, {:.0f} kN", ratio, compression > 0.0 ? "buffers" : "coupling", MoverParameters->Name, glm::degrees( angle ), magnitude / 1000.0 ) );
+        m_pulledoff[ end ].reset();
+    }
+}
+
+void TDynamicObject::update_off_track( double const Deltatime ) {
+
+    auto const &motion { MoverParameters->OffTrack };
+    if( false == motion.active() || m_offtracklogdue < 0.0 ) {
+        // on the track, or came to rest and told so
+        return;
+    }
+    m_offtracklogdue -= Deltatime;
+    auto const resting { motion.at_rest() };
+    if( m_offtracklogdue > 0.0 && false == resting ) {
+        return;
+    }
+    m_offtracklogdue = ( resting ? -1.0 : 1.0 );
+    WriteLog( std::format(
+        "derailment: {} {} {:.1f} m from where it left the rails, {:.1f} m from the axis of the track, at {:.1f} km/h, sliding sideways at {:.1f} m/s, tipped {:.0f} deg, roll {:.0f} deg, yaw {:+.1f} deg turning at {:+.1f} deg/s{}",
+        MoverParameters->Name, resting ? "came to rest" : "off the track", motion.travelled(), off_track_offset(), std::abs( MoverParameters->V ) * 3.6, motion.sideways(),
+        glm::degrees( motion.tipping() ), glm::degrees( motion.roll() ), glm::degrees( motion.yaw() ), glm::degrees( motion.yaw_rate() ), motion.lying() ? ", lying on its side" : "" ) );
+}
 
 void TDynamicObject::AttachNext(TDynamicObject *Object, int iType)
 { // Ra: doczepia Object na końcu składu (nazwa funkcji może być myląca)
@@ -3202,7 +3696,7 @@ TDynamicObject::update_load_offset() {
             0.0 :
             100.0 * MoverParameters->LoadAmount / MoverParameters->MaxLoad ) };
 
-    LoadOffset = std::lerp( MoverParameters->LoadType.offset_min, 0.f, safe_clamp( 0.0, loadpercentage * 0.01, 1.0 ) );
+    LoadOffset = std::lerp( MoverParameters->LoadType.offset_min, 0.f, safe_clamp( 0.0, 1.0, loadpercentage * 0.01 ) );
 }
 
 void
@@ -3266,9 +3760,52 @@ bool TDynamicObject::Update(double dt, double dt1)
 {
 	if (dt1 == 0.0)
         return true; // Ra: pauza
+    // physics.derailment new: all of the update of a vehicle off the track, timed; a warning once a second at most when it
+    // takes long, to find what makes a derailment slow
+    // (no vehicle when it is on the track: nothing is timed then)
+    class off_track_watch {
+    public:
+        off_track_watch( TDynamicObject *Vehicle, double const Frame ) :
+            vehicle { Vehicle }, frame { Frame } {
+            if( vehicle != nullptr ) {
+                started = off_track_clock::now();
+            }
+        }
+        off_track_watch( off_track_watch const & ) = delete;
+        off_track_watch &operator=( off_track_watch const & ) = delete;
+        ~off_track_watch() {
+            if( vehicle == nullptr ) {
+                return;
+            }
+            auto const took { seconds_since( started ) };
+            vehicle->m_offtrackupdatedue -= frame;
+            if( took > off_track_slow && vehicle->m_offtrackupdatedue <= 0.0 ) {
+                vehicle->m_offtrackupdatedue = 1.0;
+                ErrorLog( std::format( "derailment: warning: the update of {} off the track took {:.0f} ms in a frame of {:.3f} s", vehicle->MoverParameters->Name, took * 1000.0, frame ) );
+            }
+        }
+    private:
+        TDynamicObject *vehicle;
+        double frame;
+        off_track_clock::time_point started {};
+    };
+    off_track_watch const watch { MoverParameters->OffTrack.active() ? this : nullptr, dt1 };
+    if( m_offtrackterrain != nullptr && false == MoverParameters->OffTrack.active() ) {
+        // physics.derailment new: back on the rails (rerail()), the terrain it slid over is let go
+        m_offtrackterrain.reset();
+        m_offtracksite.terrain( nullptr );
+    }
     if (!MoverParameters->PhysicActivation &&
-        !MechInside) // to drugie, bo będąc w maszynowym blokuje się fizyka
+        !MechInside) { // to drugie, bo będąc w maszynowym blokuje się fizyka
+        // physics.derailment new: a vehicle off the track stopped along its heading still settles: it slides down a
+        // slope, falls over, or comes to rest after the step its physics stopped in
+        if( MoverParameters->OffTrack.active() && false == MoverParameters->OffTrack.at_rest() && bEnabled ) {
+            m_offtracktime = dt1;
+            Move( 0.0 );
+            update_off_track( dt1 );
+        }
         return true; // McZapkie: wylaczanie fizyki gdy nie potrzeba
+    }
     if (!MyTrack)
         return false; // pojazdy postawione na torach portalowych mają MyTrack==NULL
     if (!bEnabled)
@@ -3355,7 +3892,8 @@ bool TDynamicObject::Update(double dt, double dt1)
                     if( MoverParameters->Pantographs[end::front].is_active
                      || MoverParameters->Pantographs[end::rear].is_active ) {
                         if( MoverParameters->Mains // Ra 15-01: logować tylko, jeśli WS załączony
-                         && MoverParameters->GetTrainsetHighVoltage() < 0.1f ) { // yB 16-03: i nie jest to asynchron zasilany z daleka
+                         && MoverParameters->GetTrainsetHighVoltage() < 0.1f // yB 16-03: i nie jest to asynchron zasilany z daleka
+                         && false == MoverParameters->GensetSelected() ) { // nor a dual-mode vehicle running on its genset
                             // Ra 15-01: bezwzględne współrzędne pantografu nie są dostępne więc lepiej się tego nie zaloguje
                             ErrorLog(
                                 "Bad traction: " + MoverParameters->Name
@@ -3733,7 +4271,9 @@ bool TDynamicObject::Update(double dt, double dt1)
 			MED_oldFED = FzadED;
         }
 
+        Timer::subsystem.vehicles_ai.start();
         Mechanik->Update(dt1); // przebłyski świadomości AI
+        Timer::subsystem.vehicles_ai.stop();
     }
 
     // fragment "z EXE Kursa"
@@ -3784,8 +4324,14 @@ bool TDynamicObject::Update(double dt, double dt1)
         // TBD: place the meter on mover logic level?
         simulation::Train->add_distance( dDOMoveLen );
     }
+    // physics.derailment new: derailed, the vehicle leaves the track and goes on the ground
+    if( MoverParameters->leaves_track() ) {
+        begin_off_track();
+    }
+    m_offtracktime = dt1;
     glm::dvec3 old_pos = vPosition;
     Move(dDOMoveLen);
+    update_off_track( dt1 );
 
 	m_future_movement = (vPosition - old_pos) / dt1 * Timer::GetDeltaRenderTime();
 
@@ -3849,20 +4395,21 @@ bool TDynamicObject::Update(double dt, double dt1)
 							// crude bump simulation, drop down on even axles, move back up on
 							// the odd ones
 							// MoverParameters->AccVert += (MoverParameters->Vel*0.1f) *
-							double const headroom = std::clamp(
-							    MoverParameters->Vmax - ( MoverParameters->Vel + MoverParameters->Vmax * 0.32f ),
-							    0.0, MoverParameters->Vmax );
+							// the arguments keep the order they had up to 26.05.1, 0 in place of the value and the figure in place of the
+							// upper limit, so they work out as the old clamp worked them out up to 26.05.1: the headroom is
+							// Vmax - (Vel + 0.32 Vmax) whatever its sign, and the bump is capped from above only
+							double const headroom = safe_clamp( 0.0, MoverParameters->Vmax, MoverParameters->Vmax - ( MoverParameters->Vel + MoverParameters->Vmax * 0.32f ) );
 							double const jolt = headroom * .05f * ( MyTrack->iDamageFlag * 0.25f );
 							if (MyTrack->eType == tt_Normal)
 							{
-								MoverParameters->AccVert += std::clamp( jolt, 0.0, 4.0 );
+								MoverParameters->AccVert += safe_clamp( 0.0, 4.0, jolt );
 							}
 							else if (MyTrack->eType == tt_Switch)
 							{
-								double const accHorizontal = std::clamp( jolt, 0.0, 1.0 ) * ((axleindex % 2) != 0 ? 1 : -1);
+								double const accHorizontal = safe_clamp( 0.0, 1.0, jolt ) * ((axleindex % 2) != 0 ? 1 : -1);
 								MoverParameters->AccS += accHorizontal;
 								MoverParameters->AccN += accHorizontal;
-								MoverParameters->AccVert += std::clamp( jolt, 0.0, 2.0 );
+								MoverParameters->AccVert += safe_clamp( 0.0, 2.0, jolt );
 							}
                         }
                         ++axleindex;
@@ -3914,12 +4461,9 @@ bool TDynamicObject::Update(double dt, double dt1)
         double k; // tymczasowy kąt
         double PantDiff;
         TAnimPant *p; // wskaźnik do obiektu danych pantografu
-        double fCurrent = (
-            MoverParameters->DynamicBrakeFlag && MoverParameters->ResistorsFlag ?
-                0 :
-                std::abs( MoverParameters->Itot ) * MoverParameters->IsVehicleEIMBrakingFactor() )
-            + MoverParameters->TotalCurrent; // prąd pobierany przez pojazd - bez sensu z tym (TotalCurrent)
+        // prąd pobierany przez pojazd z sieci: trakcyjny (on the genset of a dual-mode vehicle none) i TotalCurrent
         // TotalCurrent to bedzie prad nietrakcyjny (niezwiazany z napedem)
+        double fCurrent = MoverParameters->CatenaryCurrent();
         // fCurrent+=fabs(MoverParameters->Voltage)*1e-6; //prąd płynący przez woltomierz, rozładowuje kondensator orgromowy 4µF
 /*
         double fPantCurrent = fCurrent; // normalnie cały prąd przez jeden pantograf
@@ -5324,6 +5868,18 @@ void TDynamicObject::RenderSounds() {
 
     MoverParameters->SoundFlag = 0;
     // McZapkie! - koniec obslugi dzwiekow z mover.pas
+
+    // physics.derailment new: off the track the vehicle scrapes along the ground until it stops, or until it is put back
+    // on the rails (rerail()) while still sliding
+    if( MoverParameters->OffTrack.active() && false == MoverParameters->OffTrack.at_rest() ) {
+        if( false == rsDerailment.is_playing() ) {
+            rsDerailment.play( sound_flags::exclusive | sound_flags::looping );
+        }
+        m_offtrackscraping = true;
+    }
+    else if( std::exchange( m_offtrackscraping, false ) && rsDerailment.is_playing() ) {
+        rsDerailment.stop();
+    }
 
 // special events
     if( MoverParameters->EventFlag ) {
@@ -7838,6 +8394,11 @@ TDynamicObject::update_neighbours() {
 //            neighbour.vehicle = coupler.Connected;
 //            neighbour.vehicle_end = coupler.ConnectedNr;
             neighbour.distance = TMoverParameters::CouplerDist( MoverParameters, coupler.Connected );
+            if( MoverParameters->OffTrack.active() || neighbour.vehicle->MoverParameters->OffTrack.active() ) {
+                // physics.derailment new: off the track the bodies turn against each other, the ends meet where they are
+                // (the distance between the middles less the half lengths would press the buffers of a bent pair)
+                neighbour.distance = off_track_gap( end );
+            }
             // take into account potential adapters attached to the couplers
             auto const &othercoupler { neighbour.vehicle->MoverParameters->Couplers[ neighbour.vehicle_end ] };
             neighbour.distance -= coupler.adapter_length;
@@ -7849,7 +8410,9 @@ TDynamicObject::update_neighbours() {
             neighbour = neighbour_data();
             // 10m ~= 140 km/h at 4 fps + safety margin, potential distance between outer axles of involved vehicles
             auto const scanrange { std::max( 10.0, std::abs( MoverParameters->V ) ) + 40.0 };
-            auto const lookup { find_vehicle( end, scanrange ) };
+            // physics.derailment new: a vehicle off the track beside the other one doesn't run into it, the scan goes on
+            // past it to the vehicles beyond
+            auto const lookup { find_vehicle( end, scanrange, true ) };
 
             if( false == std::get<bool>( lookup ) ) { continue; }
 
@@ -7861,6 +8424,10 @@ TDynamicObject::update_neighbours() {
              && neighbour.distance < (neighbour.vehicle->MoverParameters->CategoryFlag == 2 ? 50 : 100) ) {
                 // at short distances (re)calculate range between couplers directly
                 neighbour.distance = TMoverParameters::CouplerDist( MoverParameters, neighbour.vehicle->MoverParameters );
+                if( MoverParameters->OffTrack.active() || neighbour.vehicle->MoverParameters->OffTrack.active() ) {
+                    // physics.derailment new: the ends where they are, as for a coupled pair
+                    neighbour.distance = off_track_gap( end );
+                }
                 // take into account potential adapters attached to the couplers
                 auto const &othercoupler { neighbour.vehicle->MoverParameters->Couplers[ neighbour.vehicle_end ] };
                 neighbour.distance -= coupler.adapter_length;
@@ -7870,10 +8437,20 @@ TDynamicObject::update_neighbours() {
     }
 }
 
+bool
+TDynamicObject::in_line_with( TDynamicObject const &Other ) const {
+
+    // the middle of the other one off the axis of this one, and this one off the axis of the other one, by less than
+    // the half widths of both: their ends can meet
+    auto const reach { 0.5 * ( MoverParameters->Dim.W + Other.MoverParameters->Dim.W ) };
+    auto const apart { Other.vPosition - vPosition };
+    return std::abs( glm::dot( apart, vLeft ) ) < reach && std::abs( glm::dot( apart, Other.vLeft ) ) < reach;
+}
+
 // locates potential collision source within specified range, scanning track in specified direction. returns: true if neighbour was located, false otherwise
 // NOTE: reuses legacy code. TBD, TODO: review, refactor?
 std::tuple<TDynamicObject *, int, double, bool>
-TDynamicObject::find_vehicle( int const Direction, double const Distance ) const {
+TDynamicObject::find_vehicle( int const Direction, double const Distance, bool const InLine ) const {
 
     auto direction { ( Direction == end::front ? 1 : -1 ) };
     auto const initialdirection { direction }; // zapamiętanie kierunku poszukiwań na torze początkowym, względem sprzęgów
@@ -7888,7 +8465,7 @@ TDynamicObject::find_vehicle( int const Direction, double const Distance ) const
     auto const mycoupler { ( initialdirection < 0 ? end::rear : end::front ) }; // numer sprzęgu do podłączenia w obiekcie szukajacym
     auto foundcoupler { -1 }; // numer sprzęgu w znalezionym obiekcie (znaleziony wypełni)
     auto distance { 0.0 }; // przeskanowana odleglość; odległość do zawalidrogi
-    auto *foundobject { ABuFindObject( foundcoupler, distance, track, direction, mycoupler ) }; // zaczynamy szukać na tym samym torze
+    auto *foundobject { ABuFindObject( foundcoupler, distance, track, direction, mycoupler, InLine ) }; // zaczynamy szukać na tym samym torze
 
     if( foundobject == nullptr ) {
         // jeśli nie ma na tym samym, szukamy po okolicy szukanie najblizszego toru z jakims obiektem
@@ -7925,7 +8502,7 @@ TDynamicObject::find_vehicle( int const Direction, double const Distance ) const
             }
             if (track) {
                 // jesli jest kolejny odcinek toru
-                foundobject = ABuFindObject(foundcoupler, distance, track, direction, mycoupler); // przejrzenie pojazdów tego toru
+                foundobject = ABuFindObject(foundcoupler, distance, track, direction, mycoupler, InLine); // przejrzenie pojazdów tego toru
                 if (foundobject) {
                     break;
                 }
@@ -8336,6 +8913,8 @@ void TDynamicObject::OverheadTrack(float o)
 
 void
 TDynamicObject::update_shake( double const Timedelta ) {
+
+    ShakeStateBefore = ShakeState;
     // Ra: mechanik powinien być telepany niezależnie od pozycji pojazdu
     // Ra: trzeba zrobić model bujania głową i wczepić go do pojazdu
 
@@ -8460,9 +9039,32 @@ TDynamicObject::axle_passed_joint( axle_sounds &Axle, double const Move, int con
 std::pair<double, double>
 TDynamicObject::shake_angles() const {
 
+    return shake_angles( ShakeState );
+}
+
+std::pair<double, double>
+TDynamicObject::shake_angles( shake_state const &State ) const {
+
     return {
-        std::atan( ShakeState.velocity.x * BaseShake.angle_scale.x ),
-        std::atan( ShakeState.velocity.z * BaseShake.angle_scale.z ) };
+        std::atan( State.velocity.x * BaseShake.angle_scale.x ),
+        std::atan( State.velocity.z * BaseShake.angle_scale.z ) };
+}
+
+TDynamicObject::shake_state
+TDynamicObject::shake_between( double const Fraction ) const {
+
+    if( Fraction >= 1.0 ) {
+        return ShakeState;
+    }
+    auto const between { []( glm::dvec3 const &Before, glm::dvec3 const &After, double const Part ) {
+        return glm::dvec3 {
+            std::lerp( Before.x, After.x, Part ),
+            std::lerp( Before.y, After.y, Part ),
+            std::lerp( Before.z, After.z, Part ) }; } };
+    auto const part { std::max( Fraction, 0.0 ) };
+    return {
+        between( ShakeStateBefore.velocity, ShakeState.velocity, part ),
+        between( ShakeStateBefore.offset, ShakeState.offset, part ) };
 }
 
 void
@@ -9104,6 +9706,74 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     //    na którą by się zapisywały wszystkie pojazdy będące w ruchu
     //    pojazdy stojące nie potrzebują aktualizacji, chyba że np. ktoś im zmieni nastawę hamulca
     //    oddzielną listę można by zrobić na pojazdy z napędem, najlepiej posortowaną wg typu napędu
+    // what the update goes through, for the debug panel. the counts are of the last call in the frame
+    auto &counts { Timer::subsystem.vehicles };
+    counts.all = static_cast<unsigned int>( m_items.size() );
+    counts.enabled = counts.road = counts.ai = counts.active = 0;
+    counts.kind = {};
+    counts.standing = {};
+    counts.awake = {};
+    counts.steps += static_cast<unsigned int>( std::max( Iterationcount, 1 ) );
+    // the kind of each vehicle: rail or road, near the camera or farther. the time of each vehicle in the loops below goes to its
+    // kind, measured from the end of the one before it
+    static std::vector<std::uint8_t> kinds;
+    kinds.resize( m_items.size() );
+    // road vehicles far from the camera with nobody inside go by one step of the physics in the frame, as long as all the steps
+    // together (Global.physics_roadlod): their movement goes on, in coarser steps nobody is close enough to tell
+    // not in a network session: which vehicles go coarse depends on the camera of each machine, so their movement and the draws of
+    // Random() they make would part ways between the machines. nor with physics.fullphysics off, whose steps are long already: one
+    // step for all of them would be the time of the whole frame, with the collisions looked at once in it
+    static std::vector<std::uint8_t> coarse;
+    coarse.assign( m_items.size(), 0 );
+    auto const roadlod {
+        Global.physics_roadlod
+        && Global.FullPhysics
+        && Global.network_servers.empty()
+        && ( false == Global.network_client.has_value() ) };
+    auto const camera { Global.pCamera.Pos };
+    for( std::size_t index = 0; index < m_items.size(); ++index ) {
+        auto const *vehicle { m_items[ index ] };
+        auto const road { ( vehicle->MoverParameters->CategoryFlag & 2 ) != 0 };
+        auto const distant { glm::length2( vehicle->GetPosition() - camera ) > Timer::subsystem.VEHICLE_NEAR * Timer::subsystem.VEHICLE_NEAR };
+        kinds[ index ] = static_cast<std::uint8_t>( ( road ? 2 : 0 ) + ( distant ? 1 : 0 ) );
+        coarse[ index ] = static_cast<std::uint8_t>( roadlod && road && distant && ( false == vehicle->MechInside ) && ( Iterationcount > 1 ) );
+        if( false == vehicle->bEnabled ) { continue; }
+        ++counts.kind[ kinds[ index ] ];
+        auto const *mover { vehicle->MoverParameters };
+        if( mover->Vel < 0.01 ) {
+            ++counts.standing[ kinds[ index ] ];
+            if( ( false == road ) && mover->PhysicActivation ) {
+                // the test of TMoverParameters::ComputeTotalForce(), part by part
+                auto const moving = []( neighbour_data const &Neighbour ) {
+                    return ( Neighbour.vehicle != nullptr )
+                        && ( ( Neighbour.vehicle->MoverParameters->Vel > 0.0001 ) || Neighbour.vehicle->MoverParameters->accelerating() ); };
+                auto &awake { counts.awake };
+                ++awake.vehicles;
+                if( mover->CabActive != 0 ) { ++awake.cab; }
+                if( mover->Vel > 0.0001 ) { ++awake.speed; }
+                if( mover->accelerating() ) { ++awake.acceleration; }
+                if( mover->LastSwitchingTime < 5 ) { ++awake.switching; }
+                if( ( mover->TrainType == dt_EZT ) || ( mover->TrainType == dt_DMU ) ) { ++awake.multipleunit; }
+                if( moving( mover->Neighbours[ end::front ] ) || moving( mover->Neighbours[ end::rear ] ) ) { ++awake.neighbour; }
+            }
+        }
+    }
+    auto const lap = [ & ]( std::size_t const Index, std::array<Timer::frame_stopwatch, 4> &Times, std::chrono::steady_clock::time_point &Mark ) {
+        auto const now { std::chrono::steady_clock::now() };
+        if( Index < kinds.size() ) {
+            Times[ kinds[ Index ] ].add( std::chrono::duration<float, std::milli>( now - Mark ).count() );
+        }
+        Mark = now;
+    };
+    for( auto const *vehicle : m_items ) {
+        if( false == vehicle->bEnabled ) { continue; }
+        ++counts.enabled;
+        if( vehicle->MoverParameters->CategoryFlag & 2 ) { ++counts.road; }
+        if( ( vehicle->Mechanik != nullptr ) && vehicle->Mechanik->AIControllFlag ) { ++counts.ai; }
+        if( vehicle->MoverParameters->PhysicActivation || vehicle->MechInside ) { ++counts.active; }
+    }
+
+    Timer::subsystem.vehicles_prepare.start();
     for( auto *vehicle : m_items ) {
         if( false == vehicle->bEnabled ) { continue; }
         // Ra: zmienić warunek na sprawdzanie pantografów w jednej zmiennej: czy pantografy i czy podniesione
@@ -9114,29 +9784,90 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
         vehicle->update_neighbours();
     }
     update_coupler_physics();
+    Timer::subsystem.vehicles_prepare.stop();
+    Timer::subsystem.vehicles_forces.start();
+    auto const totaltime { Deltatime * Iterationcount }; // całkowity czas
+    // the steps of the physics on many threads (Global.performance_multithreading), as many as the work is worth: a thread for each
+    // STEPS_PER_THREAD steps of vehicles with the physics on, up to all the cores. not in a network session (network.server,
+    // .client), which keeps the draws of Random() in step across the machines: the threads have engines of their own. the messages
+    // to external programs (Global.iMultiplayer) don't mind
+    auto constexpr STEPS_PER_THREAD { 128 };
+    std::size_t work { 0 };
+    for( std::size_t index = 0; index < m_items.size(); ++index ) {
+        auto const *vehicle { m_items[ index ] };
+        if( vehicle->MoverParameters->PhysicActivation || vehicle->MechInside ) {
+            work += ( coarse[ index ] != 0 ? 1 : static_cast<std::size_t>( std::max( Iterationcount, 1 ) ) );
+        }
+    }
+    auto const network { ( false == Global.network_servers.empty() ) || Global.network_client.has_value() };
+    auto const threads { (
+        network ?
+            1 :
+            std::min( worker_pool::capacity(), std::max<std::size_t>( 1, ( work + STEPS_PER_THREAD / 2 ) / STEPS_PER_THREAD ) ) ) };
+    // what keeps them in one thread, for the debug panel
+    counts.capacity = static_cast<unsigned int>( worker_pool::capacity() );
+    counts.singlethread = (
+        false == Global.performance_multithreading ? std::string{ "performance.multithreading off" } :
+        network ? std::string{ "network session" } :
+        threads <= 1 ? std::string{ "too little work" } :
+        std::string{} );
+    counts.threads = 1;
+    auto const parallel { ( threads > 1 ) && update_steps_parallel( Deltatime, Iterationcount, coarse, threads ) };
+    if( parallel ) {
+        counts.threads = static_cast<unsigned int>( threads );
+    }
+    else {
+    if( threads > 1 ) {
+        counts.singlethread = "a vehicle coupled with one it doesn't see";
+    }
+    auto mark { std::chrono::steady_clock::now() };
     if( Iterationcount > 1 ) {
         // ABu: ponizsze wykonujemy tylko jesli wiecej niz jedna iteracja
         for( int iteration = 0; iteration < Iterationcount - 1; ++iteration ) {
+            std::size_t index { 0 };
             for( auto *vehicle : m_items ) {
-                vehicle->UpdateForce( Deltatime );
+                if( ( index >= coarse.size() ) || ( coarse[ index ] == 0 ) ) {
+                    vehicle->UpdateForce( Deltatime );
+                }
+                lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
             }
+            index = 0;
             for( auto *vehicle : m_items ) {
-                vehicle->FastUpdate( Deltatime );
+                if( ( index >= coarse.size() ) || ( coarse[ index ] == 0 ) ) {
+                    vehicle->FastUpdate( Deltatime );
+                }
+                lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
             }
             update_brake_pipes( Deltatime );
         }
     }
-    for( auto *vehicle : m_items ) {
-        vehicle->UpdateForce( Deltatime );
+    {
+        std::size_t index { 0 };
+        for( auto *vehicle : m_items ) {
+            // the vehicles going by one step take it with the time of all of them
+            auto const coarsestep { ( index < coarse.size() ) && ( coarse[ index ] != 0 ) };
+            vehicle->UpdateForce( coarsestep ? totaltime : Deltatime );
+            lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
+        }
     }
+    }
+    Timer::subsystem.vehicles_forces.stop();
 
-    auto const totaltime { Deltatime * Iterationcount }; // całkowity czas
+    update_off_track_contacts( totaltime );
 
-    for( auto *vehicle : m_items ) {
-        // Ra 2015-01: tylko tu przelicza sieć trakcyjną
-        vehicle->Update( Deltatime, totaltime );
+    Timer::subsystem.vehicles_update.start();
+    {
+        std::size_t index { 0 };
+        auto mark { std::chrono::steady_clock::now() };
+        for( auto *vehicle : m_items ) {
+            auto const coarsestep { ( index < coarse.size() ) && ( coarse[ index ] != 0 ) };
+            // Ra 2015-01: tylko tu przelicza sieć trakcyjną
+            vehicle->Update( coarsestep ? totaltime : Deltatime, totaltime );
+            lap( index++, Timer::subsystem.vehicles_update_kind, mark );
+        }
     }
     update_brake_pipes( Deltatime );
+    Timer::subsystem.vehicles_update.stop();
 
     // jeśli jest coś do usunięcia z listy, to trzeba na końcu
     erase_disabled();
@@ -9145,6 +9876,216 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     m_odometersavetimer += totaltime;
     if( m_odometersavetimer >= 60.0 ) {
         save_odometers();
+    }
+}
+
+namespace {
+
+// the body of the vehicle as it stands, for the contacts: off the track by its motion, on the track upright on it
+derail_motion::footprint footprint_of( TDynamicObject const &Vehicle ) {
+
+    auto const &mover { *Vehicle.MoverParameters };
+    derail_motion::pose pose;
+    if( mover.OffTrack.active() ) {
+        pose = mover.OffTrack.current();
+    }
+    else {
+        pose.position = Vehicle.GetPosition();
+        pose.front = Vehicle.VectorFront();
+        pose.left = Vehicle.VectorLeft();
+        pose.up = Vehicle.VectorUp();
+    }
+    auto const &shape { mover.OffTrack.shape() };
+    return derail_motion::footprint_of(
+        pose, mover.Dim.L,
+        mover.OffTrack.active() ? shape.width : ( mover.Dim.W > 0.5 ? mover.Dim.W : 3.0 ),
+        mover.OffTrack.active() ? shape.height : ( mover.Dim.H > 2.0 ? mover.Dim.H : 4.0 ) );
+}
+
+// the vehicle as a body in a contact
+derail_motion::contact_body contact_body_of( TDynamicObject const &Vehicle ) {
+
+    auto const &mover { *Vehicle.MoverParameters };
+    derail_motion::contact_body body;
+    body.mass = mover.TotalMass;
+    if( mover.OffTrack.active() ) {
+        body.base = mover.OffTrack.base();
+        body.velocity = mover.OffTrack.velocity();
+        body.yaw_rate = mover.OffTrack.yaw_rate();
+        body.gyration = mover.OffTrack.gyration();
+    }
+    else {
+        // on the rails it goes along them only
+        glm::dvec3 const front { Vehicle.VectorFront().x, 0.0, Vehicle.VectorFront().z };
+        auto const length { glm::length( front ) };
+        body.guided = true;
+        body.guide = length > 1e-6 ? front / length : glm::dvec3 { 0.0, 0.0, 1.0 };
+        body.base = Vehicle.GetPosition();
+        body.velocity = body.guide * mover.V;
+    }
+    return body;
+}
+
+// how the two came to overlap, for the log
+std::string_view overlap_kind( TDynamicObject const &First, TDynamicObject const &Second ) {
+
+    auto const offtrack { First.MoverParameters->OffTrack.active() && Second.MoverParameters->OffTrack.active() };
+    for( int end = end::front; end <= end::rear; ++end ) {
+        if( First.MoverParameters->Couplers[ end ].Connected == Second.MoverParameters
+         && First.MoverParameters->Couplers[ end ].CouplingFlag != coupling::faux ) {
+            return offtrack ? "coupled, both off the track" : "coupled, one on the rails";
+        }
+        if( First.MoverParameters->Neighbours[ end ].vehicle == &Second ) {
+            return offtrack ? "neighbours, both off the track" : "neighbours, one on the rails";
+        }
+    }
+    return offtrack ? "not neighbours, both off the track" : "not neighbours, one on the rails";
+}
+
+} // namespace
+
+void
+vehicle_table::update_off_track_contacts( double const Deltatime ) {
+
+    if( Global.derailment != global_settings::derailment_model::physical || Deltatime <= 0.0 ) {
+        return;
+    }
+    // by their places in the table: the order the pairs are taken in is the same in every run
+    std::vector<std::size_t> offtrack;
+    for( std::size_t index = 0; index < m_items.size(); ++index ) {
+        if( m_items[ index ]->bEnabled && m_items[ index ]->MoverParameters->OffTrack.active() ) {
+            offtrack.push_back( index );
+        }
+    }
+    if( offtrack.empty() ) {
+        return;
+    }
+    auto const started { off_track_clock::now() };
+    auto deepest { 0.0 };
+    std::string deepestpair;
+    auto resting { true };
+    for( auto const place : offtrack ) {
+        auto *vehicle { m_items[ place ] };
+        resting = resting && vehicle->MoverParameters->OffTrack.at_rest();
+        auto const print { footprint_of( *vehicle ) };
+        auto const reach { std::hypot( print.half_length, print.half_width ) };
+        for( std::size_t otherplace = 0; otherplace < m_items.size(); ++otherplace ) {
+            auto *other { m_items[ otherplace ] };
+            if( otherplace == place || false == other->bEnabled ) {
+                continue;
+            }
+            // each pair of two off the track once
+            auto const otheroff { other->MoverParameters->OffTrack.active() };
+            if( otheroff && otherplace < place ) {
+                continue;
+            }
+            // the bounding circles first
+            auto const apart { other->GetPosition() - vehicle->GetPosition() };
+            auto const otherreach { 0.5 * other->MoverParameters->Dim.L + std::max( other->MoverParameters->Dim.W, other->MoverParameters->Dim.H ) };
+            if( glm::length( glm::dvec3 { apart.x, 0.0, apart.z } ) > reach + otherreach + 1.0 ) {
+                continue;
+            }
+            auto const otherprint { footprint_of( *other ) };
+            auto const hit { derail_motion::collide( print, otherprint ) };
+            if( false == hit.has_value() ) {
+                continue;
+            }
+            if( hit->depth > deepest ) {
+                deepest = hit->depth;
+                deepestpair = std::format( "{} and {}, {}", vehicle->MoverParameters->Name, other->MoverParameters->Name, overlap_kind( *vehicle, *other ) );
+            }
+            auto const body { contact_body_of( *vehicle ) };
+            auto const otherbody { contact_body_of( *other ) };
+            auto const impulse { derail_motion::contact_impulse( *hit, body, otherbody ) };
+            // the one off the track: kicked, and moved out of the other one (half of the way when both are off it)
+            auto const [ velocity, yawrate ] { derail_motion::impulse_change( body, -impulse, hit->point ) };
+            auto &motion { vehicle->MoverParameters->OffTrack };
+            auto const share { otheroff ? 0.5 : 1.0 };
+            auto const correction { derail_motion::contact_correction * std::max( 0.0, hit->depth - derail_motion::contact_slop ) };
+            if( glm::length( impulse ) > 0.0 ) {
+                motion.kick( velocity, yawrate );
+                vehicle->MoverParameters->V = motion.speed();
+            }
+            if( correction > 0.0 ) {
+                motion.nudge( -hit->normal * ( share * correction ) );
+                vehicle->place_off_track();
+            }
+            if( otheroff ) {
+                auto const [ othervelocity, otheryawrate ] { derail_motion::impulse_change( otherbody, impulse, hit->point ) };
+                auto &othermotion { other->MoverParameters->OffTrack };
+                if( glm::length( impulse ) > 0.0 ) {
+                    othermotion.kick( othervelocity, otheryawrate );
+                    other->MoverParameters->V = othermotion.speed();
+                }
+                if( correction > 0.0 ) {
+                    othermotion.nudge( hit->normal * ( share * correction ) );
+                    other->place_off_track();
+                }
+                continue;
+            }
+            // one on the rails: along them into its speed, across them on its wheels, as a coupling pulls them off
+            auto &othermover { *other->MoverParameters };
+            othermover.V += glm::dot( impulse, otherbody.guide ) / std::max( othermover.TotalMass, 1.0 );
+            if( TestFlag( othermover.DamageFlag, dtrain_out ) ) {
+                continue;
+            }
+            glm::dvec3 const otherleft { otherbody.guide.z, 0.0, -otherbody.guide.x };
+            auto const across { glm::dot( impulse, otherleft ) / Deltatime };
+            auto const mass { othermover.TotalMass - othermover.Mred };
+            auto const ratio { derail_motion::pull_ratio( std::abs( across ), 0.5 * std::numbers::pi, mass, othermover.NAxles ) };
+            // held over the window of the climbing as the bodies slide along each other, or a hit three times as hard
+            // at once: the wheels jump the rail
+            auto const sliding { glm::length( derail_motion::velocity_at( body, hit->point ) - otherbody.velocity ) * Deltatime };
+            if( other->m_struck.update( ratio >= derailment::climbing_limit, sliding ) || ratio >= 3.0 * derailment::climbing_limit ) {
+                othermover.pull_off(
+                    across >= 0.0 ? 1 : -1,
+                    mass > 0.0 ? std::abs( across ) / mass : 0.0,
+                    std::format( "Y/Q {:.2f} from {} running into it, {:.0f} kN across", ratio, vehicle->MoverParameters->Name, std::abs( across ) / 1000.0 ) );
+                other->m_struck.reset();
+            }
+        }
+    }
+    // the log: every second the most the bodies overlapped by, once more when all of them are at rest
+    if( deepest > m_overlapmost ) {
+        m_overlapmost = deepest;
+        m_overlappair = deepestpair;
+    }
+    m_overlapdue -= Deltatime;
+    if( ( m_overlapdue <= 0.0 && false == resting ) || ( resting && false == m_overlaplogged ) ) {
+        WriteLog( std::format(
+            "derailment: the bodies overlap by up to {:.2f} m{} over the last second, {:.2f} m now{}",
+            m_overlapmost, m_overlapmost > 0.0 ? " (" + m_overlappair + ")" : std::string {}, deepest, resting ? ", all at rest" : "" ) );
+        m_overlapmost = 0.0;
+        m_overlappair.clear();
+        m_overlapdue = 1.0;
+        m_overlaplogged = resting;
+    }
+    if( false == resting ) {
+        m_overlaplogged = false;
+    }
+    auto const took { seconds_since( started ) };
+    if( took > off_track_slow ) {
+        ErrorLog( std::format( "derailment: warning: the contacts of {} vehicles off the track took {:.0f} ms", offtrack.size(), took * 1000.0 ) );
+    }
+}
+
+std::shared_ptr<derail_motion::mesh_ground const>
+vehicle_table::off_track_terrain( glm::dvec2 const &Min, glm::dvec2 const &Max ) {
+
+    std::erase_if( m_offtrackterrains, []( auto const &Terrain ) { return Terrain.expired(); } );
+    for( auto const &terrain : m_offtrackterrains ) {
+        if( auto shared { terrain.lock() }; shared != nullptr && shared->covers( Min, Max ) ) {
+            return shared;
+        }
+    }
+    return {};
+}
+
+void
+vehicle_table::share_off_track_terrain( std::shared_ptr<derail_motion::mesh_ground const> const &Terrain ) {
+
+    if( Terrain != nullptr ) {
+        m_offtrackterrains.emplace_back( Terrain );
     }
 }
 
@@ -9174,6 +10115,135 @@ vehicle_table::save_odometers() {
         }
     }
     odometer::save();
+}
+
+// the steps of the physics of vehicle_table::update() (UpdateForce() and FastUpdate() of each vehicle, Iterationcount times) on up
+// to Threads threads of worker_pool. a step acts on the vehicle itself, on the ones coupled with it, and on the ones seen ahead or
+// behind it (CollisionDetect() changes the speed of the other one); the movement along the tracks, the events and the sounds wait
+// for Update(). so the vehicles are put in groups which act on nothing outside them, and each group goes through all its steps in
+// one thread, its vehicles in their order, the groups at once: what doing them one by one gives. the groups of vehicles exchanging
+// their load, which can load the models of it, are done in the main thread. Coarse: as in update(). returns false, having done
+// nothing, when a vehicle is coupled with one it doesn't see next to it, which the groups don't account for
+bool
+vehicle_table::update_steps_parallel( double const Deltatime, int const Iterationcount, std::vector<std::uint8_t> const &Coarse, std::size_t const Threads ) {
+
+    auto const itemcount { m_items.size() };
+    for( std::size_t index = 0; index < itemcount; ++index ) {
+        m_items[ index ]->m_tableindex = static_cast<std::uint32_t>( index );
+    }
+    // the groups, by joining the vehicles with the ones they act on. the coupled ones are those next to them
+    m_groupparent.resize( itemcount );
+    std::iota( std::begin( m_groupparent ), std::end( m_groupparent ), 0u );
+    auto const root = [ this ]( std::uint32_t Index ) {
+        while( m_groupparent[ Index ] != Index ) {
+            m_groupparent[ Index ] = m_groupparent[ m_groupparent[ Index ] ];
+            Index = m_groupparent[ Index ];
+        }
+        return Index; };
+    for( std::size_t index = 0; index < itemcount; ++index ) {
+        auto const *mover { m_items[ index ]->MoverParameters };
+        for( auto const end : { end::front, end::rear } ) {
+            auto const *neighbour { mover->Neighbours[ end ].vehicle };
+            if( ( mover->Couplers[ end ].Connected != nullptr )
+             && ( ( neighbour == nullptr ) || ( neighbour->MoverParameters != mover->Couplers[ end ].Connected ) ) ) {
+                return false;
+            }
+            if( neighbour == nullptr ) { continue; }
+            auto const other { neighbour->m_tableindex };
+            if( ( other >= itemcount ) || ( m_items[ other ] != neighbour ) ) {
+                // not in the table, shouldn't happen
+                return false;
+            }
+            auto const left { root( static_cast<std::uint32_t>( index ) ) };
+            auto const right { root( other ) };
+            if( left != right ) {
+                m_groupparent[ std::max( left, right ) ] = std::min( left, right );
+            }
+        }
+    }
+    auto constexpr none { std::numeric_limits<std::uint32_t>::max() };
+    m_groupof.assign( itemcount, none );
+    std::size_t groupcount { 0 };
+    for( std::size_t index = 0; index < itemcount; ++index ) {
+        auto &group { m_groupof[ root( static_cast<std::uint32_t>( index ) ) ] };
+        if( group == none ) {
+            group = static_cast<std::uint32_t>( groupcount++ );
+            if( m_groups.size() < groupcount ) { m_groups.emplace_back(); }
+            m_groups[ group ].clear();
+        }
+        m_groups[ group ].push_back( static_cast<std::uint32_t>( index ) );
+    }
+    // the groups done in the main thread, and the others largest first, for the threads to end close to one another
+    m_threadgroups.clear();
+    m_maingroups.clear();
+    std::size_t largest { 0 };
+    for( std::size_t group = 0; group < groupcount; ++group ) {
+        largest = std::max( largest, m_groups[ group ].size() );
+        auto const loading { std::any_of(
+            std::begin( m_groups[ group ] ), std::end( m_groups[ group ] ),
+            [ this ]( std::uint32_t const Index ) {
+                auto const *vehicle { m_items[ Index ] };
+                return ( vehicle->MoverParameters->LoadStatus != 0 ) || ( vehicle->LoadExchangeTime() > 0.f ); } ) };
+        ( loading ? m_maingroups : m_threadgroups ).push_back( static_cast<std::uint32_t>( group ) );
+    }
+    std::sort(
+        std::begin( m_threadgroups ), std::end( m_threadgroups ),
+        [ this ]( std::uint32_t const Left, std::uint32_t const Right ) {
+            return m_groups[ Left ].size() > m_groups[ Right ].size(); } );
+    auto &counts { Timer::subsystem.vehicles };
+    counts.groups = static_cast<unsigned int>( groupcount );
+    counts.largestgroup = static_cast<unsigned int>( largest );
+    counts.maingroups = static_cast<unsigned int>( m_maingroups.size() );
+
+    // all the steps of a group, in the order update() makes them
+    auto const totaltime { Deltatime * Iterationcount };
+    auto const coarse = [ & ]( std::uint32_t const Index ) {
+        return ( Index < Coarse.size() ) && ( Coarse[ Index ] != 0 ); };
+    // the draws of Random() a group makes come from an engine of its own, seeded from the run's engine and the group: the same in
+    // every run of a seed, whichever thread takes the group (the engines of the threads are seeded at random)
+    auto const seed { static_cast<std::uint32_t>( Global.random_engine() ) };
+    auto const steps = [ & ]( std::uint32_t const Group ) {
+        auto const &members { m_groups[ Group ] };
+        std::seed_seq groupseed { seed, members.front() };
+        std::mt19937 engine { groupseed }; // NOSONAR: randomness of the simulation, not of anything security-relevant
+        auto *const threadengine { thread_random_engine() };
+        set_thread_random_engine( &engine );
+        // the hoses join only vehicles coupled with each other, which are in one group: the air they carry is exchanged
+        // within the group after each step, as update_brake_pipes() does for all the vehicles in one thread
+        std::vector<TMoverParameters *> pipes;
+        if( Iterationcount > 1 ) {
+            // ABu: ponizsze wykonujemy tylko jesli wiecej niz jedna iteracja
+            for( int iteration = 0; iteration < Iterationcount - 1; ++iteration ) {
+                for( auto const index : members ) {
+                    if( false == coarse( index ) ) { m_items[ index ]->UpdateForce( Deltatime ); }
+                }
+                for( auto const index : members ) {
+                    if( false == coarse( index ) ) { m_items[ index ]->FastUpdate( Deltatime ); }
+                }
+                pipes.clear();
+                for( auto const index : members ) {
+                    auto *mover { m_items[ index ]->MoverParameters };
+                    if( mover->PipeCouplersPending || mover->ScndPipeCouplersPending ) {
+                        pipes.push_back( mover );
+                    }
+                }
+                TMoverParameters::UpdatePipeCouplers( pipes, Deltatime );
+            }
+        }
+        for( auto const index : members ) {
+            // the vehicles going by one step take it with the time of all of them
+            m_items[ index ]->UpdateForce( coarse( index ) ? totaltime : Deltatime );
+        }
+        set_thread_random_engine( threadengine ); };
+
+    Workers().run(
+        m_threadgroups.size(), Threads,
+        [ & ]( std::size_t const Group ) {
+            steps( m_threadgroups[ Group ] ); } );
+    for( auto const group : m_maingroups ) {
+        steps( group );
+    }
+    return true;
 }
 
 // legacy method, checks for presence and height of traction wire for specified vehicle

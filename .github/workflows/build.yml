@@ -41,23 +41,20 @@ jobs:
         with:
           python-version: '3.14'
 
-      # A mirror that stops answering used to hold this step for over an hour.
-      # Time out each download, retry it, and give up on the whole step early.
+      # The packages are kept in the Actions cache (.github/actions/apt-install): the mirror of the
+      # runners has been too slow to download them every time. The timeout is a safety net.
+      # The X11 packages are the ones GLFW (ref/glfw, 3.4) looks for; xorg-dev brought ~45 more.
       - name: Install build dependencies
         timeout-minutes: 15
-        run: |
-          printf '%s\n' \
-            'Acquire::Retries "3";' \
-            'Acquire::http::Timeout "60";' \
-            'Acquire::https::Timeout "60";' \
-            | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            build-essential \
-            libgl1-mesa-dev libglew-dev libglfw3-dev \
-            libpng-dev libopenal-dev libluajit-5.1-dev \
-            libserialport-dev libsndfile1-dev \
-            xorg-dev libxkbcommon-dev libwayland-dev wayland-protocols
+        uses: ./.github/actions/apt-install
+        with:
+          packages: >-
+            build-essential pkg-config
+            libgl1-mesa-dev libglew-dev libglfw3-dev
+            libpng-dev libopenal-dev libluajit-5.1-dev
+            libserialport-dev libsndfile1-dev
+            libx11-dev libxcursor-dev libxext-dev libxi-dev libxinerama-dev libxrandr-dev
+            libxkbcommon-dev libwayland-dev wayland-protocols
 
       - name: Build current OpenAL Soft
         run: |
@@ -83,7 +80,6 @@ jobs:
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DWITH_BETTER_RENDERER=OFF \
             -DWITH_ZMQ=OFF -DWITH_OPENVR=OFF -DUSE_LTO=OFF \
             -DCMAKE_CXX_FLAGS="-Wno-attributes -fno-inline-functions-called-once" \
             -DPython3_EXECUTABLE="$(which python3)"

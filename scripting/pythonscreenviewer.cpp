@@ -30,7 +30,7 @@ void texture_window_cursor_pos(GLFWwindow *win, double x, double y)
 }
 
 python_screen_viewer::python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string const &surfacename)
-    : m_rt(rt), m_touchlist(touchlist)
+    : m_rt(rt), m_touchlist(touchlist), m_initialtexture(rt->shared_tex->get_id())
 {
 
 	for (const auto &viewport : Global.python_viewports) {
@@ -46,6 +46,12 @@ python_screen_viewer::python_screen_viewer(std::shared_ptr<python_rt> rt, std::s
 
             conf->window = Application.window(-1, true, conf->window_size.x, conf->window_size.y,
 			                                 monitor, false, Global.python_sharectx);
+			if (conf->window == nullptr)
+			{
+				// e.g. the renderer has no opengl context to share
+				ErrorLog("python screen \"" + surfacename + "\": window couldn't be made");
+				continue;
+			}
 
             {
                 int w;
@@ -90,7 +96,7 @@ void python_screen_viewer::threadfunc()
 		glActiveTexture(GL_TEXTURE0);
 
 		if (Global.python_sharectx) {
-			glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(m_rt->shared_tex->get_id()));
+			bind_shared_texture();
 		}
 		else {
 			GLuint tex;
@@ -98,7 +104,7 @@ void python_screen_viewer::threadfunc()
 			glBindTexture(GL_TEXTURE_2D, tex);
 		}
 
-		if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+		if (!Global.gfx_shadergamma)
 			glEnable(GL_FRAMEBUFFER_SRGB);
 
 		gl::program::unbind();
@@ -146,6 +152,8 @@ void python_screen_viewer::threadfunc()
 			}
 
 			glfwMakeContextCurrent(window->window);
+			if (Global.python_sharectx)
+				bind_shared_texture();
 			gl::program::unbind();
 			gl::buffer::unbind();
 
@@ -186,6 +194,16 @@ void python_screen_viewer::threadfunc()
 		if ((Global.python_minframetime - frametime).count() > 0.0f)
 			std::this_thread::sleep_for(Global.python_minframetime - frametime);
 	}
+}
+
+void python_screen_viewer::bind_shared_texture() const
+{
+	// bound each frame: each image uploaded by a worker comes in a texture of its own, and a name deleted comes back for
+	// a later one, so a name seen before may be another texture already. bound under the lock the drawing thread deletes
+	// the old texture under, so the name read here is never one already gone
+	std::scoped_lock guard(m_rt->mutex);
+	size_t const texture = m_rt->texture_id;
+	glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture != 0 ? texture : m_initialtexture));
 }
 
 void python_screen_viewer::notify_window_fb_size(GLFWwindow const *window, int w, int h) const

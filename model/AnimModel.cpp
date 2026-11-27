@@ -531,6 +531,16 @@ bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
     if( submodel_tree_blocks_instancing( Sub->Next ) ) { return true; }
     return false;
 }
+
+// returns true if any submodel of the tree turns to the camera: a billboard is placed from the modelview of the drawn
+// instance, which a walk started from the origin of the instance doesn't have
+bool submodel_tree_faces_camera( TSubModel const *Sub ) {
+    if( Sub == nullptr ) { return false; }
+    if( ( Sub->b_Anim == TAnimType::at_Billboard ) || ( Sub->b_aAnim == TAnimType::at_Billboard ) ) { return true; }
+    if( submodel_tree_faces_camera( Sub->Child ) ) { return true; }
+    if( submodel_tree_faces_camera( Sub->Next ) ) { return true; }
+    return false;
+}
 } // anonymous namespace
 
 int TAnimModel::s_instanceable_total = 0;
@@ -551,6 +561,7 @@ void TAnimModel::update_instanceable_flag() {
     // refs are intentionally allowed — they're either passed per-instance via
     // Material() or share global state (season) across all instances.
     m_instanceable = false;
+    m_cameraindependent = ( pModel != nullptr ) && ( false == submodel_tree_faces_camera( pModel->Root ) );
     ++s_classified_total;
     if( pModel == nullptr ) { ++s_rejected_no_pmodel; return; }
     if( iNumLights != 0 ) { ++s_rejected_lights; return; }
@@ -574,6 +585,7 @@ std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name
 		// the instanced path skips RaAnimate(), so this instance has to be drawn on its own
 		if( m_instanceable ) { ++s_instanceable_revoked; }
 		m_instanceable = false;
+		++scene::node_state_version;
 		return tmp;
     }
 	return nullptr;
@@ -598,6 +610,10 @@ void TAnimModel::RaAnimate( unsigned int const Framestamp ) {
     if( Framestamp == m_framestamp ) { return; }
 
     auto const timedelta { Timer::GetDeltaTime() };
+    // the opacities change step by step from where they are, and they start at 1. the first time the instance is
+    // drawn its lights take their current state at once, whether it came from the definition or from an event since:
+    // a fade from 1 showed a light that is off as lit for a moment, the first time it came into view
+    bool const transition { m_transition && m_lightsanimated };
 
     // interpretacja ułamka zależnie od typu
     // case ls_Off: ustalenie czasu migotania, t<1s (f>1Hz), np. 0.1 => t=0.1 (f=10Hz)
@@ -638,12 +654,13 @@ void TAnimModel::RaAnimate( unsigned int const Framestamp ) {
     	const float transitionontime = std::min(0.25f, std::min(ontime, offtime) * 0.95f);
     	const float transitionofftime = std::min(0.45f, std::min(ontime, offtime) * 0.95f);
     	if (on)
-    		opacity += m_transition ? timedelta / transitionontime : 1.f; // increase to max value
+    		opacity = static_cast<float>( opacity + ( transition ? timedelta / transitionontime : 1.0 ) ); // increase to max value
     	else
-    		opacity -= m_transition ? timedelta / transitionofftime : 1.f; // reduce to zero
+    		opacity = static_cast<float>( opacity - ( transition ? timedelta / transitionofftime : 1.0 ) ); // reduce to zero
     	// Clamp the opacity
 		opacity = std::clamp(opacity, 0.f, 1.f);
     }
+    m_lightsanimated = true;
 
     // Ra 2F1I: to by można pomijać dla modeli bez animacji, których jest większość
 	for (const auto entry : m_animlist) {
@@ -668,6 +685,11 @@ void TAnimModel::on_season_update() {
 
 void TAnimModel::RaPrepare()
 { // ustawia światła i animacje we wzorcu modelu przed renderowaniem egzemplarza
+	if ((pModel != nullptr) && ((iNumLights > 0) || (false == m_animlist.empty())))
+	{
+		// the lights and animations of this instance are set in the submodels the other instances share
+		pModel->state_changed();
+	}
 	if (Global.UpdateMaterials)
 	    on_season_update();
     for (int i = 0; i < iNumLights; ++i)
@@ -804,6 +826,7 @@ void TAnimModel::SkinSet( int const Index, material_handle const Material ) {
     // the instance stays in the bucket of its old skin set, where it would get the textures of the batch
     if( m_instanceable ) { ++s_instanceable_revoked; }
     m_instanceable = false;
+    ++scene::node_state_version;
 }
 
 void TAnimModel::AnimUpdate(double dt)

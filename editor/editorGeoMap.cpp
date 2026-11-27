@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "editor/editorGeoMap.hpp"
 #include "editor/editorFormat.hpp"
+#include "editor/editorHttp.hpp"
 #include "editor/editorOrthophoto.hpp"
 #include "utilities/translation.h"
 
@@ -164,6 +165,8 @@ bool parse_place(std::string const &Text, glm::dvec2 &Point)
 
 editor_map::~editor_map()
 {
+	// the download running is broken off rather than waited for to its end or its timeout
+	m_closing = true;
 	if (m_request.valid())
 		m_request.wait();
 	release();
@@ -328,12 +331,13 @@ void editor_map::request(glm::vec2 const &Size)
 	char bbox[160];
 	std::snprintf(bbox, sizeof(bbox), "%.1f,%.1f,%.1f,%.1f", low.x, low.y, high.x, high.y);
 	auto const url{kMapService + "?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=osm&STYLES=&SRS=EPSG:2180&BBOX=" + bbox + "&WIDTH=" + std::to_string(width) + "&HEIGHT=" + std::to_string(height) + "&FORMAT=image/png"};
-	m_request = std::async(std::launch::async, [url, low, high]() {
+	m_request = std::async(std::launch::async, [url, low, high, closing = &m_closing]() {
 		image result;
 		result.low = low;
 		result.high = high;
 		std::vector<std::uint8_t> data;
-		if (false == editor_http_get(url, data, result.error))
+		thread_local editor_http::client client;
+		if (false == client.get(url, data, result.error, [closing]() { return closing->load(); }))
 			return result;
 		int w{0}, h{0}, components{0};
 		// the texture loader turns the stb flip on for the whole process only once it loads its first texture: this thread
@@ -365,8 +369,11 @@ void editor_map::upload()
 	}
 	m_error.clear();
 	release();
+	// the map as the service sends it, its values taken as they are (not as srgb), with the linear filtering
+	imgui_renderer::image_options options;
+	options.srgb = false;
 	auto *renderer{GfxRenderer ? GfxRenderer->GetImguiRenderer() : nullptr};
-	m_texture = renderer != nullptr ? renderer->Create_Image(result.pixels.data(), result.width, result.height) : 0;
+	m_texture = renderer != nullptr ? renderer->Create_Image(result.pixels.data(), result.width, result.height, options) : 0;
 	m_image_low = result.low;
 	m_image_high = result.high;
 }

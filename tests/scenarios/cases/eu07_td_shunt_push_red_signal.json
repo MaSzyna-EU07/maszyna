@@ -1,0 +1,24 @@
+{
+  "description": "EU07 shunting on td.scn (no timetable, so its AI drives under Shunt), pushing three coaches with no route set, the first coach starting at 30 km/h about 150 m before the exit signal stacja1_j at stop: stops before the signal and stays there.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_shunt_red_signal.scn",
+  "vars": {
+    "offset": "0.0",
+    "velocity": "30",
+    "consist": [
+      "node -1 0 {{vehicle}}_w1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_w2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608011-6 BDHPUMN_NG_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_w3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+    ]
+  },
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    { "type": "max_speed", "limit": 40 },
+    { "type": "stops", "moving_speed": 5, "stop_speed": 0.5, "hold": 5 },
+    { "type": "stays_stopped", "moving_speed": 5, "stop_speed": 0.5 },
+    { "type": "distance", "max": 150 }
+  ]
+}

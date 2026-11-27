@@ -8,6 +8,7 @@
 #include "utilities/Globals.h"
 #include "utilities/translation.h"
 #include "extras/piped_proc.h"
+#include "rendering/renderer.h"
 
 ui::cameraview_panel::cameraview_panel()
     : ui_panel(STR_C("Camera preview"), false)
@@ -27,6 +28,9 @@ ui::cameraview_panel::~cameraview_panel() {
 	capture_state = STOPPING;
 	if (capture_workthread.joinable())
 		capture_workthread.join();
+
+	if ((m_image != 0) && (GfxRenderer != nullptr) && (GfxRenderer->GetImguiRenderer() != nullptr))
+		GfxRenderer->GetImguiRenderer()->Release_Image(m_image);
 }
 
 void ui::cameraview_panel::render()
@@ -81,38 +85,34 @@ bool ui::cameraview_panel::set_state(bool rec)
 
 void ui::cameraview_panel::render_contents()
 {
-	if (!texture) {
-		texture.emplace();
-		texture->make_stub();
+	auto *renderer{GfxRenderer->GetImguiRenderer()};
+	imgui_renderer::image_options options;
+	options.mipmaps = Global.python_mipmaps;
+	if ((m_image == 0) && (renderer != nullptr)) {
+		// grey until the first frame comes
+		std::uint8_t const stub[2 * 2 * 4] = {0xc0, 0xc0, 0xc0, 0xff, 0xc0, 0xc0, 0xc0, 0xff, 0xc0, 0xc0, 0xc0, 0xff, 0xc0, 0xc0, 0xc0, 0xff};
+		m_image = renderer->Create_Image(stub, 2, 2, options);
 	}
-
-	texture->bind(0);
 
 	{
 		std::scoped_lock lock(mutex);
-		if (image_ptr) {
-
-			glActiveTexture(GL_TEXTURE0);
-
-			glTexImage2D(
-			    GL_TEXTURE_2D, 0,
-			    GL_SRGB8_ALPHA8,
-			    Global.extcam_res.x, Global.extcam_res.y, 0,
-			    GL_RGB, GL_UNSIGNED_BYTE, image_ptr);
+		if (image_ptr && (renderer != nullptr)) {
+			// the frames come as rgb
+			auto const pixels{static_cast<std::size_t>(Global.extcam_res.x) * Global.extcam_res.y};
+			m_rgba.resize(pixels * 4);
+			for (std::size_t i = 0; i < pixels; ++i) {
+				m_rgba[i * 4 + 0] = image_ptr[i * 3 + 0];
+				m_rgba[i * 4 + 1] = image_ptr[i * 3 + 1];
+				m_rgba[i * 4 + 2] = image_ptr[i * 3 + 2];
+				m_rgba[i * 4 + 3] = 0xff;
+			}
 			image_ptr = nullptr;
-
-			if (Global.python_mipmaps) {
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-				glGenerateMipmap(GL_TEXTURE_2D);
-			}
-			else {
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-			}
+			m_image = renderer->Update_Image(m_image, m_rgba.data(), Global.extcam_res.x, Global.extcam_res.y, options);
 		}
 	}
 
 	ImVec2 surface_size = ImGui::GetContentRegionAvail();
-	ImGui::Image((ImTextureID)(intptr_t)(texture->id), surface_size);
+	ImGui::Image((ImTextureID)(intptr_t)(m_image), surface_size);
 }
 
 void ui::cameraview_panel::capture_func()

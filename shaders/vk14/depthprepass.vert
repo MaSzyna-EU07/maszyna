@@ -1,0 +1,26 @@
+#version 460 core
+#define STAGE_VERTEX 1
+#include "common.glsl"
+// depth prepass of the instances drawn from the gpu culling (opengl46_renderer::Render_Instances_Indirect()).
+// the position is worked out the way vertex.vert of the materials does it, and declared invariant in both, so the colour
+// pass which follows gets the same depth for the same surface
+
+layout(location = 0) in vec3 v_vert;
+layout(location = 2) in vec2 v_coord;
+
+
+invariant gl_Position;
+
+layout(location = 2) out vec2 f_coord;
+
+void main()
+{
+	mat4 mv = effective_modelview();
+	vec4 position = mv * vec4(v_vert, 1.0);
+	gl_Position = projection * position;
+	f_coord = v_coord;
+#ifdef MODEL_DRAWS
+	// which block of the multi draw the fragments read (common.glsl)
+	f_model_draw = MODEL_DRAW;
+#endif
+}
