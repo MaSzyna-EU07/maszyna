@@ -21,8 +21,13 @@ cmake-build-*/
 # Vcpkg manifest
 vcpkg.json
 /ref/crashpad
+# the NVIDIA DLSS SDK, fetched by tools/fetch_dlss_sdk.cmake (WITH_DLSS)
+/ref/DLSS/
 
 # Local Python (setup.bat / CMake) for embedding
 tools/python314/
 __pycache__/
 *.pyc
+
+# reviews of other pull requests, kept locally
+/pr-reviews/

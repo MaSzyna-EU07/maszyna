@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Names.h"
 #include "scene/scenenode.h"
 #include "world/Segment.h"
+#include "world/RoadSurfaceType.h"
 
 namespace scene
 {
@@ -59,6 +60,7 @@ class owned_shapes
 // medianround <length of the rounded end of an island at the start> <at the end>,
 // kerbs <left|right|both> <width> <material>, bank <left|right|both> <width at the start> <drop at the start> <width at the end> <drop at the end>,
 // bankmaterial <material>, weight <value>, roundabout,
+// surfacetype <paved|dirt>: what the road is made of, which sets how tight the road editor lets it be laid out; paved unless told otherwise,
 // lanesto <along the axis> <against the axis>: lanes the piece has at the end of its axis, where these aren't the ones it starts with
 class road_node : public scene::basic_node
 {
@@ -134,7 +136,8 @@ class road_node : public scene::basic_node
 		std::vector<lane_data> lanes;
 		std::vector<int> changes; // permissions to change the lane, one for each pair of neighbouring lanes
 		std::array<float, 2> taper{1.f, 1.f}; // what the widths of the lanes are multiplied by at the start and at the end of the axis
-		std::string surface{"asphaltdark1"};
+		std::string surface{road_surface::default_material(road_surface_type::paved)};
+		road_surface_type surfacetype{road_surface_type::paved}; // what the road is made of, as far as laying it out goes
 		float texturelength{4.f};
 		std::array<side_data, 2> sides; // left, right
 		float kerbheight{0.12f};

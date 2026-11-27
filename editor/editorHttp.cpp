@@ -13,12 +13,20 @@ http://mozilla.org/MPL/2.0/.
 #if defined(_WIN32)
 #include <winhttp.h>
 #elif defined(EU07_WITH_CURL)
+// of libcurl only the types and the constants: its functions are looked up at run time (libcurl() below), so the game
+// starts on a system without libcurl and only the editor's downloads are off there. no deprecation warnings for the
+// options kept for a libcurl older than these headers
+#ifndef CURL_DISABLE_DEPRECATION
+#define CURL_DISABLE_DEPRECATION
+#endif
 #include <curl/curl.h>
+#include <dlfcn.h>
+#include <format>
+#include "utilities/Logs.h"
 #endif
 
 #include <cstdlib>
 #include <filesystem>
-#include <mutex>
 #include <string>
 
 namespace editor_http
@@ -308,9 +316,10 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 
 namespace
 {
-// the file of the certificates https is checked with. the libcurl bundled with the game knows only the one of the system it
-// was built on (/etc/ssl/certs/ca-certificates.crt of Debian and Ubuntu), which Fedora, RHEL and openSUSE don't have: there
-// every download failed. the file named by the user first, then the ones the distributions keep; empty leaves libcurl's own
+// the file of the certificates https is checked with. a libcurl built elsewhere (as the one once bundled with the game) knows
+// only the one of the system it was built on (/etc/ssl/certs/ca-certificates.crt of Debian and Ubuntu), which Fedora, RHEL
+// and openSUSE don't have: there every download failed. the file named by the user first, then the ones the distributions
+// keep; empty leaves libcurl's own
 std::string const &certificates_file()
 {
 	static std::string const file{[]() {
@@ -335,30 +344,99 @@ std::string const &certificates_file()
 	}()};
 	return file;
 }
+
+// the functions of libcurl the client uses, looked up in the system's libcurl. their types are those the headers declare
+// them with, so a call through them is the call of the function itself
+struct curl_library
+{
+	decltype(&::curl_global_init) global_init{nullptr};
+	decltype(&::curl_easy_init) easy_init{nullptr};
+	decltype(&::curl_easy_cleanup) easy_cleanup{nullptr};
+	decltype(&::curl_easy_reset) easy_reset{nullptr};
+	decltype(&::curl_easy_setopt) easy_setopt{nullptr};
+	decltype(&::curl_easy_perform) easy_perform{nullptr};
+	decltype(&::curl_easy_getinfo) easy_getinfo{nullptr};
+	decltype(&::curl_easy_strerror) easy_strerror{nullptr};
+	bool loaded{false}; // all of them found
+};
+
+// the system's libcurl: the name of its runtime package (libcurl4 of Debian and Ubuntu, libcurl of Fedora and Arch), that of
+// the GnuTLS build of Debian and Ubuntu, then that of its development files. null when there's none
+void *open_curl()
+{
+	for (char const *const name : {"libcurl.so.4", "libcurl-gnutls.so.4", "libcurl.so"})
+	{
+		if (void *const library{::dlopen(name, RTLD_NOW | RTLD_LOCAL)}; library != nullptr)
+			return library;
+	}
+	return nullptr;
+}
+
+// the function Name of the library into Function, false when the library has none
+template <typename Function>
+bool resolve(void *const Library, char const *const Name, Function &Into)
+{
+	// dlsym() gives a function's address as void *, which POSIX lets be converted back to the function's type
+	Into = reinterpret_cast<Function>(::dlsym(Library, Name));
+	if (Into == nullptr)
+		WriteLog(std::format("Editor: the libcurl of the system has no {}, the downloads of the editor are off", Name));
+	return Into != nullptr;
+}
+
+// the system's libcurl, opened and initialised once, when the editor first needs it, and kept for the rest of the run
+curl_library load_curl()
+{
+	curl_library curl;
+	void *const library{open_curl()};
+	if (library == nullptr)
+	{
+		WriteLog("Editor: no libcurl (libcurl.so.4) on this system, the downloads of the editor (orthophoto, terrain model, topo map) are off");
+		return curl;
+	}
+	curl.loaded = resolve(library, "curl_global_init", curl.global_init) && resolve(library, "curl_easy_init", curl.easy_init) &&
+	              resolve(library, "curl_easy_cleanup", curl.easy_cleanup) && resolve(library, "curl_easy_reset", curl.easy_reset) &&
+	              resolve(library, "curl_easy_setopt", curl.easy_setopt) && resolve(library, "curl_easy_perform", curl.easy_perform) &&
+	              resolve(library, "curl_easy_getinfo", curl.easy_getinfo) && resolve(library, "curl_easy_strerror", curl.easy_strerror);
+	if (false == curl.loaded)
+	{
+		::dlclose(library);
+		return curl_library{};
+	}
+	curl.global_init(CURL_GLOBAL_DEFAULT);
+	return curl;
+}
+
+curl_library const &libcurl()
+{
+	static curl_library const curl{load_curl()};
+	return curl;
+}
 } // namespace
 
 client::client() :
 	m_platform(std::make_unique<platform>())
 {
-	static std::once_flag initialized;
-	std::call_once(initialized, []() { ::curl_global_init(CURL_GLOBAL_DEFAULT); });
-	m_platform->curl = ::curl_easy_init();
+	if (auto const &curl{libcurl()}; curl.loaded)
+		m_platform->curl = curl.easy_init();
 }
 
 client::~client()
 {
+	// set only with libcurl loaded
 	if (m_platform->curl != nullptr)
-		::curl_easy_cleanup(m_platform->curl);
+		libcurl().easy_cleanup(m_platform->curl);
 }
 
 bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop)
 {
 	Out.clear();
+	auto const &curl{libcurl()};
 	if (m_platform->curl == nullptr)
 	{
-		Error = "curl_easy_init failed";
+		Error = (curl.loaded ? "curl_easy_init failed" : "no libcurl on this system");
 		return false;
 	}
+	CURL *const handle{m_platform->curl};
 
 	struct sink
 	{
@@ -378,47 +456,52 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 	};
 	auto const progress = +[](void *User, curl_off_t, curl_off_t, curl_off_t, curl_off_t) -> int { return (*static_cast<stop_check const *>(User))() ? 1 : 0; };
 
-	::curl_easy_reset(m_platform->curl);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_URL, Url.c_str());
-	::curl_easy_setopt(m_platform->curl, CURLOPT_USERAGENT, "MaSzyna-editor");
+	curl.easy_reset(handle);
+	curl.easy_setopt(handle, CURLOPT_URL, Url.c_str());
+	curl.easy_setopt(handle, CURLOPT_USERAGENT, "MaSzyna-editor");
 	if (auto const &certificates{certificates_file()}; false == certificates.empty())
 	{
-		::curl_easy_setopt(m_platform->curl, CURLOPT_CAINFO, certificates.c_str());
+		curl.easy_setopt(handle, CURLOPT_CAINFO, certificates.c_str());
 #if LIBCURL_VERSION_NUM >= 0x073400
 		// an https proxy is checked with the same file
-		::curl_easy_setopt(m_platform->curl, CURLOPT_PROXY_CAINFO, certificates.c_str());
+		curl.easy_setopt(handle, CURLOPT_PROXY_CAINFO, certificates.c_str());
 #endif
 	}
-	::curl_easy_setopt(m_platform->curl, CURLOPT_FOLLOWLOCATION, 1L);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_MAXREDIRS, 10L);
-	// http kept for the services the user types; nothing else, also where a redirect leads
+	curl.easy_setopt(handle, CURLOPT_FOLLOWLOCATION, 1L);
+	curl.easy_setopt(handle, CURLOPT_MAXREDIRS, 10L);
+	// http kept for the services the user types; nothing else, also where a redirect leads. the system's libcurl can be older
+	// than the headers: one without the options by name (before 7.85.0) refuses them, and takes the bit masks
 #if LIBCURL_VERSION_NUM >= 0x075500
-	::curl_easy_setopt(m_platform->curl, CURLOPT_PROTOCOLS_STR, "https,http");
-	::curl_easy_setopt(m_platform->curl, CURLOPT_REDIR_PROTOCOLS_STR, "https,http");
+	bool const named{(curl.easy_setopt(handle, CURLOPT_PROTOCOLS_STR, "https,http") == CURLE_OK) &&
+	                 (curl.easy_setopt(handle, CURLOPT_REDIR_PROTOCOLS_STR, "https,http") == CURLE_OK)};
 #else
-	::curl_easy_setopt(m_platform->curl, CURLOPT_PROTOCOLS, static_cast<long>(CURLPROTO_HTTPS | CURLPROTO_HTTP));
-	::curl_easy_setopt(m_platform->curl, CURLOPT_REDIR_PROTOCOLS, static_cast<long>(CURLPROTO_HTTPS | CURLPROTO_HTTP));
+	bool const named{false};
 #endif
-	::curl_easy_setopt(m_platform->curl, CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(kLargest));
-	::curl_easy_setopt(m_platform->curl, CURLOPT_NOSIGNAL, 1L);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_CONNECTTIMEOUT, 10L);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_LOW_SPEED_TIME, 20L);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_WRITEFUNCTION, write);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_WRITEDATA, &received);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_NOPROGRESS, 0L);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_XFERINFOFUNCTION, progress);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_XFERINFODATA, const_cast<stop_check *>(&Stop));
+	if (false == named)
+	{
+		curl.easy_setopt(handle, CURLOPT_PROTOCOLS, static_cast<long>(CURLPROTO_HTTPS | CURLPROTO_HTTP));
+		curl.easy_setopt(handle, CURLOPT_REDIR_PROTOCOLS, static_cast<long>(CURLPROTO_HTTPS | CURLPROTO_HTTP));
+	}
+	curl.easy_setopt(handle, CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(kLargest));
+	curl.easy_setopt(handle, CURLOPT_NOSIGNAL, 1L);
+	curl.easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 10L);
+	curl.easy_setopt(handle, CURLOPT_LOW_SPEED_LIMIT, 1L);
+	curl.easy_setopt(handle, CURLOPT_LOW_SPEED_TIME, 20L);
+	curl.easy_setopt(handle, CURLOPT_WRITEFUNCTION, write);
+	curl.easy_setopt(handle, CURLOPT_WRITEDATA, &received);
+	curl.easy_setopt(handle, CURLOPT_NOPROGRESS, 0L);
+	curl.easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, progress);
+	curl.easy_setopt(handle, CURLOPT_XFERINFODATA, const_cast<stop_check *>(&Stop));
 
-	CURLcode const code = ::curl_easy_perform(m_platform->curl);
+	CURLcode const code = curl.easy_perform(handle);
 	if (code != CURLE_OK)
 	{
-		Error = (received.over || code == CURLE_FILESIZE_EXCEEDED ? kTooLarge : ::curl_easy_strerror(code));
+		Error = (received.over || code == CURLE_FILESIZE_EXCEEDED ? kTooLarge : curl.easy_strerror(code));
 		Out.clear();
 		return false;
 	}
 	long status{0};
-	::curl_easy_getinfo(m_platform->curl, CURLINFO_RESPONSE_CODE, &status);
+	curl.easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &status);
 	if (status != 200)
 	{
 		Error = "HTTP " + std::to_string(status);
@@ -443,8 +526,11 @@ bool client::get(std::string const &, std::vector<std::uint8_t> &Out, std::strin
 
 bool available()
 {
-#if defined(_WIN32) || defined(EU07_WITH_CURL)
+#if defined(_WIN32)
 	return true;
+#elif defined(EU07_WITH_CURL)
+	// libcurl opened here when nothing needed it yet
+	return libcurl().loaded;
 #else
 	return false;
 #endif

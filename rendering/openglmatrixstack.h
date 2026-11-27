@@ -12,6 +12,14 @@ http://mozilla.org/MPL/2.0/.
 #include <stack>
 #include <vector>
 
+// matrix modes of the fixed pipeline, which isn't part of the core profile; the stack below keeps them on the cpu side
+#ifndef GL_MODELVIEW
+#define GL_MODELVIEW 0x1700
+#endif
+#ifndef GL_PROJECTION
+#define GL_PROJECTION 0x1701
+#endif
+
 // encapsulation of the fixed pipeline opengl matrix stack
 class opengl_matrices {
 
@@ -39,52 +47,38 @@ public:
             glm::mat4 const top { m_stack.back() };
             m_stack.emplace_back( top ); }
     void
-        pop_matrix( bool const Upload = true ) {
+        pop_matrix() {
             if( m_stack.size() > 1 ) {
-                m_stack.pop_back();
-                if( Upload ) { upload(); } } }
+                m_stack.pop_back(); } }
     void
-        load_identity( bool const Upload = true ) {
-            m_stack.back() = glm::mat4( 1.f );
-            if( Upload ) { upload(); } }
+        load_identity() {
+            m_stack.back() = glm::mat4( 1.f ); }
     void
-        load_matrix( glm::mat4 const &Matrix, bool const Upload = true ) {
-            m_stack.back() = Matrix;
-            if( Upload ) { upload(); } }
+        load_matrix( glm::mat4 const &Matrix ) {
+            m_stack.back() = Matrix; }
     void
-        rotate( float const Angle, glm::vec3 const &Axis, bool const Upload = true ) {
-            m_stack.back() = glm::rotate( m_stack.back(), Angle, Axis );
-            if( Upload ) { upload(); } }
+        rotate( float const Angle, glm::vec3 const &Axis ) {
+            m_stack.back() = glm::rotate( m_stack.back(), Angle, Axis ); }
     void
-        translate( glm::vec3 const &Translation, bool const Upload = true ) {
-            m_stack.back() = glm::translate( m_stack.back(), Translation );
-            if( Upload ) { upload(); } }
+        translate( glm::vec3 const &Translation ) {
+            m_stack.back() = glm::translate( m_stack.back(), Translation ); }
     void
-        scale( glm::vec3 const &Scale, bool const Upload = true ) {
-            m_stack.back() = glm::scale( m_stack.back(), Scale );
-            if( Upload ) { upload(); } }
+        scale( glm::vec3 const &Scale ) {
+            m_stack.back() = glm::scale( m_stack.back(), Scale ); }
     void
-        multiply( glm::mat4 const &Matrix, bool const Upload = true ) {
-            m_stack.back() *= Matrix;
-            if( Upload ) { upload(); } }
+        multiply( glm::mat4 const &Matrix ) {
+            m_stack.back() *= Matrix; }
     void
-        ortho( float const Left, float const Right, float const Bottom, float const Top, float const Znear, float const Zfar, bool const Upload = true ) {
-            m_stack.back() *= glm::ortho( Left, Right, Bottom, Top, Znear, Zfar );
-            if( Upload ) { upload(); } }
+        ortho( float const Left, float const Right, float const Bottom, float const Top, float const Znear, float const Zfar ) {
+            m_stack.back() *= glm::ortho( Left, Right, Bottom, Top, Znear, Zfar ); }
     void
-        perspective( float const Fovy, float const Aspect, float const Znear, float const Zfar, bool const Upload = true ) {
-            m_stack.back() *= glm::perspective( Fovy, Aspect, Znear, Zfar );
-            if( Upload ) { upload(); } }
+        perspective( float const Fovy, float const Aspect, float const Znear, float const Zfar ) {
+            m_stack.back() *= glm::perspective( Fovy, Aspect, Znear, Zfar ); }
     void
-        look_at( glm::vec3 const &Eye, glm::vec3 const &Center, glm::vec3 const &Up, bool const Upload = true ) {
-            m_stack.back() *= glm::lookAt( Eye, Center, Up );
-            if( Upload ) { upload(); } }
+        look_at( glm::vec3 const &Eye, glm::vec3 const &Center, glm::vec3 const &Up ) {
+            m_stack.back() *= glm::lookAt( Eye, Center, Up ); }
 
 private:
-// methods:
-    void
-        upload() { ::glLoadMatrixf( glm::value_ptr( m_stack.back() ) ); }
-
 // members:
     std::vector<glm::mat4> m_stack;
 };
@@ -101,17 +95,13 @@ public:
     }
 
 // methods:
-    bool &
-        upload() {
-            return m_upload; }
     void
         mode( GLuint const Mode ) {
             switch( Mode ) {
                 case GL_MODELVIEW:  { m_mode = stack_mode::gl_modelview; break; }
                 case GL_PROJECTION: { m_mode = stack_mode::gl_projection; break; }
                 case GL_TEXTURE:    { m_mode = stack_mode::gl_texture; break; }
-                default:            { break; } }
-            if( m_upload ) {::glMatrixMode( Mode ); } }
+                default:            { break; } } }
     glm::mat4 const &
         data( GLuint const Mode = -1 ) const {
             switch( Mode ) {
@@ -125,11 +115,11 @@ public:
     void
         push_matrix() { m_stacks[ m_mode ].push_matrix(); }
     void
-        pop_matrix() { m_stacks[ m_mode ].pop_matrix( m_upload ); }
+        pop_matrix() { m_stacks[ m_mode ].pop_matrix(); }
     void
-        load_identity() { m_stacks[ m_mode ].load_identity( m_upload ); }
+        load_identity() { m_stacks[ m_mode ].load_identity(); }
     void
-        load_matrix( glm::mat4 const &Matrix ) { m_stacks[ m_mode ].load_matrix( Matrix, m_upload ); }
+        load_matrix( glm::mat4 const &Matrix ) { m_stacks[ m_mode ].load_matrix( Matrix ); }
     template <typename Type_>
     void
         load_matrix( Type_ const *Matrix ) { load_matrix( glm::make_mat4( Matrix ) ); }
@@ -141,8 +131,7 @@ public:
                 glm::vec3(
                     static_cast<float>( X ),
                     static_cast<float>( Y ),
-                    static_cast<float>( Z ) ),
-                m_upload ); }
+                    static_cast<float>( Z ) ) ); }
     template <typename Type_>
     void
         translate( Type_ const X, Type_ const Y, Type_ const Z ) {
@@ -150,8 +139,7 @@ public:
                 glm::vec3(
                     static_cast<float>( X ),
                     static_cast<float>( Y ),
-                    static_cast<float>( Z ) ),
-                m_upload ); }
+                    static_cast<float>( Z ) ) ); }
     template <typename Type_>
     void
         scale( Type_ const X, Type_ const Y, Type_ const Z ) {
@@ -159,14 +147,12 @@ public:
                 glm::vec3(
                     static_cast<float>( X ),
                     static_cast<float>( Y ),
-                    static_cast<float>( Z ) ),
-                m_upload ); }
+                    static_cast<float>( Z ) ) ); }
     template <typename Type_>
     void
         multiply( Type_ const *Matrix ) {
             m_stacks[ m_mode ].multiply(
-                glm::make_mat4( Matrix ),
-                m_upload ); }
+                glm::make_mat4( Matrix ) ); }
     template <typename Type_>
     void
         ortho( Type_ const Left, Type_ const Right, Type_ const Bottom, Type_ const Top, Type_ const Znear, Type_ const Zfar ) {
@@ -176,8 +162,7 @@ public:
                 static_cast<float>( Bottom ),
                 static_cast<float>( Top ),
                 static_cast<float>( Znear ),
-                static_cast<float>( Zfar ),
-                m_upload ); }
+                static_cast<float>( Zfar ) ); }
     template <typename Type_>
     void
         perspective( Type_ const Fovy, Type_ const Aspect, Type_ const Znear, Type_ const Zfar ) {
@@ -185,8 +170,7 @@ public:
                 static_cast<float>( glm::radians( Fovy ) ),
                 static_cast<float>( Aspect ),
                 static_cast<float>( Znear ),
-                static_cast<float>( Zfar ),
-                m_upload ); }
+                static_cast<float>( Zfar ) ); }
     template <typename Type_>
     void
         look_at( Type_ const Eyex, Type_ const Eyey, Type_ const Eyez, Type_ const Centerx, Type_ const Centery, Type_ const Centerz, Type_ const Upx, Type_ const Upy, Type_ const Upz ) {
@@ -202,17 +186,16 @@ public:
                 glm::vec3(
                     static_cast<float>( Upx ),
                     static_cast<float>( Upy ),
-                    static_cast<float>( Upz ) ),
-                m_upload ); }
+                    static_cast<float>( Upz ) ) ); }
 
 private:
 // members:
     stack_mode m_mode{ stack_mode::gl_projection };
     openglstack_array m_stacks;
-    bool m_upload { true };
 };
 
-extern opengl_matrices OpenGLMatrices;
+// per thread: the vulkan renderer walks the passes of the scene on several of them at once (gfx.vulkan.parallelpasses)
+extern thread_local opengl_matrices OpenGLMatrices;
 
 // NOTE: standard opengl calls re-definitions
 

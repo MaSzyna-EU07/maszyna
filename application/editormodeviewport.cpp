@@ -210,6 +210,15 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		Buttons.back().accent = family_colour(2);
 		break;
 	}
+	case work_area::catenary:
+	{
+		// the pages of the catenary: poles with cantilevers, gantries, the wires of the chains
+		auto const page{catenary_page()};
+		Buttons.push_back({icon::catenary, STR_C("Poles"), nullptr, STR_C("Poles with cantilevers: LMB by a track places one, LMB on a pole selects it"), page == 0, [this]() { catenary_choose_page(0); }});
+		Buttons.push_back({icon::gantry, STR_C("Gantries"), nullptr, STR_C("Gantries: masts and beams, the cantilevers on their drops and masts"), page == 1, [this]() { catenary_choose_page(1); }});
+		Buttons.push_back({icon::wires, STR_C("Wires"), nullptr, STR_C("The chains: the type of the network, the wires, the spans between the poles"), page == 2, [this]() { catenary_choose_page(2); }});
+		break;
+	}
 	case work_area::roads:
 	{
 		auto &tool{m_roadtool};
@@ -231,7 +240,14 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 	case work_area::terrain:
 	{
 		// what the left button does on the terrain
-		auto const choose = [this](terrain_tool const Tool) { return [this, Tool]() { m_terrain_tool = Tool; }; };
+		// another tool than the fields: the field picked with "Outline it again" no longer waits for its outline, which the fill can use up
+		auto const choose = [this](terrain_tool const Tool) {
+			return [this, Tool]() {
+				if (Tool != terrain_tool::fields)
+					m_patch_reoutline.clear();
+				m_terrain_tool = Tool;
+			};
+		};
 		auto const chosen = [this](terrain_tool const Tool) { return m_terrain_tool == Tool; };
 		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB picks the models, as in the surroundings"), chosen(terrain_tool::none), choose(terrain_tool::none)});
 		Buttons.push_back({icon::sculpt, STR_C("Sculpt"), nullptr, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"), chosen(terrain_tool::sculpt), choose(terrain_tool::sculpt)});
@@ -239,10 +255,18 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		Buttons.push_back({icon::profile, STR_C("Level"), nullptr, STR_C("LMB leads the terrain under the brush to the target height, Ctrl+LMB takes the target height from what's under the cursor"),
 		                   chosen(terrain_tool::level), choose(terrain_tool::level)});
 		Buttons.push_back({icon::brush, STR_C("Paint"), nullptr, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"), chosen(terrain_tool::paint), choose(terrain_tool::paint)});
+		Buttons.push_back({icon::grass, STR_C("Grass"), nullptr, STR_C("LMB grows the kind of grass chosen in the grass palette, Shift+LMB takes the grass away"), chosen(terrain_tool::grass),
+		                   choose(terrain_tool::grass)});
 		Buttons.push_back({icon::chunks, STR_C("Chunks"), nullptr, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB removes it"), chosen(terrain_tool::chunks), choose(terrain_tool::chunks)});
 		Buttons.push_back({icon::area_fill, STR_C("Water"), nullptr, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"), chosen(terrain_tool::water), choose(terrain_tool::water)});
 		Buttons.push_back({icon::count, STR_C("Fill"), nullptr, STR_C("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"), chosen(terrain_tool::fill),
 		                   choose(terrain_tool::fill)});
+		Buttons.push_back({icon::grass, STR_C("Fields"), nullptr,
+		                   STR_C("LMB adds a point of the outline of a field: a surface cut out of the terrain with a material of its own, the ground under it made wavy if wanted; "
+		                         "Shift+LMB takes the last one back"),
+		                   chosen(terrain_tool::fields), choose(terrain_tool::fields)});
+		Buttons.push_back({icon::hole, STR_C("Holes"), nullptr, STR_C("LMB cuts a hole in the terrain under the brush (portals of tunnels), Shift+LMB closes it"), chosen(terrain_tool::holes),
+		                   choose(terrain_tool::holes)});
 		auto const orthophoto{m_orthophoto.enabled()};
 		Buttons.push_back({icon::orthophoto, STR_C("Orthophoto"), nullptr, STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"), orthophoto,
 		                   [this, orthophoto]() { choose_orthophoto(false == orthophoto); }, true});

@@ -25,6 +25,10 @@ bool brake_table::known() const {
 	return a0[size] > 0.0;
 }
 
+bool brake_acting(double const Trainbrakeposition, double const Localbrakeposition) {
+	return (Trainbrakeposition > 0.0) || (Localbrakeposition > 0.0);
+}
+
 double shaped_demand(double const Velocity, double const Target, double const Distance, double const Gravity, brake_table const &Table) {
 
 	auto const travel = [Velocity, Target, Gravity, &Table](double const Ratio) {
