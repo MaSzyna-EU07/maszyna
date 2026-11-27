@@ -242,6 +242,7 @@ void TIsolated::Modify(int i, TDynamicObject *o)
 
 // tworzenie nowego odcinka ruchu
 TTrack::TTrack( scene::node_data const &Nodedata ) : basic_node( Nodedata ) {
+
     track_rails::forget();
 }
 
@@ -1509,6 +1510,15 @@ void TTrack::get_map_future_paths(map_colored_paths &handles) {
 		return;
 
 	if (!Dynamics.empty()) {
+		if (eType == tt_Switch) {
+			if (GetSwitchState() == 0)
+				handles.occupied.push_back(SwitchExtension->map_geometry[0]);
+			else
+				handles.occupied.push_back(SwitchExtension->map_geometry[1]);
+		} else if (eType == tt_Normal) {
+			handles.occupied.push_back(extra_map_geometry);
+		}
+
 		static int stamp = 0;
 		stamp++;
 
