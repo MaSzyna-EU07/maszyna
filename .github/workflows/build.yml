@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - master
+      - staging
   pull_request:
     types: [ opened, reopened, synchronize ]
 
@@ -16,8 +17,8 @@ permissions: {}
 
 # A newer push to a pull request makes the run for its older commit pointless, so that run is
 # cancelled (sonar.yml then marks the analysis of the older commit as skipped). A push to master
-# gets a group of its own, its commit, so the runs on master are neither cancelled nor held back
-# by one another.
+# or staging gets a group of its own, its commit, so the runs on those branches are neither
+# cancelled nor held back by one another.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
   cancel-in-progress: true
