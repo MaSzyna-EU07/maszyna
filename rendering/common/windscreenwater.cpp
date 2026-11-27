@@ -69,9 +69,9 @@ gfx::vertex_array const &submodel_vertices(TSubModel const *Submodel)
 // the transformation of a submodel to the space of the model
 glm::mat4 submodel_transform(TSubModel const *Submodel)
 {
-	float4x4 matrix;
+	glm::mat4 matrix;
 	Submodel->ParentMatrix(&matrix);
-	return glm::make_mat4(matrix.readArray());
+	return matrix;
 }
 
 } // namespace
