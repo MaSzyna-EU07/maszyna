@@ -235,10 +235,10 @@ TEST_CASE("derailment: SetDamage taking the derailment off puts the vehicle back
 	}
 	REQUIRE(eu07vehicle->Derailed == dr::outcome::overturned);
 	// another flag taken off leaves it derailed
-	eu07vehicle->RunCommand("SetDamage", dtrain_engine, 1);
-	eu07vehicle->RunCommand("SetDamage", dtrain_engine, -1);
+	eu07vehicle->RunCommand(VehicleCommand::setDamage, dtrain_engine, 1);
+	eu07vehicle->RunCommand(VehicleCommand::setDamage, dtrain_engine, -1);
 	CHECK(eu07vehicle->Derailed == dr::outcome::overturned);
-	CHECK(eu07vehicle->RunCommand("SetDamage", dtrain_out, -1));
+	CHECK(eu07vehicle->RunCommand(VehicleCommand::setDamage, dtrain_out, -1));
 	CHECK_FALSE(TestFlag(eu07vehicle->DamageFlag, dtrain_out));
 	CHECK(eu07vehicle->Derailed == dr::outcome::none);
 }

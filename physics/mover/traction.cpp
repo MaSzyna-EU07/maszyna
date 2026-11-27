@@ -428,7 +428,7 @@ bool TMoverParameters::MotorBlowersSwitch(bool State, end const Side, range_t co
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(Side == end::front ? "MotorBlowersFrontSwitch" : "MotorBlowersRearSwitch", fan.is_enabled ? 1 : 0, CabActive,
+		SendCtrlToNext(Side == end::front ? VehicleCommand::motorBlowersFrontSwitch : VehicleCommand::motorBlowersRearSwitch, fan.is_enabled ? 1 : 0, CabActive,
 		               Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
@@ -452,7 +452,7 @@ bool TMoverParameters::MotorBlowersSwitchOff(bool State, end const Side, range_t
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(Side == end::front ? "MotorBlowersFrontSwitchOff" : "MotorBlowersRearSwitchOff", fan.is_disabled ? 1 : 0, CabActive,
+		SendCtrlToNext(Side == end::front ? VehicleCommand::motorBlowersFrontSwitchOff : VehicleCommand::motorBlowersRearSwitchOff, fan.is_disabled ? 1 : 0, CabActive,
 		               Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
@@ -473,7 +473,7 @@ bool TMoverParameters::TractionModeSwitch(traction_mode const Mode, range_t cons
 
 	if (Notify != range_t::local && accepted)
 	{
-		SendCtrlToNext("TractionMode", Mode == traction_mode::genset ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::tractionMode, Mode == traction_mode::genset ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return TractionMode != initialstate;
@@ -1287,7 +1287,7 @@ void TMoverParameters::SpeedControlByPosition(double dt)
 			if (NewSCAP != SpeedCtrlValue)
 			{
 				SpeedCtrlValue = NewSCAP;
-				//								SendCtrlToNext("SpeedCntrl", SpeedCtrlValue, CabActive);
+				//								SendCtrlToNext(VehicleCommand::speedControl, SpeedCtrlValue, CabActive);
 			}
 		}
 	}
@@ -1701,7 +1701,7 @@ bool TMoverParameters::RelayReset(int const Relays, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("RelayReset", Relays, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::relayReset, Relays, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return reset;
@@ -1789,7 +1789,7 @@ bool TMoverParameters::MaxCurrentSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("MaxCurrentSwitch", State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::maxCurrentSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return State != initialstate;
@@ -1810,14 +1810,14 @@ bool TMoverParameters::MinCurrentSwitch(bool State)
 			Imin = IminHi;
 			MCS = true;
 			if (CabActive != 0)
-				SendCtrlToNext("MinCurrentSwitch", 1, CabActive);
+				SendCtrlToNext(VehicleCommand::minCurrentSwitch, 1, CabActive);
 		}
 		if (!State && Imin == IminHi)
 		{
 			Imin = IminLo;
 			MCS = true;
 			if (CabActive != 0)
-				SendCtrlToNext("MinCurrentSwitch", 0, CabActive);
+				SendCtrlToNext(VehicleCommand::minCurrentSwitch, 0, CabActive);
 		}
 	}
 	return MCS;

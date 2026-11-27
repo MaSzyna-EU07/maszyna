@@ -725,7 +725,7 @@ TEST_CASE("collisions: SetDamage taking the derailment off clears the collision'
 	wagon->derail_in_collision(COLLISION_PUSHED_OFF, "test");
 	REQUIRE(wagon->CollisionDerail == COLLISION_PUSHED_OFF);
 	REQUIRE(wagon->Derailed == derailment::outcome::off_rails);
-	wagon->RunCommand("SetDamage", dtrain_out, -1);
+	wagon->RunCommand(VehicleCommand::setDamage, dtrain_out, -1);
 	CHECK(wagon->CollisionDerail == NONE);
 	CHECK(wagon->Derailed == derailment::outcome::none);
 	CHECK_FALSE(TestFlag(wagon->DamageFlag, dtrain_out));

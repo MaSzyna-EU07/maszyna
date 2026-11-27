@@ -1491,9 +1491,6 @@ class TMoverParameters
 	TCommand CommandIn;
 	/*komenda przekazywana przez PutCommand*/
 	/*i wykonywana przez RunInternalCommand*/
-	std::string CommandOut; /*komenda przekazywana przez ExternalCommand*/
-	std::string CommandLast; // Ra: ostatnio wykonana komenda do podglądu
-	double ValueOut = 0.0; /*argument komendy która ma byc przekazana na zewnatrz*/
 
 	TTrackShape RunningShape; /*geometria toru po ktorym jedzie pojazd*/
 	TTrackParam RunningTrack; /*parametry toru po ktorym jedzie pojazd*/
@@ -1894,24 +1891,23 @@ class TMoverParameters
 	double EngineMaxRPM() const;
 
 	/*! przesylanie komend sterujacych*/
-	bool SendCtrlToNext(std::string const &CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = coupling::control);
-	bool SetInternalCommand(std::string const &NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
-	double GetExternalCommand(std::string &Command) const;
-	bool RunCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
+	bool SendCtrlToNext(VehicleCommand const CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = coupling::control);
+	bool SetInternalCommand(VehicleCommand const NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
+	bool RunCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype = coupling::control, std::string_view Argument = {});
 	// the parts of RunCommand(), by the area of the commands
-	bool RunControllerCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunRelaysCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunCabCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunBrakeCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunBrakeEquipmentCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunAuxiliariesCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunPumpsCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunBlowersCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunPowerCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunDoorsCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunControllerCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunRelaysCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunCabCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunBrakeCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunBrakeEquipmentCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunAuxiliariesCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunPumpsCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunBlowersCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunPowerCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunDoorsCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
 	void DoorPermitCommand(double CValue1, double CValue2);
 	void DoorRemoteCommand(bool Open, double CValue1, double CValue2);
-	bool RunLoadCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunLoadCommand(VehicleCommand const Command, double CValue1, double CValue2, std::string_view Argument, bool &OK);
 	bool RunInternalCommand();
 	void PutCommand(std::string const &NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
 	bool CabActivisation(bool const Enforce = false);

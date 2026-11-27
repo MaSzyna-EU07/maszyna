@@ -862,8 +862,8 @@ bool TMoverParameters::BatterySwitch(bool State, range_t const Notify)
 	// switching batteries does not require activation
 	if (Notify != local)
 	{
-		SendCtrlToNext("BatterySwitch", State ? 1 : 0, 1, Notify == unit ? coupling::control | coupling::permanent : coupling::control);
-		SendCtrlToNext("BatterySwitch", State ? 1 : 0, -1, Notify == unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::batterySwitch, State ? 1 : 0, 1, Notify == unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::batterySwitch, State ? 1 : 0, -1, Notify == unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return Battery != initialstate;
@@ -884,7 +884,7 @@ bool TMoverParameters::CompartmentLightsSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("CompartmentLightsSwitch", CompartmentLights.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::compartmentLightsSwitch, CompartmentLights.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return CompartmentLights.is_enabled != initialstate;
@@ -906,7 +906,7 @@ bool TMoverParameters::CompartmentLightsSwitchOff(bool State, range_t const Noti
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("CompartmentLightsSwitchOff", CompartmentLights.is_disabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::compartmentLightsSwitchOff, CompartmentLights.is_disabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return CompartmentLights.is_disabled != initialstate;
@@ -927,7 +927,7 @@ bool TMoverParameters::MainSwitch(bool const State, range_t const Notify)
 	{
 		// pass the command to other vehicles
 		// TBD: pass the requested state, or the actual state?
-		SendCtrlToNext("MainSwitch", State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::mainSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return (Mains || dizel_startup) != initialstate;
@@ -1038,7 +1038,7 @@ bool TMoverParameters::ConverterSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("ConverterSwitch", State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::converterSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return ConverterAllow != initialstate;
@@ -1055,7 +1055,7 @@ bool TMoverParameters::HeatingSwitch(bool const State, range_t const Notify)
 	{
 		// pass the command to other vehicles
 		// TBD: pass the requested state, or the actual state?
-		SendCtrlToNext("HeatingSwitch", State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::heatingSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return HeatingAllow != initialstate;
@@ -1081,7 +1081,7 @@ bool TMoverParameters::GensetSwitch(bool const State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("GensetSwitch", State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::gensetSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return Genset.is_enabled != initialstate;
@@ -1207,7 +1207,7 @@ bool TMoverParameters::OperatePantographsValve(operation_t const State, range_t 
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("PantsValve", static_cast<double>(State), CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::pantographsValve, static_cast<double>(State), CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return true;
@@ -1267,7 +1267,7 @@ bool TMoverParameters::OperatePantographValve(end const End, operation_t const S
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("PantValve",
+		SendCtrlToNext(VehicleCommand::pantographValve,
 		               // HACK: pack the state, pantograph index and sender cab into 8-bit value
 		               // with high bit storing front/rear pantograph, and 7th bit storing sender cab
 		               static_cast<double>(0x80 * (End == end::front ? 0 : 1) + 0x40 * (CabActive != -1 ? 1 : 0) + static_cast<int>(State)), CabActive,
@@ -1286,7 +1286,7 @@ bool TMoverParameters::DropAllPantographs(bool const State, range_t const Notify
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("PantAllDown", State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::pantographsAllDown, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return State != initialstate;

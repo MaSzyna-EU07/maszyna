@@ -236,8 +236,8 @@ bool TMoverParameters::EpFuseSwitch(bool State)
 	}
 	else
 		return false;
-	// if (EpFuse == true) SendCtrlToNext("EpFuseSwitch", 1, CabActive)
-	//  else SendCtrlToNext("EpFuseSwitch", 0, CabActive);
+	// if (EpFuse == true) SendCtrlToNext(VehicleCommand::epFuseSwitch, 1, CabActive)
+	//  else SendCtrlToNext(VehicleCommand::epFuseSwitch, 0, CabActive);
 }
 
 // *************************************************************************************************
@@ -248,7 +248,7 @@ bool TMoverParameters::SpringBrakeActivate(bool State)
 {
 	if (Power24vIsAvailable || Power110vIsAvailable)
 	{
-		SendCtrlToNext("SpringBrakeActivate", int(State), CabActive, SpringBrake.MultiTractionCoupler);
+		SendCtrlToNext(VehicleCommand::springBrakeActivate, int(State), CabActive, SpringBrake.MultiTractionCoupler);
 
 		if (SpringBrake.Activate != State)
 		{
@@ -323,7 +323,7 @@ bool TMoverParameters::CompressorSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("CompressorSwitch", State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::compressorSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return CompressorAllow != initialstate;
@@ -338,7 +338,7 @@ bool TMoverParameters::ChangeCompressorPreset(int const State, range_t const Not
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("CompressorPreset", State, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::compressorPreset, State, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return CompressorListPos != initialstate;
@@ -528,7 +528,7 @@ bool TMoverParameters::BrakeReleaser(int state)
 		Hamulec->Releaser(state);
 	}
 	if (CabActive != 0) // rekurencyjne wysłanie do następnego
-		OK = SendCtrlToNext("BrakeReleaser", state, CabActive);
+		OK = SendCtrlToNext(VehicleCommand::brakeReleaser, state, CabActive);
 	return OK;
 }
 
@@ -579,7 +579,7 @@ bool TMoverParameters::SwitchEPBrake(int state)
 		else
 			EpForce = 0;
 		Hamulec->SetEPS(EpForce);
-		SendCtrlToNext("Brake", EpForce, CabActive);
+		SendCtrlToNext(VehicleCommand::brake, EpForce, CabActive);
 	}
 	//  OK:=SetFlag(BrakeStatus,((2*State-1)*b_epused));
 	//  SendCtrlToNext('Brake',(state*(2*BrakeCtrlPos-1)),CabActive);
@@ -660,7 +660,7 @@ bool TMoverParameters::BrakeDelaySwitch(int BDS)
 		Hamulec->SetBrakeStatus(Hamulec->GetBrakeStatus() & ~64);
 		// kopowanie nastawy hamulca do kolejnego czlonu - do przemyślenia
 		if (CabActive != 0)
-			SendCtrlToNext("BrakeDelay", BrakeDelayFlag, CabActive);
+			SendCtrlToNext(VehicleCommand::brakeDelay, BrakeDelayFlag, CabActive);
 	}
 	else
 		rBDS = false;
@@ -1237,7 +1237,7 @@ void TMoverParameters::UpdateEPBrake()
 	TUHEX_StageActual = static_cast<int>(EpForce);
 	TUHEX_Active = TUHEX_StageActual > 0;
 	// Ra 2014-11: na tym się wysypuje, ale nie wiem, w jakich warunkach
-	SendCtrlToNext("Brake", EpForce, CabActive);
+	SendCtrlToNext(VehicleCommand::brake, EpForce, CabActive);
 }
 
 // *************************************************************************************************

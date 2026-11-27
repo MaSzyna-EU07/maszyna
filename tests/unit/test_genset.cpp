@@ -650,7 +650,7 @@ TEST_CASE("genset: a scenery command reaches the selector") {
 	cab.PutCommand("TractionMode", 1, 0, cab.Loc);
 	dragon6.step(no_wire);
 	CHECK(cab.GensetSelected());
-	CHECK(cab.CommandIn.Command.empty());
+	CHECK(cab.CommandIn.Command == VehicleCommand::none);
 	cab.PutCommand("GensetSwitch", 1, 0, cab.Loc);
 	dragon6.step(no_wire);
 	CHECK(cab.Genset.is_enabled);

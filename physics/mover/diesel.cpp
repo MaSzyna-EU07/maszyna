@@ -133,7 +133,7 @@ bool TMoverParameters::WaterPumpBreakerSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("WaterPumpBreakerSwitch", WaterPump.breaker ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::waterPumpBreakerSwitch, WaterPump.breaker ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return WaterPump.breaker != initialstate;
@@ -155,7 +155,7 @@ bool TMoverParameters::WaterPumpSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("WaterPumpSwitch", WaterPump.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::waterPumpSwitch, WaterPump.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return WaterPump.is_enabled != initialstate;
@@ -177,7 +177,7 @@ bool TMoverParameters::WaterPumpSwitchOff(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("WaterPumpSwitchOff", WaterPump.is_disabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::waterPumpSwitchOff, WaterPump.is_disabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return WaterPump.is_disabled != initialstate;
@@ -198,7 +198,7 @@ bool TMoverParameters::WaterHeaterBreakerSwitch(bool State, range_t const Notify
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("WaterHeaterBreakerSwitch", WaterHeater.breaker ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::waterHeaterBreakerSwitch, WaterHeater.breaker ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return WaterHeater.breaker != initialstate;
@@ -219,7 +219,7 @@ bool TMoverParameters::WaterHeaterSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("WaterHeaterSwitch", WaterHeater.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::waterHeaterSwitch, WaterHeater.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return WaterHeater.is_enabled != initialstate;
@@ -241,7 +241,7 @@ bool TMoverParameters::WaterCircuitsLinkSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("WaterCircuitsLinkSwitch", WaterCircuitsLink ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::waterCircuitsLinkSwitch, WaterCircuitsLink ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return WaterCircuitsLink != initialstate;
@@ -263,7 +263,7 @@ bool TMoverParameters::FuelPumpSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("FuelPumpSwitch", FuelPump.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::fuelPumpSwitch, FuelPump.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return FuelPump.is_enabled != initialstate;
@@ -284,7 +284,7 @@ bool TMoverParameters::FuelPumpSwitchOff(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("FuelPumpSwitchOff", FuelPump.is_disabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::fuelPumpSwitchOff, FuelPump.is_disabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return FuelPump.is_disabled != initialstate;
@@ -306,7 +306,7 @@ bool TMoverParameters::OilPumpSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("OilPumpSwitch", OilPump.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::oilPumpSwitch, OilPump.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return OilPump.is_enabled != initialstate;
@@ -327,7 +327,7 @@ bool TMoverParameters::OilPumpSwitchOff(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext("OilPumpSwitchOff", OilPump.is_disabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::oilPumpSwitchOff, OilPump.is_disabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return OilPump.is_disabled != initialstate;

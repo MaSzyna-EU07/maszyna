@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <string>
 
+#include "physics/vehiclecommand.h"
+
 /// <summary>Global counter incremented when a string-to-numeric conversion fails during config parsing.</summary>
 extern int ConversionError;
 
@@ -603,8 +605,12 @@ struct TDimension
 /// <summary>A pending command queued for the vehicle, with its arguments and propagation rules.</summary>
 struct TCommand
 {
-	/// <summary>Command name.</summary>
-	std::string Command; /*komenda*/
+	/// <summary>The command.</summary>
+	VehicleCommand Command{VehicleCommand::none};
+	/// <summary>The command as it came, where it came as text (an event, a script): the AI reads it.</summary>
+	std::string Text;
+	/// <summary>The name of the load of Load= and UnLoad=.</summary>
+	std::string Argument;
 	/// <summary>First numeric argument.</summary>
 	double Value1 = 0.0; /*argumenty komendy*/
 	/// <summary>Second numeric argument.</summary>

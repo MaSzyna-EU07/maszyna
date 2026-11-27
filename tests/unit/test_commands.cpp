@@ -248,7 +248,8 @@ TEST_CASE("commands: every command run on every real vehicle") {
 		for (std::size_t i = 0; i < commands.size(); ++i) {
 			auto const &command{commands[i]};
 			trace.mark(std::format("{} {} {}", command.name, command.value1, command.value2));
-			done = real->RunCommand(command.name, command.value1, command.value2, coupling::control);
+			auto const parsed{ParseVehicleCommand(command.name)};
+			done = real->RunCommand(parsed.command, command.value1, command.value2, coupling::control, parsed.argument);
 			trace.sample(static_cast<double>(i + 1), real.mover());
 		}
 		trace.check();
@@ -463,8 +464,8 @@ TEST_CASE("commands: travel along the train, turned round for a vehicle facing b
 	CHECK(consist.middle->CabActive == -1);
 	CHECK(consist.last->CabActive == 1);
 	// the command is done in each vehicle and cleared
-	CHECK(consist.middle->CommandIn.Command.empty());
-	CHECK(consist.last->CommandIn.Command.empty());
+	CHECK(consist.middle->CommandIn.Command == VehicleCommand::none);
+	CHECK(consist.last->CommandIn.Command == VehicleCommand::none);
 
 	SUBCASE("door permits: the right side of the sender is the left one of a vehicle facing backwards") {
 		consist.head->PermitDoors(side::right, true, range_t::consist);
@@ -484,24 +485,24 @@ TEST_CASE("commands: travel along the train, turned round for a vehicle facing b
 		CHECK(consist.last->Pantographs[end::rear].valve.is_enabled);
 	}
 	SUBCASE("sent backwards, it goes no further than the sender: nothing is coupled at its front") {
-		consist.head->RunCommand("DoorLock", 0, -1, coupling::control);
+		consist.head->RunCommand(VehicleCommand::doorLock, 0, -1, coupling::control);
 		CHECK_FALSE(consist.head->Doors.lock_enabled);
 		CHECK(consist.middle->Doors.lock_enabled);
 	}
 	SUBCASE("the same command again isn't taken by the next vehicle a second time") {
-		CHECK(consist.middle->SetInternalCommand("DoorStep", 0, 1, coupling::control));
-		CHECK_FALSE(consist.middle->SetInternalCommand("DoorStep", 0, 1, coupling::control));
+		CHECK(consist.middle->SetInternalCommand(VehicleCommand::doorStep, 0, 1, coupling::control));
+		CHECK_FALSE(consist.middle->SetInternalCommand(VehicleCommand::doorStep, 0, 1, coupling::control));
 		CHECK_FALSE(consist.head->RunInternalCommand()); // nothing to run
 	}
 }
 
 TEST_CASE("commands: don't pass a coupling without the control cable") {
 	train consist{coupling::coupler | coupling::brakehose};
-	consist.head->RunCommand("DoorLock", 0, 1, coupling::control);
+	consist.head->RunCommand(VehicleCommand::doorLock, 0, 1, coupling::control);
 	CHECK_FALSE(consist.head->Doors.lock_enabled);
 	CHECK(consist.middle->Doors.lock_enabled);
 	// a command of another coupling goes through it
-	consist.head->RunCommand("DoorStep", 0, 1, coupling::brakehose);
+	consist.head->RunCommand(VehicleCommand::doorStep, 0, 1, coupling::brakehose);
 	CHECK_FALSE(consist.middle->Doors.step_enabled);
 }
 
@@ -518,7 +519,7 @@ TEST_CASE("commands: a wagon loaded and unloaded by commands, which repeat until
 		wagon.run(30.0);
 		CHECK(wagon->LoadAmount == doctest::Approx(12.0).epsilon(0.1));
 		CHECK(wagon->LoadType.name == "coal");
-		CHECK(wagon->CommandIn.Command.empty());
+		CHECK(wagon->CommandIn.Command == VehicleCommand::none);
 
 		trace.mark("unload");
 		wagon->PutCommand("UnLoad=Coal", 20, 0, wagon->Loc);
@@ -531,7 +532,7 @@ TEST_CASE("commands: a wagon loaded and unloaded by commands, which repeat until
 		wagon->PutCommand("Load=passengers", 12, 0, wagon->Loc);
 		wagon.run(10.0);
 		CHECK(wagon->LoadAmount == doctest::Approx(0.0));
-		CHECK_FALSE(wagon->CommandIn.Command.empty());
+		CHECK_FALSE(wagon->CommandIn.Command == VehicleCommand::none);
 	}
 	SUBCASE("away from the place of the command nothing is loaded") {
 		wagon->PutCommand("Load=Coal", 12, 5.0, TLocation{100.0, 0.0, 0.0});
@@ -542,6 +543,6 @@ TEST_CASE("commands: a wagon loaded and unloaded by commands, which repeat until
 	SUBCASE("unloading an empty wagon isn't done either") {
 		wagon->PutCommand("UnLoad=Coal", 12, 0, wagon->Loc);
 		wagon.run(10.0);
-		CHECK_FALSE(wagon->CommandIn.Command.empty());
+		CHECK_FALSE(wagon->CommandIn.Command == VehicleCommand::none);
 	}
 }

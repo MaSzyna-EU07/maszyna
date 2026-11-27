@@ -83,8 +83,8 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 	if (true == OK)
 	{
 		ScndCtrlResistiveLockCheck(); // e.g. from the last series position on to the resistive parallel ones
-		SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); //???
-		SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
+		SendCtrlToNext(VehicleCommand::mainController, MainCtrlPosForCoupled(), CabActive); //???
+		SendCtrlToNext(VehicleCommand::secondaryController, ScndCtrlPos, CabActive);
 	}
 
 	// hunter-101012: poprawka
@@ -270,8 +270,8 @@ bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
 		if (OK)
 		{
 			ScndCtrlResistiveLockCheck(); // the shunt drops when the master controller leaves a resistance-free position
-			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); // hmmmm...???!!!
-			/*OK:=*/SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
+			/*OK:=*/SendCtrlToNext(VehicleCommand::mainController, MainCtrlPosForCoupled(), CabActive); // hmmmm...???!!!
+			/*OK:=*/SendCtrlToNext(VehicleCommand::secondaryController, ScndCtrlPos, CabActive);
 		}
 	}
 	// if OK then LastRelayTime:=0;
@@ -485,8 +485,8 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 			OK = false;
 		if (OK)
 		{
-			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); //???
-			/*OK:=*/SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
+			/*OK:=*/SendCtrlToNext(VehicleCommand::mainController, MainCtrlPosForCoupled(), CabActive); //???
+			/*OK:=*/SendCtrlToNext(VehicleCommand::secondaryController, ScndCtrlPos, CabActive);
 		}
 	}
 	else // nie ma sterowania
@@ -547,8 +547,8 @@ bool TMoverParameters::DecScndCtrl(int CtrlSpeed)
 			OK = false;
 		if (OK)
 		{
-			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); //???
-			/*OK:=*/SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
+			/*OK:=*/SendCtrlToNext(VehicleCommand::mainController, MainCtrlPosForCoupled(), CabActive); //???
+			/*OK:=*/SendCtrlToNext(VehicleCommand::secondaryController, ScndCtrlPos, CabActive);
 		}
 	}
 	else
@@ -627,7 +627,7 @@ bool TMoverParameters::AutoRelaySwitch(bool State)
 	{
 		AutoRelayFlag = State;
 		ARS = true;
-		SendCtrlToNext("AutoRelaySwitch", int(State), CabActive);
+		SendCtrlToNext(VehicleCommand::autoRelaySwitch, int(State), CabActive);
 	}
 	else
 		ARS = false;
@@ -1376,7 +1376,7 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 				eimicSpeedCtrlIntegral = 0;
 			}
 			SpeedCtrlUnit.Parking = Vel == 0.0 && eimic <= 0 && EngineType != TEngineType::ElectricInductionMotor;
-			SendCtrlToNext("SpeedCtrlUnit.Parking", SpeedCtrlUnit.Parking, CabActive);
+			SendCtrlToNext(VehicleCommand::speedControlParking, SpeedCtrlUnit.Parking, CabActive);
 		}
 		else
 		{
@@ -1396,7 +1396,7 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 		eimicSpeedCtrl = 1;
 		eimicSpeedCtrlIntegral = 0;
 		SpeedCtrlUnit.Parking = false;
-		SendCtrlToNext("SpeedCtrlUnit.Parking", SpeedCtrlUnit.Parking, CabActive);
+		SendCtrlToNext(VehicleCommand::speedControlParking, SpeedCtrlUnit.Parking, CabActive);
 	}
 }
 

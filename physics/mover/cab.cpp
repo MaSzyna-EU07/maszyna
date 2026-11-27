@@ -41,7 +41,7 @@ bool TMoverParameters::DirectionForward()
 	{
 		++DirActive;
 		DirAbsolute = DirActive * CabActive;
-		SendCtrlToNext("Direction", DirActive, CabActive);
+		SendCtrlToNext(VehicleCommand::direction, DirActive, CabActive);
 		return true;
 	}
 	else if (DirActive == 1 && IsMainCtrlNoPowerPos() && TrainType == train_type::emu && EngineType != TEngineType::ElectricInductionMotor)
@@ -117,8 +117,8 @@ bool TMoverParameters::CabActivisation(bool const Enforce)
 		DirAbsolute = DirActive * CabActive;
 		CabMaster = true;
 		SecuritySystem.set_enabled(true); // activate the alerter TODO: make it part of control based cab selection
-		SendCtrlToNext("CabActivisation", 1, CabActive);
-		SendCtrlToNext("Direction", DirActive, CabActive);
+		SendCtrlToNext(VehicleCommand::cabActivation, 1, CabActive);
+		SendCtrlToNext(VehicleCommand::direction, DirActive, CabActive);
 		if (InactiveCabFlag & activation::springbrakeoff)
 		{
 			SpringBrakeActivate(false);
@@ -160,7 +160,7 @@ bool TMoverParameters::CabDeactivisation(bool const Enforce)
 		if (InactiveCabFlag & activation::neutraldirection)
 		{
 			DirActive = 0;
-			SendCtrlToNext("Direction", 0, CabActive);
+			SendCtrlToNext(VehicleCommand::direction, 0, CabActive);
 		}
 
 		CabActive = 0;
@@ -169,7 +169,7 @@ bool TMoverParameters::CabDeactivisation(bool const Enforce)
 		DepartureSignal = false; // nie buczeć z nieaktywnej kabiny
 		SecuritySystem.set_enabled(false); // deactivate alerter TODO: make it part of control based cab selection
 
-		SendCtrlToNext("CabActivisation", 0, CabOccupied); // CabActive==0!
+		SendCtrlToNext(VehicleCommand::cabActivation, 0, CabOccupied); // CabActive==0!
 	}
 	return OK;
 }
@@ -231,7 +231,7 @@ bool TMoverParameters::DirectionBackward(void)
 		//    else
 		--DirActive;
 		DirAbsolute = DirActive * CabActive;
-		SendCtrlToNext("Direction", DirActive, CabActive);
+		SendCtrlToNext(VehicleCommand::direction, DirActive, CabActive);
 		return true;
 	}
 

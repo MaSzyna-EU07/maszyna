@@ -199,7 +199,7 @@ bool TMoverParameters::PermitDoorStep(bool const State, range_t const Notify)
 	if (Notify != range_t::local)
 	{
 		// wysłanie wyłączenia do pozostałych?
-		SendCtrlToNext("DoorStep", State == true ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::doorStep, State == true ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return Doors.step_enabled != initialstate;
@@ -215,7 +215,7 @@ bool TMoverParameters::PermitDoors(side const Door, bool const State, range_t co
 	if (Notify != range_t::local)
 	{
 
-		SendCtrlToNext("DoorPermit",
+		SendCtrlToNext(VehicleCommand::doorPermit,
 		               (State ? 1 : -1) // positive: grant, negative: revoke
 		                   * (Door == (CabActive > 0 ? side::left : side::right) ? // 1=lewe, 2=prawe (swap if reversed)
 		                          1 :
@@ -245,7 +245,7 @@ bool TMoverParameters::ChangeDoorControlMode(bool const State, range_t const Not
 	if (Notify != range_t::local)
 	{
 		// wysłanie wyłączenia do pozostałych?
-		SendCtrlToNext("DoorMode", State == true ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::doorMode, State == true ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	if (true == State)
@@ -292,7 +292,7 @@ bool TMoverParameters::OperateDoors(side const Door, bool const State, range_t c
 	if (Notify != range_t::local)
 	{
 
-		SendCtrlToNext(State == true ? "DoorOpen" : "DoorClose",
+		SendCtrlToNext(State == true ? VehicleCommand::doorOpen : VehicleCommand::doorClose,
 		               Door == (CabActive > 0 ? side::left : side::right) ? // 1=lewe, 2=prawe (swap if reversed)
 		                   1 :
 		                   2,
@@ -312,7 +312,7 @@ bool TMoverParameters::LockDoors(bool const State, range_t const Notify)
 	if (Notify != range_t::local)
 	{
 		// wysłanie wyłączenia do pozostałych?
-		SendCtrlToNext("DoorLock", State == true ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::doorLock, State == true ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return Doors.lock_enabled != initialstate;
@@ -332,7 +332,7 @@ bool TMoverParameters::signal_departure(bool const State, range_t const Notify)
 	if (Notify != range_t::local)
 	{
 		// wysłanie wyłączenia do pozostałych?
-		SendCtrlToNext("DepartureSignal", State == true ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::departureSignal, State == true ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
 
 	return true;

@@ -744,6 +744,7 @@ set(CORE_SOURCES
 "audio/startsample.cpp"
 "physics/friction.cpp"
 "physics/brakes.cpp"
+"physics/vehiclecommand.cpp"
 "physics/mover/mover.cpp"
 "physics/mover/cab.cpp"
 "physics/mover/collisions.cpp"

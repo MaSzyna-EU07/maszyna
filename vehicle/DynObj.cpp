@@ -3853,7 +3853,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 			if (MoverParameters->SpeedCtrl)
 				MoverParameters->CheckSpeedCtrl(dt1);
 			MoverParameters->eimic_real = std::min(MoverParameters->eimic,MoverParameters->eimicSpeedCtrl);
-			MoverParameters->SendCtrlToNext("EIMIC", MoverParameters->eimic_real, MoverParameters->CabActive);
+			MoverParameters->SendCtrlToNext(VehicleCommand::integratedController, MoverParameters->eimic_real, MoverParameters->CabActive);
 		}
 		if( Mechanik->primary()
          && MoverParameters->EngineType == TEngineType::ElectricInductionMotor ) {
@@ -3884,7 +3884,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 			// Elf: full braking at once in the lowest position, and in the emergency brake position below it
 			if (MoverParameters->EIMCtrlType == 2 && MoverParameters->MainCtrlPos <= MoverParameters->EIMCtrlEmergencyPositions())
 				eimic = -1.0;
-			MoverParameters->SendCtrlToNext("EIMIC", std::max(0., eimic), MoverParameters->CabActive);
+			MoverParameters->SendCtrlToNext(VehicleCommand::integratedController, std::max(0., eimic), MoverParameters->CabActive);
 			auto LBR = std::max(-eimic, 0.);
 			auto eim_lb = Mechanik->AIControllFlag || !MoverParameters->LocHandleTimeTraxx ? 0 : MoverParameters->eim_localbrake;
 

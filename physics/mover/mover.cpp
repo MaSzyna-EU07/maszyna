@@ -676,12 +676,12 @@ bool TMoverParameters::Sandbox(bool const State, range_t const Notify)
 		if (State == true)
 		{
 			// switch on
-			SendCtrlToNext("Sandbox", 1, CabActive, couplingtype);
+			SendCtrlToNext(VehicleCommand::sandbox, 1, CabActive, couplingtype);
 		}
 		else
 		{
 			// switch off
-			SendCtrlToNext("Sandbox", 0, CabActive, couplingtype);
+			SendCtrlToNext(VehicleCommand::sandbox, 0, CabActive, couplingtype);
 		}
 	}
 
@@ -694,7 +694,7 @@ bool TMoverParameters::Sandbox(bool const State, range_t const Notify)
 // *************************************************************************************************
 bool TMoverParameters::SandboxAutoAllow(bool State)
 {
-	// SendCtrlToNext("SandboxAutoAllow", int(State), CabActive, ctrain_controll);
+	// SendCtrlToNext(VehicleCommand::sandboxAutoAllow, int(State), CabActive, ctrain_controll);
 
 	if (SandDoseAutoAllow != State)
 	{

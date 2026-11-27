@@ -2516,7 +2516,7 @@ void TController::Activation()
                 auto *targetvehicledriver { targetvehicle->Mechanik }; // zapamiętanie tego, co ewentualnie tam siedzi, żeby w razie dwóch zamienić miejscami
                 // move to the new vehicle
                 targetvehicle->Mechanik = this; // na razie bilokacja
-                targetvehicle->MoverParameters->SetInternalCommand("", 0, 0); // usunięcie ewentualnie zalegającej komendy (Change_direction?)
+                targetvehicle->MoverParameters->SetInternalCommand(VehicleCommand::none, 0, 0); // usunięcie ewentualnie zalegającej komendy (Change_direction?)
                 if( targetvehicle->DirectionGet() != pVehicle->DirectionGet() ) {
                     // jeśli są przeciwne do siebie to będziemy jechać w drugą stronę względem zasiedzianego pojazdu
                     iDirection = -iDirection;
@@ -4559,7 +4559,7 @@ void TController::SpeedCntrl(double DesiredSpeed)
 			DesiredSpeed = 0;
 		}
 		mvControlling->SpeedCtrlSwitch(DesiredSpeed > 0);
-		mvControlling->RunCommand("SpeedCntrl", DesiredSpeed, mvControlling->CabActive);
+		mvControlling->RunCommand(VehicleCommand::speedControl, DesiredSpeed, mvControlling->CabActive);
 	}
 	else if (mvControlling->EngineType == TEngineType::DieselEngine)
 	{
@@ -4570,13 +4570,13 @@ void TController::SpeedCntrl(double DesiredSpeed)
 		else if (mvControlling->ScndCtrlPos < 1) {
 			mvControlling->IncScndCtrl(1);
 		}
-		mvControlling->RunCommand("SpeedCntrl", DesiredSpeed, mvControlling->CabActive);
+		mvControlling->RunCommand(VehicleCommand::speedControl, DesiredSpeed, mvControlling->CabActive);
 	}
 	else
 	if (mvControlling->ScndCtrlPosNo == 1)
 	{
 		mvControlling->IncScndCtrl(1);
-		mvControlling->RunCommand("SpeedCntrl", DesiredSpeed, mvControlling->CabActive);
+		mvControlling->RunCommand(VehicleCommand::speedControl, DesiredSpeed, mvControlling->CabActive);
 	}
 	else if (mvControlling->ScndCtrlPosNo > 1 && !mvOccupied->SpeedCtrlTypeTime)
 	{
@@ -4998,8 +4998,10 @@ TController::announce( announcement_t const Announcement ) {
 void TController::RecognizeCommand()
 { // odczytuje i wykonuje komendę przekazaną lokomotywie
     TCommand *c = &mvOccupied->CommandIn;
-    PutCommand(c->Command, c->Value1, c->Value2, c->Location, stopComm);
-    c->Command = ""; // usunięcie obsłużonej komendy
+    PutCommand(c->Text, c->Value1, c->Value2, c->Location, stopComm);
+    c->Command = VehicleCommand::none;
+    c->Argument.clear();
+    c->Text = ""; // usunięcie obsłużonej komendy
 }
 
 void TController::PutCommand(std::string NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation, TStopReason reason)
@@ -5493,7 +5495,7 @@ std::string TController::physicslog_line() const {
         << mvOccupied->fBrakeCtrlPos << " "
         << mvOccupied->LocalBrakePosA << " "
         << int(mvControlling->DirActive) << " "
-        << ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() ) << " "
+        << ( mvOccupied->CommandIn.Text.empty() ? "none" : mvOccupied->CommandIn.Text.c_str() ) << " "
         << mvOccupied->CommandIn.Value1 << " "
         << mvOccupied->CommandIn.Value2 << " "
         << int(mvControlling->SecuritySystem.is_blinking()) << " "
@@ -7381,7 +7383,7 @@ TController::control_doors() {
 void
 TController::UpdateCommand() {
 
-    if( false == mvOccupied->CommandIn.Command.empty() && false == mvOccupied->RunInternalCommand() ) {
+    if( mvOccupied->CommandIn.Command != VehicleCommand::none && false == mvOccupied->RunInternalCommand() ) {
 		// rozpoznaj komende bo lokomotywa jej nie rozpoznaje
 		RecognizeCommand(); // samo czyta komendę wstawioną do pojazdu?
 	}

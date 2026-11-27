@@ -35,7 +35,7 @@ Nothing creates these objects or calls these functions anywhere in the game, whi
 - **Base implementations always overridden:** `TFricMat::GetFC` (every material, the default P10 too, has its own) and `TPrzekladnik::Update` (every relay has its own).
 - **Functions without callers:**
   - In `brakes.cpp`: `PF_old`, `TBrake::GetBCF`, `TDriverHandle::OvrldButton`, `TReservoir::pa` and `TBrakeCyl::pa`.
-  - In `mover.cpp`: `BrakeVP`, `PipeRatio`, `RealPipeRatio`, `IncBrakeLevel`, `DecBrakeLevel`, `IncBrakePress`, `DecBrakePress`, `MainCtrlActualPowerPos` and `GetExternalCommand`.
+  - In `mover.cpp`: `BrakeVP`, `PipeRatio`, `RealPipeRatio`, `IncBrakeLevel`, `DecBrakeLevel`, `IncBrakePress`, `DecBrakePress` and `MainCtrlActualPowerPos`. (`GetExternalCommand` was removed.)
 - **Inverter failures** of the induction motor drives (`inverter::Failure_Drive`, `Failure_Const`, `Activate`): nothing ever sets them. The cab only shows them. The branches reading them in `TractionForce` can't be reached.
 
 ## Code only data no game vehicle has would run
