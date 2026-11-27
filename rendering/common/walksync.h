@@ -20,6 +20,11 @@ http://mozilla.org/MPL/2.0/.
 //   lights, the variants of the seasons) is held by the thread drawing it: a scenery model by a lock of its own (a stripe of
 //   them), the vehicles all at once, as their models may be those of the scenery as well. nothing is changed while it's held
 // - the static fields of TSubModel and the matrix stack of OpenGLMatrices are per thread
+//
+// the scenery loaded by a thread of its own (the vulkan renderer, gfx.vulkan.backgroundloading) while the main thread draws the
+// loading screen: from begin_background() to end_background() the main thread makes its frames holding frame_hold, and a change
+// made by any other thread waits till the frame is done (and a frame waits for the change being made). the frame goes first, so the
+// loading screen keeps moving
 
 #pragma once
 
@@ -54,7 +59,8 @@ class walk_scope
 };
 
 // a change of what the walks share: made with the walk lock held exclusive, while the window is open. Wanted: false when nothing
-// is to be changed after all (the change isn't waited for)
+// is to be changed after all (the change isn't waited for). while the scenery is loaded in the background it waits for the frame
+// of the main thread as well
 class change
 {
   public:
@@ -66,6 +72,41 @@ class change
   private:
 	bool m_exclusive{false};
 	bool m_shared{false}; // the thread held the lock shared before
+	bool m_background{false}; // the frame of the main thread waited for
+};
+
+// the scenery is loaded by a thread of its own from now on, till end_background(); called by the main thread
+void begin_background();
+void end_background();
+bool background();
+
+// work of a change which touches nothing the frame of the main thread reads (the data of a texture read from its file and decoded):
+// the frame may be made meanwhile, the change goes on after it. the frame then doesn't touch what such a change may have left half
+// done (the materials, the layers of the terrain). nothing outside of a change made while the scenery is loaded in the background
+class background_pause
+{
+  public:
+	background_pause();
+	~background_pause();
+	background_pause(background_pause const &) = delete;
+	background_pause &operator=(background_pause const &) = delete;
+
+  private:
+	int m_changes{0}; // the changes of the thread let go of
+};
+
+// the frame of the main thread while the scenery is loaded in the background: the changes of the other threads wait for it.
+// nothing outside of that time
+class frame_hold
+{
+  public:
+	frame_hold();
+	~frame_hold();
+	frame_hold(frame_hold const &) = delete;
+	frame_hold &operator=(frame_hold const &) = delete;
+
+  private:
+	bool m_held{false};
 };
 
 // lets a change waiting for the walk lock go first; the caller holds nothing it could move

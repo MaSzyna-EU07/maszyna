@@ -74,6 +74,11 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void Shutdown() override;
 	bool Render() override;
 	std::pair<std::size_t, std::size_t> Prewarm_Shaders(double const Milliseconds) override;
+	// the scenery loaded by a thread of its own (gfx.vulkan.backgroundloading): what it changes is made through gfx::walk_sync::change
+	bool Loads_In_Background() const override
+	{
+		return Global.gfx_vulkan_backgroundloading;
+	}
 	void SwapBuffers() override;
 	float Framerate() override;
 	// geometry

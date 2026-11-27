@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/logfiles.h"
 #include "world/SleeperWorker.h"
+#include "rendering/common/walksync.h"
 #include "rendering/screenshot.h"
 #include "utilities/translation.h"
 #include "vehicle/Train.h"
@@ -789,6 +790,8 @@ int eu07_application::run()
 			// do actual frame processing
 			if (!m_modes[m_modestack.top()]->update())
 				return 0;
+			// what the scenery loaded in the background reported meanwhile
+			apply_progress();
 		}
 
 		// -------------------------------------------------------------------
@@ -800,13 +803,18 @@ int eu07_application::run()
 			EditorTerrain.update(Global.pCamera.Pos);
 		Timer::subsystem.loop_terrain.stop();
 
-		Timer::subsystem.loop_tasks.start();
-		m_taskqueue.update();
-		m_screenqueue.update();
-		Timer::subsystem.loop_tasks.stop();
+		{
+			// while the scenery is loaded in the background, what the loading changes of the renderer waits for the frame
+			gfx::walk_sync::frame_hold const framehold;
 
-		if (!GfxRenderer->Render())
-			break;
+			Timer::subsystem.loop_tasks.start();
+			m_taskqueue.update();
+			m_screenqueue.update();
+			Timer::subsystem.loop_tasks.stop();
+
+			if (!GfxRenderer->Render())
+				break;
+		}
 
 		GfxRenderer->SwapBuffers();
 
@@ -885,6 +893,10 @@ void eu07_application::exit()
 	auto const step = [closing](char const *What) {
 		WriteLog(std::format("Closing: {} at {} ms", What, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - closing).count()));
 	};
+	step("the scenery loaded in the background");
+	// the thread loading it fills the scenery and the renderer, which go below
+	if (m_modes[mode::scenarioloader] != nullptr)
+		static_cast<scenarioloader_mode &>(*m_modes[mode::scenarioloader]).stop_loading();
 	step("the sleepers laid in the background");
 	// the sleepers laid in the background read the scenery, which goes below
 	track_sleepers::stop_background();
@@ -1020,6 +1032,14 @@ void eu07_application::set_title(std::string const &Title)
 
 void eu07_application::set_progress(float const Progress, float const Subtaskprogress)
 {
+	if (std::this_thread::get_id() != m_mainthread)
+	{
+		// the scenery loaded in the background: the main thread draws the loading screen meanwhile
+		m_pendingprogress.store(Progress, std::memory_order_relaxed);
+		m_pendingsubtaskprogress.store(Subtaskprogress, std::memory_order_relaxed);
+		m_progresspending.store(true, std::memory_order_release);
+		return;
+	}
 
 	if (m_modestack.empty())
 	{
@@ -1027,6 +1047,15 @@ void eu07_application::set_progress(float const Progress, float const Subtaskpro
 	}
 
 	m_modes[m_modestack.top()]->set_progress(Progress, Subtaskprogress);
+}
+
+void eu07_application::apply_progress()
+{
+	if (false == m_progresspending.exchange(false, std::memory_order_acquire))
+	{
+		return;
+	}
+	set_progress(m_pendingprogress.load(std::memory_order_relaxed), m_pendingsubtaskprogress.load(std::memory_order_relaxed));
 }
 
 void eu07_application::set_tooltip(std::string const &Tooltip)
@@ -1491,7 +1520,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		simulation::apply_test_mode_settings();
 	}
 
-	// a renderer this build doesn't have: the values of the removed renderers are taken for "default" as eu07.ini is read
+	// a renderer this build doesn't have: the values of the removed renderers are taken for "vulkan" as eu07.ini is read
 	// (global_settings::ConfigParse), and a vulkan renderer which can't run here falls back to opengl (select_gfx_backend())
 
 	return 0;
@@ -1554,7 +1583,7 @@ void eu07_application::select_gfx_backend()
 		{
 			WriteLog("gfxrenderer vulkan: not available (" + reason + "), using opengl");
 			crashreport_add_info("gfxrenderer_fallback", reason);
-			Global.GfxRenderer = "default";
+			Global.GfxRenderer = "opengl";
 		}
 	}
 	else if (Global.GfxRenderer == "null")
@@ -1647,7 +1676,7 @@ int eu07_application::fallback_to_opengl(std::string const &Reason)
 {
 	WriteLog("gfxrenderer vulkan: " + Reason + ", using opengl");
 	crashreport_add_info("gfxrenderer_fallback", Reason);
-	Global.GfxRenderer = "default";
+	Global.GfxRenderer = "opengl";
 	m_gfxbackend = gfx_renderer_factory::get_instance()->backend("modern");
 	crashreport_add_info("gfxrenderer", Global.GfxRenderer);
 	WriteLog("renderer: " + (m_gfxbackend != nullptr ? m_gfxbackend->name : std::string("none")));
@@ -1693,7 +1722,7 @@ int eu07_application::init_ui()
 int eu07_application::init_gfx()
 {
 
-	// NOTE: global_settings maps unsupported gfxrenderer values (e.g. the removed "legacy") to "default"
+	// NOTE: global_settings maps unsupported gfxrenderer values (e.g. the removed "legacy") to "vulkan"
 	GfxRenderer = (m_gfxbackend != nullptr && m_gfxbackend->create != nullptr) ? m_gfxbackend->create() : nullptr;
 
 	if (!GfxRenderer)

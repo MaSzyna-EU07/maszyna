@@ -1,8 +1,13 @@
 # OpenGL 4.6 renderer
 
-The default renderer (`gfxrenderer default`, the `modern` backend, `rendering/opengl46/`) runs on an
+The OpenGL renderer (`gfxrenderer opengl`, the `modern` backend, `rendering/opengl46/`) runs on an
 **OpenGL 4.6 core profile** context. There is no fallback to an older version, and the OpenGL 2.1 (legacy)
 renderer and the OpenGL ES / ANGLE path no longer exist.
+
+The default renderer is the Vulkan 1.4 one (`gfxrenderer vulkan`, also when `eu07.ini` has no `gfxrenderer`). When
+Vulkan can't run on the machine (no driver, no suitable device, or the renderer fails to start), the simulator
+falls back to this renderer and says so in the log (`gfxrenderer vulkan: ... using opengl`). `gfxrenderer opengl`
+forces this renderer.
 
 For how the lights are handled, see [clustered-lighting.md](clustered-lighting.md).
 
@@ -34,12 +39,13 @@ Old `eu07.ini` files still load. These entries are read and ignored, with a line
 
 | Entry | What happens now |
 |---|---|
-| `gfxrenderer legacy`, `simple` or any other value except `default`, `full` and `experimental` | the default renderer is used (`eu07.ini: gfxrenderer "X" is no longer supported, using "default"`) |
+| `gfxrenderer legacy`, `simple` or any other value except `vulkan`, `opengl`, `default` and `full` | the default (Vulkan) renderer is used (`eu07.ini: gfxrenderer "X" is no longer supported, using "vulkan"`) |
 | `usevbo` | ignored (`eu07.ini: "usevbo" is no longer supported and was ignored`) |
 | `gfx.usegles` | ignored, same message |
 | `gfx.angleplatform` | ignored, same message |
 
-`gfxrenderer full` is still taken for `default`.
+`gfxrenderer full` and `gfxrenderer default` are taken for the default, `vulkan`, without a line in the log. `gl46` is taken
+for `opengl`, `vulkan14` for `vulkan`.
 
 ### New options
 

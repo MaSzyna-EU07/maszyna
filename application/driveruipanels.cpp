@@ -1489,7 +1489,7 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
 
             textline += "\nRendering mode: ";
 
-	        if (Global.GfxRenderer == "default")
+	        if (Global.GfxRenderer == "opengl")
 	        {
 		        textline += "Shaders";
 	        }

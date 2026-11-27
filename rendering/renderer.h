@@ -91,6 +91,10 @@ public:
     // doesn't answer for half a minute at the first start of a new version). returns how many are done and how many there are;
     // a renderer which needs none of it says it's all done
     virtual std::pair<std::size_t, std::size_t> Prewarm_Shaders( double const Milliseconds ) { return { 0, 0 }; }
+    // whether the scenery can be loaded by a thread of its own while the main thread draws the loading screen. the changes of the
+    // resources the loading makes wait then for the frame being drawn (gfx::walk_sync::frame_hold). opengl can't: its context
+    // belongs to the main thread
+    virtual auto Loads_In_Background() const -> bool { return false; }
     virtual void SwapBuffers() = 0;
     virtual auto Framerate() -> float = 0;
     // geometry methods

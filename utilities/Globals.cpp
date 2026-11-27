@@ -412,18 +412,20 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
         // read in any case, as the starter does: "Legacy" written by hand is the legacy renderer
         GfxRenderer = ToLower(GfxRenderer);
 
-        // "default": the opengl 4.6 renderer, "vulkan": the vulkan 1.4 one (opengl when it can't run on the machine)
-        if ((GfxRenderer == "full") || (GfxRenderer == "opengl") || (GfxRenderer == "gl46"))
-            GfxRenderer = "default";
-        else if (GfxRenderer == "vulkan14")
+        // "vulkan" (the default): the vulkan 1.4 renderer, the opengl 4.6 one when vulkan can't run on the machine. "opengl" forces
+        // the opengl 4.6 renderer. the values of the renderers which were removed are taken for the default: "full" (the opengl 3.3
+        // renderer, which the shipped eu07.ini names) and "default" silently
+        if ((GfxRenderer == "opengl") || (GfxRenderer == "gl46"))
+            GfxRenderer = "opengl";
+        else if ((GfxRenderer == "vulkan14") || (GfxRenderer == "default") || (GfxRenderer == "full"))
             GfxRenderer = "vulkan";
 
         // "null" draws nothing and loads no textures, for the test runs
-        if ((GfxRenderer != "default") && (GfxRenderer != "vulkan") && (GfxRenderer != "null"))
+        if ((GfxRenderer != "opengl") && (GfxRenderer != "vulkan") && (GfxRenderer != "null"))
         {
             // the legacy OpenGL 2.1 renderer ("legacy", "simple" and other values) and the NVRHI renderer ("experimental") were removed
-            WriteLog("eu07.ini: gfxrenderer \"" + GfxRenderer + "\" is no longer supported, using \"default\"");
-            GfxRenderer = "default";
+            WriteLog("eu07.ini: gfxrenderer \"" + GfxRenderer + "\" is no longer supported, using \"vulkan\"");
+            GfxRenderer = "vulkan";
         }
         return true;
     }
@@ -2146,6 +2148,11 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1);
         Parser >> gfx_vulkan_parallelpasses;
     }
+    else if (Token == "gfx.vulkan.backgroundloading")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_backgroundloading;
+    }
     else if (Token == "gfx.vulkan.parallelmodels")
     {
         Parser.getTokens(1);
@@ -2776,6 +2783,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.threads", gfx_threads );
     export_as_text( Output, "gfx.vulkan.asyncresources", gfx_vulkan_asyncresources );
     export_as_text( Output, "gfx.vulkan.parallelpasses", gfx_vulkan_parallelpasses );
+    export_as_text( Output, "gfx.vulkan.backgroundloading", gfx_vulkan_backgroundloading );
     export_as_text( Output, "gfx.vulkan.parallelmodels", gfx_vulkan_parallelmodels );
     export_as_text( Output, "gfx.vulkan.asynccompute", gfx_vulkan_asynccompute );
     export_as_text( Output, "gfx.vulkan.checkpoints", gfx_vulkan_checkpoints );

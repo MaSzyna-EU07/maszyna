@@ -21,11 +21,85 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
 #include "audio/audiorenderer.h"
+#include "rendering/common/walksync.h"
 
+#include <algorithm>
 #include <format>
+
+namespace {
+
+// the thread loading the scenery in the background: the parts of the scenery one after another till it's all loaded, or till the
+// simulator closes
+void load_in_background(std::stop_token const Stop, std::shared_ptr<simulation::deserializer_state> const State, scenarioloader_mode::background_load &Load) {
+	try {
+		while ((false == Stop.stop_requested()) && simulation::State.deserialize_continue(State)) {
+			// the next part
+		}
+	}
+	catch (...) {
+		// handled by the main thread, as if the main thread loaded the scenery
+		Load.failure = std::current_exception();
+	}
+	Load.done.store(true, std::memory_order_release);
+}
+
+} // namespace
 
 scenarioloader_mode::scenarioloader_mode() {
     m_userinterface = std::make_shared<scenarioloader_ui>();
+}
+
+scenarioloader_mode::~scenarioloader_mode() {
+	stop_loading();
+}
+
+void scenarioloader_mode::stop_loading() {
+	if (!m_background) {
+		return;
+	}
+	m_background->thread.request_stop();
+	if (m_background->thread.joinable()) {
+		m_background->thread.join();
+	}
+	m_background.reset();
+	gfx::walk_sync::end_background();
+	state.reset();
+}
+
+bool scenarioloader_mode::loading_failed() {
+	// back to the launcher as when the scenario can't be opened, not on to the driver mode with the scenery half loaded
+	ErrorLog( "Bad init: scenario loading failed" );
+	state.reset();
+	if( Global.test.enabled ) {
+		// there's nothing to test; the exit code says the run went wrong
+		simulation::test().finish( simulation::test_result::error, "scenario loading failed" );
+		return true;
+	}
+	Global.SceneryFile.clear();
+	Application.pop_mode();
+	Application.push_mode(eu07_application::mode::launcher);
+	return true;
+}
+
+bool scenarioloader_mode::background_loaded() {
+	auto const now{std::chrono::steady_clock::now()};
+	++m_background->frames;
+	m_background->longestframe = std::max(m_background->longestframe, now - m_background->lastframe);
+	m_background->lastframe = now;
+	if (false == m_background->done.load(std::memory_order_acquire)) {
+		return false;
+	}
+	m_background->thread.join();
+	WriteLog(std::format("Scenery loaded in the background: {} frames of the loading screen, the longest {} ms", m_background->frames,
+	                     std::chrono::duration_cast<std::chrono::milliseconds>(m_background->longestframe).count()));
+	auto const failure{m_background->failure};
+	m_background.reset();
+	// what the main thread does with the renderer doesn't wait for anything from now on
+	gfx::walk_sync::end_background();
+	if (failure) {
+		std::rethrow_exception(failure);
+	}
+	return true;
 }
 
 // initializes internal data structures of the mode. returns: true on success, false otherwise
@@ -83,25 +157,22 @@ bool scenarioloader_mode::update() {
 			Application.push_mode(eu07_application::mode::launcher);
 			return true;
 		}
+		if (GfxRenderer->Loads_In_Background()) {
+			// the rest by a thread of its own, the loading screen drawn meanwhile with its wheel turning
+			WriteLog("Loading the scenery in the background");
+			gfx::walk_sync::begin_background();
+			m_background = std::make_unique<background_load>();
+			m_background->thread = std::jthread(load_in_background, state, std::ref(*m_background));
+		}
 	}
 
 	try {
-		if (simulation::State.deserialize_continue(state))
+		// the next part of the scenery, or what the thread loading it in the background has done
+		if (m_background ? (false == background_loaded()) : simulation::State.deserialize_continue(state))
 			return true;
 	}
-	catch (invalid_scenery_exception &e) {
-		// back to the launcher as when the scenario can't be opened, not on to the driver mode with the scenery half loaded
-		ErrorLog( "Bad init: scenario loading failed" );
-		state.reset();
-		if( Global.test.enabled ) {
-			// there's nothing to test; the exit code says the run went wrong
-			simulation::test().finish( simulation::test_result::error, "scenario loading failed" );
-			return true;
-		}
-		Global.SceneryFile.clear();
-		Application.pop_mode();
-		Application.push_mode(eu07_application::mode::launcher);
-		return true;
+	catch (invalid_scenery_exception const &) {
+		return loading_failed();
 	}
 	// the loading state holds the scenario file open, which on some systems keeps the file from being replaced
 	// when the scenery is saved in the editor. it'd also get in the way of another load
