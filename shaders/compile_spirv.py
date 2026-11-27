@@ -6,6 +6,8 @@
 #
 #   python shaders/compile_spirv.py [--glslc <path>] [--only ogl46|vk14] [<shaders directory>]
 #
+# the shaders directory has to be the one of this script or one inside the current directory, and --glslc has to name a file
+# called glslc (glslc.exe); the files read and written stay inside the directories of the sources and of the binaries.
 # glslc comes with the Vulkan SDK (VULKAN_SDK is looked at) or with the shaderc package. the shaders of opengl are compiled
 # for --target-env=opengl4.5 (SPIR-V 1.0, which opengl 4.6 takes), with the variant of the multi draws (MODEL_DRAWS) of the
 # vertex and fragment shaders; those of vulkan for --target-env=vulkan1.4. a single file can be compiled by hand the same way:
@@ -29,6 +31,18 @@ TREES = {
     'vk14': ('vk14', 'vk14bin', 'vulkan1.4', ['NO_MOTION_OUTPUT'], True),
 }
 INCLUDE = re.compile(r'^[ \t]*#include[ \t]*[<"]([^>"]+)[>"]', re.M)
+GLSLC_NAMES = ('glslc', 'glslc.exe')
+
+
+def inside(base, path):
+    # the path without links and .., when it is the directory base or a path under it; None when it leaves base
+    base = os.path.realpath(base)
+    path = os.path.realpath(path)
+    try:
+        common = os.path.commonpath([base, path])
+    except ValueError:  # another drive
+        return None
+    return path if os.path.normcase(common) == os.path.normcase(base) else None
 
 
 def file_hash(path):
@@ -48,8 +62,11 @@ def dependencies(directory, name, found=None):
         found = []
     if name in found:
         return found
+    path = inside(directory, os.path.join(directory, name))
+    if path is None:
+        raise OSError('%s is outside %s' % (name, directory))
     found.append(name)
-    with open(os.path.join(directory, name), 'r', encoding='utf-8', errors='replace') as f:  # NOSONAR: a developer tool reading the shader files of the directory it is given
+    with open(path, 'r', encoding='utf-8', errors='replace') as f:
         text = f.read()
     for include in INCLUDE.findall(text):
         if include == 'common':
@@ -60,7 +77,10 @@ def dependencies(directory, name, found=None):
 
 def find_glslc(explicit):
     if explicit:
-        return explicit
+        # only an existing file called glslc, never an option or a command line
+        if os.path.basename(explicit).lower() not in GLSLC_NAMES or not os.path.isfile(explicit):
+            return None
+        return os.path.abspath(explicit)
     sdk = os.environ.get('VULKAN_SDK')
     if sdk:
         for sub in ('Bin', 'bin'):
@@ -79,8 +99,17 @@ def main():
     args = parser.parse_args()
 
     glslc = find_glslc(args.glslc)
+    if args.glslc and not glslc:
+        print('--glslc has to be the path of an existing file called glslc or glslc.exe: %s' % args.glslc, file=sys.stderr)
+        return 1
     if not glslc or not os.path.isfile(glslc):
         print('glslc not found: install the Vulkan SDK (VULKAN_SDK) or shaderc, or give --glslc', file=sys.stderr)
+        return 1
+    here = os.path.dirname(os.path.abspath(__file__))
+    shaders = inside(here, args.shaders) or inside(os.getcwd(), args.shaders)
+    if shaders is None or not os.path.isdir(shaders):
+        print('the shaders directory has to be the one of this script (%s) or a directory inside the current one: %s'
+              % (here, args.shaders), file=sys.stderr)
         return 1
 
     failed = []
@@ -88,8 +117,8 @@ def main():
     for key, (sourcedir, binarydir, env, variants, onlyused) in TREES.items():
         if args.only and args.only != key:
             continue
-        sources = os.path.join(args.shaders, sourcedir)
-        binaries = os.path.join(args.shaders, binarydir)
+        sources = os.path.join(shaders, sourcedir)
+        binaries = os.path.join(shaders, binarydir)
         if not os.path.isdir(sources):
             continue
         os.makedirs(binaries, exist_ok=True)  # NOSONAR: a developer tool writing the binaries beside the shaders it is given
