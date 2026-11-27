@@ -62,10 +62,12 @@ class cParser //: public std::stringstream
 		std::string out;
 		readToken(out);
             return out == Value; };
+    // the end of the data: of this text, and of the file included last in it, which an include directive at the very
+    // end of the text leaves to be read
     inline
     bool
-        eof() {
-            return mEofBit; };
+        eof() const {
+            return mEofBit && ( mIncludeParser == nullptr || mIncludeParser->eof() ); };
     inline
     bool
         ok() {

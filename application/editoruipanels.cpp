@@ -21,11 +21,13 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editoruilayer.h"
 #include "rendering/renderer.h"
 #include "simulation/simulation.h"
+#include "utilities/Logs.h"
 #include "editor/editorModelSets.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorSettings.hpp"
 #include "imgui/imgui_internal.h"
 
+#include <cstring>
 #include <filesystem>
 #include <set>
 
@@ -166,14 +168,14 @@ void itemproperties_panel::update(scene::basic_node *Node)
 	        }
 	    }
 	*/
-	textline = format(STR_C("Name: %s"), (node->name().empty() ? std::string{STR_C("(no name)")} : Bezogonkow(node->name())).c_str()) + "\n" + format(STR_C("Type: %s"), node->node_type.c_str());
+	textline = format(STR_C("Name: %s"), (node->name().empty() ? std::string{STR_C("(no name)")} : data_name_to_utf8(node->name())).c_str()) + "\n" + format(STR_C("Type: %s"), node->node_type.c_str());
 	text_lines.emplace_back(textline, Global.UITextColor);
 	textline = format(STR_C("Location: %.2f, %.2f, %.2f (distance %.1f m)"), node->location().x, node->location().y, node->location().z,
 	                  glm::length(glm::dvec3{node->location().x, 0.0, node->location().z} - glm::dvec3{camera.Pos.x, 0.0, camera.Pos.z})) +
 	           "\nUUID: " + node->uuid.to_string();
 	if (scene::Layers.valid(node->layer()))
 	{
-		textline += "\n" + format(STR_C("Layer: %s"), Bezogonkow(scene::Layers.layer(node->layer()).name).c_str());
+		textline += "\n" + format(STR_C("Layer: %s"), data_name_to_utf8(scene::Layers.layer(node->layer()).name).c_str());
 	}
 	text_lines.emplace_back(textline, Global.UITextColor);
 
@@ -286,7 +288,7 @@ void itemproperties_panel::update(scene::basic_node *Node)
 				{
 					textline += ", ";
 				}
-				textline += event.second != nullptr ? Bezogonkow(event.second->m_name) : event.first + STR_C(" (missing)");
+				textline += event.second != nullptr ? data_name_to_utf8(event.second->m_name) : event.first + STR_C(" (missing)");
 			}
 			textline += "] ";
 		}
@@ -299,7 +301,7 @@ void itemproperties_panel::update(scene::basic_node *Node)
 
 		textline = format(STR_C("Data: [%s] [%.2f] [%.2f]"), subnode->Text().c_str(), subnode->Value1(), subnode->Value2());
 		text_lines.emplace_back(textline, Global.UITextColor);
-		textline = format(STR_C("Track: %s"), (subnode->asTrackName.empty() ? std::string{STR_C("(none)")} : Bezogonkow(subnode->asTrackName)).c_str());
+		textline = format(STR_C("Track: %s"), (subnode->asTrackName.empty() ? std::string{STR_C("(none)")} : data_name_to_utf8(subnode->asTrackName)).c_str());
 		text_lines.emplace_back(textline, Global.UITextColor);
 	}
 
@@ -888,7 +890,7 @@ void nodebank_panel::render_templates_list(std::string const &Filter)
 			ImGui::TextDisabled(" %s", entry.category.c_str());
 		}
 		category = &entry.category;
-		auto const label{(entry.category.empty() ? " " : "   ") + entry.name + "  (" + Bezogonkow(entry.file) + ")##inc" + std::to_string(entryidx)};
+		auto const label{(entry.category.empty() ? " " : "   ") + entry.name + "  (" + data_name_to_utf8(entry.file) + ")##inc" + std::to_string(entryidx)};
 		if (list_item(label.c_str(), entry.statement == m_selectedtemplate))
 			m_selectedtemplate = entry.statement;
 		++listed;
@@ -1704,7 +1706,7 @@ std::string layer_content(scene::basic_layer const &Layer)
 
 std::string layer_name(scene::layer_handle const Layer)
 {
-	return scene::Layers.valid(Layer) ? Bezogonkow(scene::Layers.layer(Layer).name) : std::string{STR_C("(none)")};
+	return scene::Layers.valid(Layer) ? data_name_to_utf8(scene::Layers.layer(Layer).name) : std::string{STR_C("(none)")};
 }
 
 // button which can be greyed out, with an explanation shown when it's hovered
@@ -1748,7 +1750,7 @@ void itemproperties_panel::render_include()
 	auto &include{*m_include};
 	include.active = false;
 
-	ImGui::Text(STR_C("include: %s"), Bezogonkow(include.target).c_str());
+	ImGui::Text(STR_C("include: %s"), data_name_to_utf8(include.target).c_str());
 	if (false == include.info.name.empty())
 	{
 		ImGui::TextDisabled("%s", include.info.name.c_str());
@@ -2280,7 +2282,7 @@ void includes_panel::render_list()
 		{
 			auto const &entry{entries[m_listed[row]]};
 			auto const marker{entry.complete ? std::string{STR_C("[ready]")} + "  " : entry.described ? std::string{STR_C("[incomplete]")} + "  " : std::string{}};
-			auto const label{marker + Bezogonkow(entry.file) + (entry.name.empty() ? "" : "  -  " + entry.name) + "##" + std::to_string(m_listed[row])};
+			auto const label{marker + data_name_to_utf8(entry.file) + (entry.name.empty() ? "" : "  -  " + entry.name) + "##" + std::to_string(m_listed[row])};
 			if (false == entry.described)
 			{
 				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
@@ -2310,7 +2312,7 @@ void includes_panel::render_list()
 void includes_panel::render_description()
 {
 	ImGui::Separator();
-	ImGui::Text("%s", Bezogonkow(m_file).c_str());
+	ImGui::Text("%s", data_name_to_utf8(m_file).c_str());
 	input_text(STR_C("Name"), m_info.name);
 	input_text(STR_C("Category"), m_info.category);
 	input_text(STR_C("Description"), m_info.description);
@@ -2388,7 +2390,7 @@ void includes_panel::render_description()
 	{
 		std::string error;
 		m_statuserror = false == editor_includes::save(m_file, m_info, error);
-		m_status = m_statuserror ? error : format(STR_C("Description saved in \"%s\""), Bezogonkow(m_file).c_str());
+		m_status = m_statuserror ? error : format(STR_C("Description saved in \"%s\""), data_name_to_utf8(m_file).c_str());
 		if (false == m_statuserror)
 		{
 			EditorIncludes.update(m_file);
@@ -2465,4 +2467,203 @@ void includes_panel::render()
 		}
 	}
 	ImGui::End();
+}
+
+// memory cells of the scenery
+void memcells_panel::render()
+{
+	if (false == is_open)
+	{
+		return;
+	}
+	ImGui::SetNextWindowPos(ImVec2S(560, 110), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2S(620, 560), ImGuiCond_FirstUseEver);
+	auto const panelname{(title.empty() ? std::string{STR_C(m_name.c_str())} : title) + "###" + m_name};
+	if (ImGui::Begin(panelname.c_str(), &is_open, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
+	{
+		render_body();
+	}
+	ImGui::End();
+}
+
+void memcells_panel::render_body()
+{
+	render_list();
+	render_cell();
+}
+
+void memcells_panel::render_list()
+{
+	auto const &cells{simulation::Memory.sequence()};
+	// the cells are never taken away, only added, so a change of the count is a change of the set
+	if (m_sorted.size() != static_cast<std::size_t>(std::count_if(cells.begin(), cells.end(), [](TMemCell const *Cell) { return Cell != nullptr; })))
+	{
+		m_sorted.clear();
+		for (auto *cell : cells)
+		{
+			if (cell != nullptr)
+			{
+				m_sorted.emplace_back(cell);
+			}
+		}
+		std::stable_sort(m_sorted.begin(), m_sorted.end(), [](TMemCell const *Left, TMemCell const *Right) { return Left->name() < Right->name(); });
+		m_listedtime = -1.0;
+	}
+	ImGui::SetNextItemWidth(260.0f);
+	ImGui::InputTextWithHint("##filter", STR_C("Search"), m_filter, sizeof(m_filter));
+	ImGui::SameLine();
+	ImGui::Checkbox(STR_C("In the texts too"), &m_searchtext);
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Log all")))
+	{
+		simulation::Memory.log_all();
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("%s", STR_C("Writes the content of all memory cells to the log"));
+	}
+
+	std::string filter{m_filter};
+	std::transform(filter.begin(), filter.end(), filter.begin(), [](unsigned char Character) { return static_cast<char>(std::tolower(Character)); });
+	auto const now{ImGui::GetTime()};
+	auto const searchtext{m_searchtext && false == filter.empty()};
+	if (filter != m_listedfilter || m_listedtime < 0.0 || (searchtext && now - m_listedtime > 0.5))
+	{
+		m_listedfilter = filter;
+		m_listedtime = now;
+		m_listed.clear();
+		auto const matches = [&filter](std::string const &Text) {
+			if (filter.empty())
+			{
+				return true;
+			}
+			std::string text{Text};
+			std::transform(text.begin(), text.end(), text.begin(), [](unsigned char Character) { return static_cast<char>(std::tolower(Character)); });
+			return text.find(filter) != std::string::npos;
+		};
+		for (auto *cell : m_sorted)
+		{
+			if (matches(cell->name()) || (searchtext && matches(cell->Text())))
+			{
+				m_listed.emplace_back(cell);
+			}
+		}
+	}
+	ImGui::TextDisabled(STR_C("Memory cells: %d, shown: %d"), static_cast<int>(m_sorted.size()), static_cast<int>(m_listed.size()));
+
+	auto const height{listheight > 0.0f ? listheight : std::max(120.0f, ImGui::GetContentRegionAvail().y - ImGui::GetFrameHeightWithSpacing() * 7.0f)};
+	if (ImGui::BeginTable("##memcells", 5, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(-1.0f, height)))
+	{
+		ImGui::TableSetupScrollFreeze(0, 1);
+		ImGui::TableSetupColumn(STR_C("Name"), ImGuiTableColumnFlags_WidthStretch, 2.0f);
+		ImGui::TableSetupColumn(STR_C("Text"), ImGuiTableColumnFlags_WidthStretch, 1.5f);
+		ImGui::TableSetupColumn(STR_C("Value 1"), ImGuiTableColumnFlags_WidthStretch, 0.7f);
+		ImGui::TableSetupColumn(STR_C("Value 2"), ImGuiTableColumnFlags_WidthStretch, 0.7f);
+		ImGui::TableSetupColumn(STR_C("Track"), ImGuiTableColumnFlags_WidthStretch, 1.0f);
+		ImGui::TableHeadersRow();
+		ImGuiListClipper clipper;
+		clipper.Begin(static_cast<int>(m_listed.size()));
+		while (clipper.Step())
+		{
+			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+			{
+				auto *cell{m_listed[row]};
+				ImGui::PushID(cell);
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				auto const name{cell->name().empty() ? std::string{STR_C("(no name)")} : cell->name()};
+				if (ImGui::Selectable(name.c_str(), cell == m_selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick))
+				{
+					select(cell);
+					if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && focus && cell->location() != glm::dvec3{0.0})
+					{
+						focus(cell);
+					}
+				}
+				if (false == cell->is_exportable && ImGui::IsItemHovered())
+				{
+					ImGui::SetTooltip("%s", STR_C("Made by the simulator, it isn't saved with the scenery"));
+				}
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(cell->Text().c_str());
+				ImGui::TableNextColumn();
+				ImGui::Text("%g", cell->Value1());
+				ImGui::TableNextColumn();
+				ImGui::Text("%g", cell->Value2());
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(cell->Track != nullptr ? cell->Track->name().c_str() : cell->asTrackName.c_str());
+				ImGui::PopID();
+			}
+		}
+		ImGui::EndTable();
+	}
+}
+
+void memcells_panel::select(TMemCell *Cell)
+{
+	m_selected = Cell;
+	if (Cell == nullptr)
+	{
+		return;
+	}
+	auto const &text{Cell->Text()};
+	auto const length{std::min(text.size(), sizeof(m_text) - 1)};
+	std::memcpy(m_text, text.data(), length);
+	m_text[length] = 0;
+	m_value1 = Cell->Value1();
+	m_value2 = Cell->Value2();
+}
+
+void memcells_panel::render_cell()
+{
+	ImGui::Separator();
+	if (m_selected == nullptr)
+	{
+		ImGui::TextDisabled("%s", focus ? STR_C("Pick a memory cell from the list to set what's in it. A double click shows where it is") : STR_C("Pick a memory cell from the list to set what's in it"));
+		return;
+	}
+	auto *cell{m_selected};
+	auto const location{cell->location()};
+	ImGui::Text(STR_C("\"%s\": %s %g %g"), cell->name().c_str(), cell->Text().c_str(), cell->Value1(), cell->Value2());
+	ImGui::SameLine();
+	ImGui::BeginDisabled(false == static_cast<bool>(focus) || location == glm::dvec3{0.0});
+	if (ImGui::SmallButton(STR_C("Show")))
+	{
+		focus(cell);
+	}
+	ImGui::EndDisabled();
+	ImGui::TextDisabled(STR_C("At %.1f %.1f %.1f"), location.x, location.y, location.z);
+
+	ImGui::Checkbox("##settext", &m_settext);
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(260.0f);
+	ImGui::InputText(STR_C("Text"), m_text, sizeof(m_text));
+	ImGui::Checkbox("##setvalue1", &m_setvalue1);
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(160.0f);
+	ImGui::InputDouble(STR_C("Value 1"), &m_value1, 1.0, 10.0, "%g");
+	ImGui::Checkbox("##setvalue2", &m_setvalue2);
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(160.0f);
+	ImGui::InputDouble(STR_C("Value 2"), &m_value2, 1.0, 10.0, "%g");
+	ImGui::BeginDisabled(false == (m_settext || m_setvalue1 || m_setvalue2));
+	if (ImGui::Button(STR_C("Set")))
+	{
+		auto const mask{(m_settext ? basic_event::flags::text : 0) | (m_setvalue1 ? basic_event::flags::value1 : 0) | (m_setvalue2 ? basic_event::flags::value2 : 0) |
+		                (m_add ? basic_event::flags::mode_add : 0)};
+		cell->UpdateValues(m_text, m_value1, m_value2, mask);
+		WriteLog("Memory cell \"" + cell->name() + "\" set by hand to: " + cell->Text() + " " + std::to_string(cell->Value1()) + " " + std::to_string(cell->Value2()));
+	}
+	ImGui::EndDisabled();
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+	{
+		ImGui::SetTooltip("%s", STR_C("Puts the ticked fields in the cell, the way an UpdateValues event does. The scenery files aren't changed"));
+	}
+	ImGui::SameLine();
+	ImGui::Checkbox(STR_C("Add to the values"), &m_add);
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Read again")))
+	{
+		select(cell);
+	}
 }

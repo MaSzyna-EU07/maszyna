@@ -17,6 +17,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
+#include "rendering/renderer.h"
+#include "utilities/utilities.h"
 
 #include <algorithm>
 #include <array>
@@ -25,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
+#include <format>
 #include <fstream>
 
 namespace
@@ -399,8 +402,8 @@ bool ui::scenerywizard_panel::create_scenery()
 		return false;
 	}
 	auto const now{std::time(nullptr)};
-	char date[32];
-	std::strftime(date, sizeof(date), "%Y-%m-%d", std::localtime(&now));
+	std::tm const local{local_tm(now)};
+	auto const date{std::format("{:04}-{:02}-{:02}", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday)};
 	char reference[96];
 	std::snprintf(reference, sizeof(reference), "//$g PUWG1992 %.3f %.3f", m_map.point().x / 1000.0, m_map.point().y / 1000.0);
 	auto const area{range()};

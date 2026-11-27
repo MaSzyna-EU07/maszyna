@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Gauge.h"
 #include "vehicle/gaugepositions.h"
 #include "vehicle/gaugeduplicates.h"
+#include "vehicle/gaugewrap.h"
 #include "utilities/parser.h"
 #include "model/Model3d.h"
 #include "vehicle/DynObj.h"
@@ -121,8 +122,9 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     Parser.getTokens();
     if( Parser.peek() != "{" ) {
         // old fixed size config
-        // it has no scaletable:, drop the one of an earlier definition of the same control
+        // it has no scaletable: nor drag:, drop the ones of an earlier definition of the same control
         m_scaletable.clear();
+        m_drag = universal_drag::direction::none;
         Parser >> submodelname;
         gaugetypename = Parser.getToken<std::string>( true );
         Parser.getTokens( 3, false );
@@ -168,6 +170,7 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
             }
             gauge_scale::sort( scratchpad.scaletable );
             m_scaletable = std::move( scratchpad.scaletable );
+            m_drag = scratchpad.drag;
             // post-deserialization cleanup
             // set provided custom soundproofing to assigned sounds (for sounds without their own custom soundproofing)
             if( scratchpad.soundproofing ) {
@@ -209,15 +212,15 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     m_sourcemodel = nullptr;
     std::array<TModel3d *, 2> sources { Owner->mdKabina, Owner->mdLowPolyInt };
     for( auto const *source : sources ) {
-        if( source != nullptr
-         && ( submodel = source->GetFromName( submodelname ) ) != nullptr ) {
-            // got what we wanted, bail out
-            m_sourcemodel = source;
-            break;
+        if( source == nullptr ) {
+            continue;
         }
-        // there's a possibility the default submodel was named with _off suffix
-        if( source != nullptr
-         && ( submodel = source->GetFromName( submodelname + "_off" ) ) != nullptr ) {
+        submodel = source->GetFromName( submodelname );
+        if( submodel == nullptr ) {
+            // there's a possibility the default submodel was named with _off suffix
+            submodel = source->GetFromName( submodelname + "_off" );
+        }
+        if( submodel != nullptr ) {
             // got what we wanted, bail out
             m_sourcemodel = source;
             break;
@@ -229,8 +232,11 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     // see if we can locate optional submodel for active state, with _on suffix
     TSubModel *submodelon { nullptr };
     for( auto const *source : sources ) {
-        if( source != nullptr
-         && ( submodelon = source->GetFromName( submodelname + "_on" ) ) != nullptr ) {
+        if( source == nullptr ) {
+            continue;
+        }
+        submodelon = source->GetFromName( submodelname + "_on" );
+        if( submodelon != nullptr ) {
             // got what we wanted, bail out
             break;
         }
@@ -308,6 +314,16 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
             >> soundproofing[ 5 ];
         Scratchpad.soundproofing = soundproofing;
     }
+    else if( key == "drag:" ) {
+        // the mouse drags the control to any position between its ends, moving in the given direction to open it
+        // (MaSzyna-EU07/maszyna#62)
+        auto const value { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
+        auto const drag { universal_drag::parse( value ) };
+        if( false == drag.has_value() ) {
+            ErrorLog( "Bad model: unknown drag direction \"" + value + "\" of a cab control, it takes up, down, left, right, yes or no", logtype::model );
+        }
+        Scratchpad.drag = drag.value_or( universal_drag::direction::none );
+    }
     else if( key == "scaletable:" ) {
         // non-uniform scale in format [ value1 scaled1, value2 scaled2, ... ]
         return Load_scaletable( Input, Scratchpad );
@@ -384,6 +400,26 @@ TGauge::UpdateValue( float fNewDesired ) {
         return true;
     }
     return false; // no suitable sound was found
+}
+
+void
+TGauge::UpdateValueWrapped( float const fNewDesired, bool const Forward, int const Positions, std::optional<sound_source> &Fallbacksound ) {
+
+    if( auto const turn { (
+            m_animation == TGaugeAnimation::gt_Rotate && false == m_interpolatescale && m_scaletable.empty() ?
+                gauge_wrap::full_turn( m_scale, Positions ) :
+                std::nullopt ) };
+        turn.has_value() ) {
+        // the knob stands the same one turn earlier (later), from there it turns on to the new position
+        // rather than all the way back, sounding the position it reaches
+        m_value = gauge_wrap::turned_round( m_value, *turn, Forward );
+        m_targetvalue = gauge_wrap::turned_round( m_targetvalue, *turn, Forward );
+        UpdateValue( fNewDesired, Fallbacksound );
+        return;
+    }
+    // a switch that doesn't turn all the way round jumps to the new position, which still sounds
+    UpdateValue( fNewDesired, Fallbacksound );
+    m_value = m_targetvalue;
 }
 
 void TGauge::PutValue(float fNewDesired)

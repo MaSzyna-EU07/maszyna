@@ -411,7 +411,7 @@ moved more than 0.5 m or turned more than 0.05 rad.
 |---------|------------------------------------------------------------------------------|
 | `f64`   | t                                                                            |
 | `u8`    | mode: 0 from the cab, 1 an outside view of the user's train, 2 the free camera, 3 the debug camera |
-| `u8`    | the outside view: 0 the front of the train, 1 its rear, 2 a bogie, 3 drive-by; 0 in the other modes |
+| `u8`    | the outside view: 0 the front of the train, 1 its rear, 2 a bogie, 3 drive-by, 4 the orbit around a vehicle, 5 the shunting view from above, 6 beside a coupling, 7 trackside; 0 in the other modes |
 | `u32`   | number of the vehicle the camera goes with, 0 for none                       |
 | `dvec3` | position                                                                     |
 | `f32`   | heading [rad] of where it looks, as that of a vehicle: towards (sin, cos) in (x, z) |
@@ -549,6 +549,26 @@ vehicles of a coupling see it; the one with the lower number tells it.
 What is coupled: 0x01 the coupler, 0x02 the brake pipe, 0x04 the control (multiple unit), 0x08 the high
 voltage, 0x10 the gangway, 0x20 the main reservoir pipe, 0x40 the train heating, 0x80 a coupling not to be
 undone in shunting (between the cars of a unit).
+
+### 0x38 derailment
+
+A vehicle off the track, with `physics.derailment new` in `eu07.ini`: it doesn't follow the track any more
+and moves on the ground by itself until it stops. Written when it leaves the track, and when it comes to
+rest off it, looked at every second. A vehicle put back on the rails and derailed again is written again.
+
+| type    | field                                                                          |
+|---------|--------------------------------------------------------------------------------|
+| `f64`   | t                                                                              |
+| `u32`   | number of the vehicle                                                          |
+| `u8`    | 0 it left the track, 1 it came to rest off it                                  |
+| `u8`    | what derailed it: 1 the flange climbed the rail, 2 it overturned in a curve, 3 the end of the track, 4 a coupling of a vehicle off the track pulled it off, 5 a collision |
+| `dvec3` | position of the vehicle                                                        |
+| `f32`   | heading [rad] of its front, from +z towards +x                                 |
+| `f32`   | speed [km/h], positive along its front                                         |
+| `f32`   | offset [m] from the axis of the track at the place nearest to it, to the left of its front positive |
+| `f32`   | roll [rad] of its body, to the left positive: about 1.57 on its side           |
+| `f32`   | distance [m] it went on the ground since it left the rails                     |
+| `u8`    | 1 lying on its side, 0 upright                                                 |
 
 ### 0x3F end
 

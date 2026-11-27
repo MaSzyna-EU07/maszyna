@@ -5,27 +5,6 @@
 #include "simulation/simulationenvironment.h"
 #include "utilities/Globals.h"
 
-namespace {
-
-// XYZ to Adobe RGB, as the sky was converted up to 26.05. the legacy renderer still gets its sky this way:
-// it draws the colours of the dome as they are, with no tonemapping of its own
-glm::vec3
-xyz_to_adobe_rgb( glm::vec3 const &XYZ ) {
-
-    // M^-1 for Adobe RGB from http://www.brucelindbloom.com/Eqn_RGB_XYZ_Matrix.html
-    std::array<glm::vec3, 3> const mi{
-        glm::vec3{ 2.041369f, -0.969266f, 0.0134474f },
-        glm::vec3{ -0.5649464f, 1.8760108f, -0.1183897f },
-        glm::vec3{ -0.3446944f, 0.041556f, 1.0154096f } };
-
-    return glm::vec3{
-        XYZ.x * mi[ 0 ].x + XYZ.y * mi[ 1 ].x + XYZ.z * mi[ 2 ].x,
-        XYZ.x * mi[ 0 ].y + XYZ.y * mi[ 1 ].y + XYZ.z * mi[ 2 ].y,
-        XYZ.x * mi[ 0 ].z + XYZ.y * mi[ 1 ].z + XYZ.z * mi[ 2 ].z };
-}
-
-} // namespace
-
 // sky gradient based on "A practical analytic model for daylight" 
 // by A. J. Preetham Peter Shirley Brian Smits (University of Utah)
 
@@ -206,11 +185,6 @@ void CSkyDome::RebuildColors() {
 
     float twilightfactor = std::clamp( -simulation::Environment.sun().getAngle(), 0.0f, 18.0f ) / 18.0f;
     auto gammacorrection = glm::mix( glm::vec3( 1.0f ), glm::vec3( 0.45f ), twilightfactor );
-    // the legacy renderer has no tonemapping and no srgb framebuffer, so its sky stays as 26.05 made it:
-    // display-encoded by day (gamma 0.45), with the brightness knee and the plain gradient, and no horizon band.
-    // the averages taken from these colours give it the ambient light and the fog of 26.05 too
-    bool const legacy { Global.LegacyRenderer };
-    auto const legacygammacorrection = glm::mix( glm::vec3( 0.45f ), glm::vec3( 1.0f ), twilightfactor );
 
 	// get zenith luminance
 	auto const chi = static_cast<float>(( 4.0f / 9.0f - m_turbidity / 120.0f ) * ( M_PI - 2.0f * m_thetasun ));
@@ -279,7 +253,7 @@ void CSkyDome::RebuildColors() {
 		float const Z = (1.0f - x - y) / y * Y;
 		
 		colorconverter = glm::vec3( X, Y, Z );
-		color = legacy ? xyz_to_adobe_rgb( colorconverter ) : colors::XYZtoRGB( colorconverter );
+		color = colors::XYZtoRGB( colorconverter );
 
 		colorconverter = colors::RGBtoHSV(color);
 		if ( m_linearexpcontrol ) {
@@ -290,12 +264,7 @@ void CSkyDome::RebuildColors() {
 			colorconverter.z = 1.0f - std::exp( -m_expfactor * colorconverter.z );  
 		}
 
-        if( false == legacy ) {
-            colorconverter.z = std::pow( std::max( colorconverter.z, 0.0f ), gammacorrection.x );
-        }
-        else if( colorconverter.z > 0.85f ) {
-            colorconverter.z = 0.85f + ( colorconverter.z - 0.85f ) * 0.35f;
-        }
+        colorconverter.z = std::pow( std::max( colorconverter.z, 0.0f ), gammacorrection.x );
 
         colorconverter.y = std::clamp( colorconverter.y * Global.m_skysaturationcorrection, 0.0f, 1.0f );
         // desaturate sky colour, based on overcast level
@@ -312,7 +281,7 @@ void CSkyDome::RebuildColors() {
         // this height-based factor is reduced the farther the sun is up in the sky
         float const shiftfactor = std::clamp( std::lerp(heightbasedphase, sunbasedphase, sunbasedphase), 0.0f, 1.0f );
         // h = 210 makes for 'typical' sky tone
-        glm::vec3 const skytonecolor = colors::HSVtoRGB( glm::vec3( 210.0f, legacy ? colorconverter.y : 0.5f, colorconverter.z ) );
+        glm::vec3 const skytonecolor = colors::HSVtoRGB( glm::vec3( 210.0f, 0.5f, colorconverter.z ) );
 
         color = colors::HSVtoRGB( colorconverter );
         color = glm::mix( color, skytonecolor, shiftfactor * Global.m_skyhuecorrection );
@@ -327,21 +296,14 @@ void CSkyDome::RebuildColors() {
             color.x = 0.20f * color.z; 
             color.y = 0.65f * color.z;
         }
-        if( legacy ) {
-            // simple gradient, darkening towards the top, then the gamma correction
-            color *= std::clamp( 1.0f - vertex.y, 0.f, 1.f );
-            color = glm::pow( glm::max( color, glm::vec3( 0.f ) ), legacygammacorrection );
-        }
-        else {
-            // simple gradient, darkening towards the top
-            color *= std::clamp( 1.0f - vertex.y * 0.75f, 0.0f, 1.f );
+        // simple gradient, darkening towards the top
+        color *= std::clamp( 1.0f - vertex.y * 0.75f, 0.0f, 1.f );
 
-            float const horizonboost = 1.5f + m_overcast;
-            float const horizonbandwidth = 0.2f; // boost tapers to 0 by ~11.5 degrees elevation
-            float const horizonband = std::clamp( 1.0f - vertex.y / horizonbandwidth, 0.0f, 1.0f );
+        float const horizonboost = 1.5f + m_overcast;
+        float const horizonbandwidth = 0.2f; // boost tapers to 0 by ~11.5 degrees elevation
+        float const horizonband = std::clamp( 1.0f - vertex.y / horizonbandwidth, 0.0f, 1.0f );
 
-            color *= std::lerp( 1.0, horizonboost, horizonband );
-        }
+        color *= std::lerp( 1.0, horizonboost, horizonband );
 
         //color *= ( 0.25f - vertex.y );
         m_colours[ i ] = color;

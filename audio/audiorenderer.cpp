@@ -14,13 +14,130 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "vehicle/Camera.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "simulation/simulation.h"
 #include "vehicle/Train.h"
+
+#include <array>
+#include <format>
+#include <optional>
+#include <string_view>
 
 namespace audio {
 
 openal_renderer renderer;
 bool event_volume_change { false };
+
+namespace {
+
+struct named_value {
+    std::string_view name;
+    ALCint value;
+};
+
+// values of sound.outputmode, as ALC_OUTPUT_MODE_SOFT takes them
+constexpr std::array output_modes {
+    named_value{ "mono", ALC_MONO_SOFT },
+    named_value{ "stereo", ALC_STEREO_SOFT },
+    named_value{ "stereo-basic", ALC_STEREO_BASIC_SOFT },
+    named_value{ "uhj", ALC_STEREO_UHJ_SOFT },
+    named_value{ "headphones", ALC_STEREO_HRTF_SOFT },
+    named_value{ "quad", ALC_QUAD_SOFT },
+    named_value{ "5.1", ALC_SURROUND_5_1_SOFT },
+    named_value{ "6.1", ALC_SURROUND_6_1_SOFT },
+    named_value{ "7.1", ALC_SURROUND_7_1_SOFT } };
+
+// returns: ALC_OUTPUT_MODE_SOFT value for given sound.outputmode, or nothing for auto
+std::optional<ALCint> output_mode_value( std::string_view const Name ) {
+
+    if( Name == "auto" ) { return std::nullopt; }
+    if( auto const lookup { std::ranges::find( output_modes, Name, &named_value::name ) }; lookup != std::end( output_modes ) ) {
+        return lookup->value;
+    }
+    WriteLog( std::format( "sound: unknown output mode \"{}\", left to the library", Name ) );
+    return std::nullopt;
+}
+
+// returns: name of given ALC_OUTPUT_MODE_SOFT value
+std::string_view output_mode_name( ALCint const Value ) {
+
+    if( auto const lookup { std::ranges::find( output_modes, Value, &named_value::value ) }; lookup != std::end( output_modes ) ) {
+        return lookup->name;
+    }
+    return "other";
+}
+
+// returns: ALC_TRUE or ALC_FALSE for given on/off option, or nothing for auto
+std::optional<ALCint> switch_value( std::string_view const Name ) {
+
+    if( Name == "on" ) { return ALC_TRUE; }
+    if( Name == "off" ) { return ALC_FALSE; }
+    return std::nullopt;
+}
+
+// returns: name of an output device without the prefix OpenAL Soft may put before the names of the devices it lists on
+// Windows. it opens a device named either way, so the name in eu07.ini can come with it or without
+std::string_view bare_output_name( std::string_view const Name ) {
+
+    constexpr std::string_view prefix { "OpenAL Soft on " };
+    return Name.starts_with( prefix ) ? Name.substr( prefix.size() ) : Name;
+}
+
+// opens the output device of sound.openal.renderer. the library names devices in UTF-8, but the starter writes eu07.ini
+// in code page 1250, so a name that fails as written is tried as 1250 text too. a device found neither way, unplugged
+// say, leaves the default one rather than no sound at all: Fallback is set then, and the name stays as it is, for
+// follow_output() to go back to that device once it's there again. the name is set to what got opened, for a later reopen
+ALCdevice *open_output_device( bool &Fallback ) {
+
+    Fallback = false;
+    if( Global.AudioRenderer.empty() ) {
+        return ::alcOpenDevice( nullptr );
+    }
+    if( auto *device { ::alcOpenDevice( Global.AudioRenderer.c_str() ) } ) {
+        return device;
+    }
+    if( auto const utf8name { win1250_to_utf8( Global.AudioRenderer ) }; utf8name != Global.AudioRenderer ) {
+        if( auto *device { ::alcOpenDevice( utf8name.c_str() ) } ) {
+            Global.AudioRenderer = utf8name;
+            return device;
+        }
+    }
+    ErrorLog( std::format( "sound: audio device \"{}\" set in eu07.ini isn't available, using the default one", Global.AudioRenderer ) );
+    Fallback = true;
+    return ::alcOpenDevice( nullptr );
+}
+
+// splits a list of null-terminated names ending with an empty name, as alcGetString gives device lists
+std::vector<std::string> split_name_list( ALCchar const *List ) {
+
+    std::vector<std::string> names;
+    while( List != nullptr && *List != '\0' ) {
+        auto const &name { names.emplace_back( List ) };
+        List += name.size() + 1;
+    }
+    return names;
+}
+
+// returns: the file the OpenAL library the game plays through was loaded from, in UTF-8, or nothing where that can't
+// be told. the game takes OpenAL32.dll from its own folder before the one of the system, so this shows which one it got
+std::optional<std::string> openal_library_path() {
+#ifdef _WIN32
+    auto *module { ::GetModuleHandleW( L"OpenAL32.dll" ) };
+    if( module == nullptr ) { return std::nullopt; }
+    std::wstring path( 4096, wchar_t{} );
+    auto const length { static_cast<int>( ::GetModuleFileNameW( module, path.data(), static_cast<DWORD>( path.size() ) ) ) };
+    if( ( length <= 0 ) || ( length >= static_cast<int>( path.size() ) ) ) { return std::nullopt; }
+    auto const size { ::WideCharToMultiByte( CP_UTF8, 0, path.data(), length, nullptr, 0, nullptr, nullptr ) };
+    if( size <= 0 ) { return std::nullopt; }
+    std::string result( static_cast<std::size_t>( size ), char{} );
+    ::WideCharToMultiByte( CP_UTF8, 0, path.data(), length, result.data(), size, nullptr, nullptr );
+    return result;
+#else
+    return std::nullopt;
+#endif
+}
+
+} // namespace
 
 float const EU07_SOUND_CUTOFFRANGE { 3000.f }; // 2750 m = max expected emitter spawn range, plus safety margin
 float const EU07_SOUND_VELOCITYLIMIT { 250 / 3.6f }; // 343 m/sec ~= speed of sound; arbitrary limit of 250 km/h
@@ -94,18 +211,16 @@ openal_source::update( double const Deltatime, glm::vec3 const &Listenervelocity
             --sound_index;
             sound_change = true;
             // potentially adjust starting point of the last buffer (to reduce chance of reverb effect with multiple, looping copies playing)
-            if( controller->start() > 0.f && sounds.size() == 1 ) {
-                ALint bufferid;
-                ::alGetSourcei(
-                    id,
-                    AL_BUFFER,
-                    &bufferid );
-                ALint buffersize;
-                ::alGetBufferi( bufferid, AL_SIZE, &buffersize );
+            if( controller->start() > 0.f && sounds.size() == 1 && last_buffer != audio::null_resource ) {
+                // NOTE: the buffer is the one queued last, not the one the source reports: for a source with queued
+                // buffers AL_BUFFER is 0 in OpenAL Soft 1.18 (the one the game comes with), and in the newer ones
+                // once the source has stopped. alGetBufferi() on buffer 0 fails with AL_INVALID_NAME
+                ALint buffersize { 0 };
+                ::alGetBufferi( last_buffer, AL_SIZE, &buffersize );
                 ::alSourcei(
                     id,
                     AL_SAMPLE_OFFSET,
-                    static_cast<ALint>( controller->start() * ( buffersize / sizeof( std::int16_t ) ) ) );
+                    audio::start_sample( controller->start(), buffersize ) );
             }
         }
 
@@ -178,6 +293,7 @@ openal_source::sync_with( sound_properties const &State ) {
                 sound_range :
                 5 ) }; // range of -1 means sound of unlimited range, positioned at the listener
         ::alSourcef( id, AL_REFERENCE_DISTANCE, range * ( 1.f / 16.f ) * State.soundproofing );
+        renderer.soundproofing_filter( id, State.soundproofing_hf );
     }
     if( sound_range != -1 ) {
         auto const rangesquared { sound_range * sound_range };
@@ -274,22 +390,161 @@ openal_renderer::~openal_renderer() {
 
     if( m_alcEventCallbackSOFT != nullptr ) { m_alcEventCallbackSOFT( nullptr, nullptr ); } // stop callbacks before teardown
 
+    if( m_context != nullptr ) { m_fmradio.release(); } // the receiver owns implementation-side resources, which have to go before the context does
+
+    if( m_lowpassfilter != 0 ) { m_alDeleteFilters( 1, &m_lowpassfilter ); }
+
     ::alcMakeContextCurrent( nullptr );
 
     if( m_context != nullptr ) { ::alcDestroyContext( m_context ); }
     if( m_device != nullptr )  { ::alcCloseDevice( m_device ); }
 }
 
-// invoked by OpenAL (possibly on an internal thread) on device events; only flags the change,
-// the actual reopen is done on the main thread in update()
+// invoked by OpenAL (possibly on an internal thread) on device events; only notes what happened,
+// the device is checked and opened again on the main thread, in follow_output()
 void ALC_APIENTRY
 openal_renderer::device_event_callback( ALCenum eventtype, ALCenum devicetype, ALCdevice */*device*/, ALCsizei /*length*/, ALCchar const */*message*/, void *userparam ) noexcept {
 
     if( userparam == nullptr ) { return; }
     if( devicetype == ALC_CAPTURE_DEVICE_SOFT ) { return; } // only care about playback output
-    if( eventtype != ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT
-     && eventtype != ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT ) { return; }
-    static_cast<openal_renderer*>( userparam )->m_outputchanged.store( true );
+    auto event { 0u };
+    switch( eventtype ) {
+        case ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT: { event = output_follower::default_changed; break; }
+        case ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT: { event = output_follower::device_removed; break; }
+        case ALC_EVENT_TYPE_DEVICE_ADDED_SOFT: { event = output_follower::device_added; break; }
+        default: { return; }
+    }
+    static_cast<openal_renderer*>( userparam )->m_outputevents.fetch_or( event );
+}
+
+// true unless the device is known to have lost its output
+bool
+openal_renderer::output_connected() const {
+
+    if( false == m_candetectdisconnect ) { return true; }
+    ALCint connected { ALC_TRUE };
+    ::alcGetIntegerv( m_device, ALC_CONNECTED, 1, &connected );
+    return connected != ALC_FALSE;
+}
+
+// name of the output the device plays on
+std::string
+openal_renderer::output_name() const {
+
+    auto const *name { ::alcGetString( m_device, ALC_DEVICE_SPECIFIER ) };
+    return name != nullptr ? name : "?";
+}
+
+// moves the playback to the specified output, null being the default one of the system. the context, the buffers
+// and the sources stay as they are. returns true when the device plays on that output afterwards
+bool
+openal_renderer::reopen_output_on( ALCchar const *Devicename ) {
+
+    auto const reopened { m_alcReopenDeviceSOFT( m_device, Devicename, m_contextattributes.data() ) == ALC_TRUE };
+    ::alcGetError( m_device ); // a failure is handled here, don't leave its error code behind
+    // NOTE: the library reports success also when the new output was opened but failed to start,
+    // leaving the device disconnected. the result alone can't be trusted
+    return reopened && output_connected();
+}
+
+// returns: the name under which the library lists the device set in eu07.ini, or nothing if it isn't listed. the name
+// is matched as written and read as code page 1250 text (the starter writes eu07.ini in it), with or without the prefix
+// of the library. every attempt to open a device stops the playback for a moment, even one that fails, so a device that
+// isn't there isn't tried
+std::optional<std::string>
+openal_renderer::find_preferred_output() const {
+
+    if( Global.AudioRenderer.empty() ) { return std::nullopt; }
+    auto const devices { output_devices() };
+    auto const listed = [&devices]( std::string_view const Name ) -> std::optional<std::string> {
+        auto const match { std::ranges::find_if( devices, [Name]( std::string_view const Device ) {
+            return bare_output_name( Device ) == bare_output_name( Name ); } ) };
+        if( match == std::end( devices ) ) { return std::nullopt; }
+        return *match;
+    };
+    if( auto name { listed( Global.AudioRenderer ) } ) { return name; }
+    if( auto const utf8name { win1250_to_utf8( Global.AudioRenderer ) }; utf8name != Global.AudioRenderer ) {
+        return listed( utf8name );
+    }
+    return std::nullopt;
+}
+
+// opens the output anew: the device set in eu07.ini if there is one and it works, the default one of the system otherwise
+void
+openal_renderer::reopen_output( output_follower::clock::time_point const Now ) {
+
+    auto const pinned { false == Global.AudioRenderer.empty() };
+    if( pinned ) {
+        auto name { find_preferred_output() };
+        if( false == name.has_value() && false == output_connected() ) {
+            // not listed under a name that matches, but there is no sound to break anyway: the library may know it still
+            name = Global.AudioRenderer;
+        }
+        if( name.has_value() && reopen_output_on( name->c_str() ) ) {
+            Global.AudioRenderer = *name;
+            m_output.succeeded( false, Now );
+            WriteLog( std::format( "sound: audio output changed, reopened playback on \"{}\"", output_name() ) );
+            return;
+        }
+    }
+    reopen_default_output( pinned, Now );
+}
+
+// opens the default output of the system. Pinned: it stands in for the device set in eu07.ini
+void
+openal_renderer::reopen_default_output( bool const Pinned, output_follower::clock::time_point const Now ) {
+
+    if( reopen_output_on( nullptr ) ) {
+        m_output.succeeded( Pinned, Now );
+        WriteLog( std::format( "sound: audio output changed, reopened playback on \"{}\"{}", output_name(),
+            Pinned ? " (the default output; the device set in eu07.ini isn't available)" : "" ) );
+        return;
+    }
+    if( m_output.failed( Now ) ) {
+        // logged once, the following attempts are silent until one works
+        ErrorLog( "sound: audio output lost and no output could be opened, retrying until one works" );
+    }
+}
+
+// while the default output plays in place of the device set in eu07.ini: moves back to that device if it is listed again
+void
+openal_renderer::restore_preferred_output( output_follower::clock::time_point const Now ) {
+
+    auto const name { find_preferred_output() };
+    if( false == name.has_value() ) {
+        // some other device came, or the one set isn't listed yet: nothing tried, the playback goes on undisturbed
+        m_output.restore_failed( Now );
+        return;
+    }
+    if( reopen_output_on( name->c_str() ) ) {
+        Global.AudioRenderer = *name;
+        m_output.succeeded( false, Now );
+        WriteLog( std::format( "sound: the audio device set in eu07.ini is available again, reopened playback on \"{}\"", output_name() ) );
+        return;
+    }
+    WriteLog( std::format( "sound: warning: the audio device \"{}\" set in eu07.ini is listed again but doesn't play, staying on the default output", *name ) );
+    if( false == output_connected() ) {
+        // the device opened but didn't start. the library had let go of the default output before it tried, so that's gone too
+        reopen_default_output( true, Now );
+    }
+    m_output.restore_failed( Now );
+}
+
+// keeps the sound on an output that works. OpenAL neither moves to another output on its own nor recovers one it lost:
+// a device whose output is gone stops all its sources and stays silent, even after the very same output comes back,
+// until it is opened again
+void
+openal_renderer::follow_output() {
+
+    if( m_alcReopenDeviceSOFT == nullptr ) { return; }
+
+    auto const now { output_follower::clock::now() };
+    auto const events { m_outputevents.exchange( 0u ) };
+    switch( m_output.update( events, now, [this]() { return output_connected(); } ) ) {
+        case output_follower::action::reopen: { reopen_output( now ); break; }
+        case output_follower::action::restore_preferred: { restore_preferred_output( now ); break; }
+        default: { break; }
+    }
 }
 
 audio::buffer_handle
@@ -325,7 +580,9 @@ openal_renderer::init() {
         return false;
     }
     ::alDistanceModel( AL_INVERSE_DISTANCE_CLAMPED );
-    ::alDopplerFactor( 0.25f );
+    ::alDopplerFactor( Global.AudioDoppler );
+    m_resampler = resampler_index();
+    WriteLog( "sound: " + device_status() );
     // all done
     m_ready = true;
     return true;
@@ -390,36 +647,8 @@ openal_renderer::update( double const Deltatime ) {
     if (m_alcDeviceResumeSOFT)
         m_alcDeviceResumeSOFT(m_device);
 
-    // keep audio on the correct output (OpenAL won't re-route on its own). Reopen playback on the
-    // current default output when the active device is lost (headphones unplugged) or the system
-    // default output changes (headphones plugged back in, or default switched in Windows). NULL
-    // device name selects the current default; context and sources are preserved.
-    if( m_alcReopenDeviceSOFT != nullptr && Global.AudioRenderer.empty() ) {
-        bool needsreopen{ false };
-        if( m_usedeviceevents ) {
-            // event-driven: the callback (any thread) flags default-output / device-removal changes
-            needsreopen = m_outputchanged.exchange( false );
-        }
-        else if( m_candetectdisconnect ) {
-            // fallback without ALC_SOFT_system_events: poll for a hard disconnect at ~1 Hz
-            m_devicechecktime += Deltatime;
-            if( m_devicechecktime >= 1.0 ) {
-                m_devicechecktime = 0.0;
-                ALCint connected{ ALC_TRUE };
-                ::alcGetIntegerv( m_device, ALC_CONNECTED, 1, &connected );
-                needsreopen = ( connected == ALC_FALSE );
-            }
-        }
-        if( needsreopen ) {
-            if( m_alcReopenDeviceSOFT( m_device, nullptr, m_contextattributes ) == ALC_TRUE ) {
-                auto const *nowon { (char const *)::alcGetString( nullptr, ALC_DEFAULT_ALL_DEVICES_SPECIFIER ) };
-                WriteLog( "sound: audio output changed, reopened playback on \"" + std::string{ nowon ? nowon : "?" } + "\"" );
-            }
-            else {
-                ErrorLog( "sound: audio output changed but reopening on the default device failed (will retry)" );
-            }
-        }
-    }
+    // keep the sound on an output that works
+    follow_output();
 
     // update listener
     // gain
@@ -485,6 +714,11 @@ openal_renderer::update( double const Deltatime ) {
             // otherwise proceed through the list normally
             ++source;
         }
+    }
+
+    // update streamed sound
+    if( m_ready ) {
+        m_fmradio.update( Deltatime, cached_camerapos );
     }
 
     // reset potentially used volume change flag
@@ -562,6 +796,7 @@ openal_renderer::fetch_source() {
         glm::vec3 zero_pos{ 0.f, 0.f, 0.f };
         ::alSourcefv( newsource.id, AL_POSITION, glm::value_ptr( zero_pos ) );
         ::alSourcefv( newsource.id, AL_VELOCITY, glm::value_ptr( zero_pos ) );
+        configure_source( newsource.id );
     }
 
     return newsource;
@@ -583,7 +818,9 @@ openal_renderer::init_caps() {
     }
 
     // NOTE: default value of audio renderer variable is empty string, meaning argument of NULL i.e. 'preferred' device
-    m_device = ::alcOpenDevice( Global.AudioRenderer.empty() ? nullptr : Global.AudioRenderer.c_str() );
+    auto const pinned { false == Global.AudioRenderer.empty() };
+    auto fallback { false };
+    m_device = open_output_device( fallback );
     if( m_device == nullptr ) {
         ErrorLog( "Failed to obtain audio device" );
         return false;
@@ -604,10 +841,16 @@ openal_renderer::init_caps() {
 
     WriteLog( "Supported extensions: " + std::string{ (char *)::alcGetString( m_device, ALC_EXTENSIONS ) } );
 
-    ALCint attr[3] = { ALC_MONO_SOURCES, Global.audio_max_sources, 0 }; // request more sounds
-    std::copy( std::begin( attr ), std::end( attr ), std::begin( m_contextattributes ) ); // cached for device reopen
+    // the device options (output mode, HRTF and the like) are known once the device is open
+    m_hasoutputmode = ( alcIsExtensionPresent( m_device, "ALC_SOFT_output_mode" ) == ALC_TRUE );
+    m_haslimiter = ( alcIsExtensionPresent( m_device, "ALC_SOFT_output_limiter" ) == ALC_TRUE );
+    if( alcIsExtensionPresent( m_device, "ALC_SOFT_HRTF" ) == ALC_TRUE ) {
+        m_alcGetStringiSOFT = (LPALCGETSTRINGISOFT)alcGetProcAddress( m_device, "alcGetStringiSOFT" );
+        m_alcResetDeviceSOFT = (LPALCRESETDEVICESOFT)alcGetProcAddress( m_device, "alcResetDeviceSOFT" );
+    }
+    m_contextattributes = device_attributes(); // cached for device reopen
 
-    m_context = ::alcCreateContext( m_device, attr );
+    m_context = ::alcCreateContext( m_device, m_contextattributes.data() );
     if( m_context == nullptr ) {
         ErrorLog( "Failed to create audio context" );
         return false;
@@ -621,9 +864,11 @@ openal_renderer::init_caps() {
 
     // the version reported above is the OpenAL API spec level (always 1.1); the real implementation
     // version string (e.g. "1.1 ALSOFT 1.24.2") is only queryable once a context is current
+    std::string libraryversion;
     if( auto const *libversion { (char const *)::alGetString( AL_VERSION ) } ) {
         crashreport_add_info( "openal_lib_version", libversion );
         WriteLog( "sound: library version: " + std::string{ libversion } );
+        libraryversion = libversion;
     }
 
     // Initialize all extension function pointers
@@ -649,22 +894,301 @@ openal_renderer::init_caps() {
     if( !m_alcReopenDeviceSOFT )
         WriteLog( "sound: warning: extension ALC_SOFT_reopen_device not found; audio output device changes won't be followed" );
 
-    // prefer event-driven output following (ALC_SOFT_system_events) over polling: it reliably
-    // catches both device removal and default-output changes, incl. re-plugging headphones
+    // have the system report the changes of the outputs (ALC_SOFT_system_events) where it can. this goes next to
+    // the periodic check of the connection done by follow_output(), as not every loss of the output is reported
     if( m_alcReopenDeviceSOFT != nullptr
      && alcIsExtensionPresent( m_device, "ALC_SOFT_system_events" ) == ALC_TRUE ) {
         m_alcEventControlSOFT = (LPALCEVENTCONTROLSOFT)alcGetProcAddress( m_device, "alcEventControlSOFT" );
         m_alcEventCallbackSOFT = (LPALCEVENTCALLBACKSOFT)alcGetProcAddress( m_device, "alcEventCallbackSOFT" );
         if( m_alcEventControlSOFT != nullptr && m_alcEventCallbackSOFT != nullptr ) {
             m_alcEventCallbackSOFT( &openal_renderer::device_event_callback, this );
-            ALCenum const events[]{ ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT, ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT };
-            m_alcEventControlSOFT( 2, events, ALC_TRUE );
+            std::array<ALCenum, 3> const events { ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT, ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT, ALC_EVENT_TYPE_DEVICE_ADDED_SOFT };
+            m_alcEventControlSOFT( static_cast<ALCsizei>( events.size() ), events.data(), ALC_TRUE );
             m_usedeviceevents = true;
             WriteLog( "sound: following audio output device changes via ALC_SOFT_system_events" );
         }
     }
+    if( m_alcReopenDeviceSOFT != nullptr && false == m_usedeviceevents ) {
+        WriteLog( "sound: warning: extension ALC_SOFT_system_events not found; a lost audio output is recovered, a change of the default one and the return of the device set in eu07.ini aren't followed" );
+    }
+    m_output.start( pinned, fallback, output_follower::clock::now() );
+    log_output_following( libraryversion, pinned );
+
+    init_extensions();
 
     return true;
+}
+
+// says in one line which OpenAL library the game got and whether the sound follows the output device with it. an old
+// library (OpenAL Soft before 1.23, as the one the game came with) is left as it is: the sound plays on the device opened
+// at the start, as it always did, and only the log says why it doesn't move
+void
+openal_renderer::log_output_following( std::string_view const Version, bool const Pinned ) const {
+
+    auto const library { openal_library_path() };
+    auto const name { std::format( "\"{}\"{}", Version.empty() ? std::string_view{ "unknown" } : Version,
+        library.has_value() ? std::format( " from \"{}\"", *library ) : std::string{} ) };
+    if( ( m_alcReopenDeviceSOFT == nullptr ) || ( false == m_usedeviceevents ) ) {
+        WriteLog( std::format( "sound: warning: the OpenAL library {} is too old to follow a change of the audio output; "
+            "the sound stays on the device opened at the start. OpenAL Soft 1.23 or newer, as OpenAL32.dll in the game folder, follows it", name ) );
+        return;
+    }
+    if( Pinned ) {
+        WriteLog( std::format( "sound: the OpenAL library {} follows the audio output: the device set in eu07.ini (sound.openal.renderer), "
+            "the default output of the system while that one isn't there", name ) );
+        return;
+    }
+    WriteLog( std::format( "sound: the OpenAL library {} follows the audio output: the default output of the system", name ) );
+}
+
+// resolves the entry points of the context extensions the settings use: source resampler, EFX filters
+void
+openal_renderer::init_extensions() {
+
+    if( alIsExtensionPresent( "AL_SOFT_source_resampler" ) == AL_TRUE ) {
+        m_alGetStringiSOFT = (LPALGETSTRINGISOFT)alGetProcAddress( "alGetStringiSOFT" );
+    }
+    if( alcIsExtensionPresent( m_device, "ALC_EXT_EFX" ) == ALC_TRUE ) {
+        m_alGenFilters = (LPALGENFILTERS)alGetProcAddress( "alGenFilters" );
+        m_alDeleteFilters = (LPALDELETEFILTERS)alGetProcAddress( "alDeleteFilters" );
+        m_alFilteri = (LPALFILTERI)alGetProcAddress( "alFilteri" );
+        m_alFilterf = (LPALFILTERF)alGetProcAddress( "alFilterf" );
+        m_hasefx = ( m_alGenFilters != nullptr && m_alDeleteFilters != nullptr && m_alFilteri != nullptr && m_alFilterf != nullptr );
+    }
+    if( false == m_hasefx ) {
+        return;
+    }
+    ::alGetError();
+    m_alGenFilters( 1, &m_lowpassfilter );
+    m_alFilteri( m_lowpassfilter, AL_FILTER_TYPE, AL_FILTER_LOWPASS );
+    if( ::alGetError() != AL_NO_ERROR ) {
+        WriteLog( "sound: warning: EFX low-pass filter not available" );
+        m_lowpassfilter = 0;
+    }
+}
+
+// returns: attributes of the device and the context made from the settings. with the defaults they are as before the
+// settings existed, which leaves output mode, HRTF, limiter and mixing rate to the library
+std::vector<ALCint>
+openal_renderer::device_attributes() const {
+
+    // sound.maxsources, kept for an OpenAL other than OpenAL Soft: that one gives at least 256 sources whatever is asked
+    std::vector<ALCint> attributes { ALC_MONO_SOURCES, Global.audio_max_sources };
+    auto const add { [ &attributes ]( ALCint const Key, ALCint const Value ) {
+        attributes.push_back( Key );
+        attributes.push_back( Value ); } };
+
+    if( auto const mode { output_mode_value( Global.AudioOutputMode ) }; mode && m_hasoutputmode ) {
+        add( ALC_OUTPUT_MODE_SOFT, *mode );
+    }
+    if( m_alcGetStringiSOFT != nullptr ) {
+        if( auto const hrtf { switch_value( Global.AudioHrtf ) } ) {
+            add( ALC_HRTF_SOFT, *hrtf );
+        }
+        if( auto const index { hrtf_index( Global.AudioHrtfProfile ) }; index >= 0 ) {
+            add( ALC_HRTF_ID_SOFT, index );
+        }
+    }
+    if( auto const limiter { switch_value( Global.AudioLimiter ) }; limiter && m_haslimiter ) {
+        add( ALC_OUTPUT_LIMITER_SOFT, *limiter );
+    }
+    if( Global.AudioFrequency > 0 ) {
+        add( ALC_FREQUENCY, Global.AudioFrequency );
+    }
+    attributes.push_back( 0 );
+    return attributes;
+}
+
+// returns: index of the named HRTF data set, or -1 if the name is empty or unknown
+int
+openal_renderer::hrtf_index( std::string const &Name ) const {
+
+    if( Name.empty() ) { return -1; }
+    auto const profiles { hrtf_profiles() };
+    if( auto const lookup { std::ranges::find( profiles, Name ) }; lookup != std::end( profiles ) ) {
+        return static_cast<int>( std::distance( std::begin( profiles ), lookup ) );
+    }
+    WriteLog( std::format( "sound: unknown HRTF data set \"{}\", left to the library", Name ) );
+    return -1;
+}
+
+// returns: index of the resampler of the settings, the library's default with none set, or -1 without the extension
+ALint
+openal_renderer::resampler_index() const {
+
+    if( m_alGetStringiSOFT == nullptr ) { return -1; }
+    if( false == Global.AudioResampler.empty() ) {
+        auto const names { resamplers() };
+        if( auto const lookup { std::ranges::find( names, Global.AudioResampler ) }; lookup != std::end( names ) ) {
+            return static_cast<ALint>( std::distance( std::begin( names ), lookup ) );
+        }
+        WriteLog( std::format( "sound: unknown resampler \"{}\", the library's default used", Global.AudioResampler ) );
+    }
+    return ::alGetInteger( AL_DEFAULT_RESAMPLER_SOFT );
+}
+
+// sets the options of the settings on a source
+void
+openal_renderer::configure_source( ALuint const Source ) const {
+
+    if( m_resampler >= 0 ) {
+        ::alSourcei( Source, AL_SOURCE_RESAMPLER_SOFT, m_resampler );
+    }
+    if( m_hasefx ) {
+        ::alSourcef( Source, AL_AIR_ABSORPTION_FACTOR, Global.AudioAirAbsorption );
+    }
+}
+
+// sets the EFX low-pass filter of a source for given soundproofing: the stronger the soundproofing, the more muffled
+void
+openal_renderer::soundproofing_filter( ALuint const Source, float const Soundproofing ) const {
+
+    if( m_lowpassfilter == 0 ) { return; }
+    // a soundproofing left undefined by the data (-1, which OpenAL doesn't take as the gain either) isn't muffled
+    if( false == Global.AudioLowpass || Soundproofing < 0.f || Soundproofing >= 1.f ) {
+        ::alSourcei( Source, AL_DIRECT_FILTER, AL_FILTER_NULL );
+        return;
+    }
+    // the level is set by the gain already, the filter takes away only the high frequencies
+    m_alFilterf( m_lowpassfilter, AL_LOWPASS_GAIN, 1.f );
+    m_alFilterf( m_lowpassfilter, AL_LOWPASS_GAINHF, std::clamp( Soundproofing, 0.f, 1.f ) );
+    ::alSourcei( Source, AL_DIRECT_FILTER, static_cast<ALint>( m_lowpassfilter ) );
+}
+
+// returns: names of the output devices
+std::vector<std::string>
+openal_renderer::output_devices() const {
+
+    if( ::alcIsExtensionPresent( nullptr, "ALC_ENUMERATE_ALL_EXT" ) == ALC_TRUE ) {
+        return split_name_list( ::alcGetString( nullptr, ALC_ALL_DEVICES_SPECIFIER ) );
+    }
+    return split_name_list( ::alcGetString( nullptr, ALC_DEVICE_SPECIFIER ) );
+}
+
+// returns: names of the HRTF data sets of the device
+std::vector<std::string>
+openal_renderer::hrtf_profiles() const {
+
+    std::vector<std::string> names;
+    if( m_device == nullptr || m_alcGetStringiSOFT == nullptr ) { return names; }
+    ALCint count { 0 };
+    ::alcGetIntegerv( m_device, ALC_NUM_HRTF_SPECIFIERS_SOFT, 1, &count );
+    for( ALCint index = 0; index < count; ++index ) {
+        auto const *name { m_alcGetStringiSOFT( m_device, ALC_HRTF_SPECIFIER_SOFT, index ) };
+        names.emplace_back( name != nullptr ? name : "" );
+    }
+    return names;
+}
+
+// returns: names of the resamplers
+std::vector<std::string>
+openal_renderer::resamplers() const {
+
+    std::vector<std::string> names;
+    if( m_alGetStringiSOFT == nullptr ) { return names; }
+    auto const count { ::alGetInteger( AL_NUM_RESAMPLERS_SOFT ) };
+    for( ALint index = 0; index < count; ++index ) {
+        auto const *name { m_alGetStringiSOFT( AL_RESAMPLER_NAME_SOFT, index ) };
+        names.emplace_back( name != nullptr ? name : "" );
+    }
+    return names;
+}
+
+// returns: what the device ended up with
+std::string
+openal_renderer::device_status() const {
+
+    if( m_device == nullptr ) { return "no audio device"; }
+
+    auto const namequery { ::alcIsExtensionPresent( nullptr, "ALC_ENUMERATE_ALL_EXT" ) == ALC_TRUE ? ALC_ALL_DEVICES_SPECIFIER : ALC_DEVICE_SPECIFIER };
+    auto const *devicename { ::alcGetString( m_device, namequery ) };
+    ALCint frequency { 0 };
+    ::alcGetIntegerv( m_device, ALC_FREQUENCY, 1, &frequency );
+    auto status { std::format( "device \"{}\", {} Hz", devicename != nullptr ? devicename : "?", frequency ) };
+
+    if( m_hasoutputmode ) {
+        ALCint mode { 0 };
+        ::alcGetIntegerv( m_device, ALC_OUTPUT_MODE_SOFT, 1, &mode );
+        status += std::format( ", output {}", output_mode_name( mode ) );
+    }
+    if( m_alcGetStringiSOFT != nullptr ) {
+        ALCint hrtf { ALC_FALSE };
+        ::alcGetIntegerv( m_device, ALC_HRTF_SOFT, 1, &hrtf );
+        if( hrtf == ALC_TRUE ) {
+            auto const *hrtfname { ::alcGetString( m_device, ALC_HRTF_SPECIFIER_SOFT ) };
+            status += std::format( ", HRTF \"{}\"", hrtfname != nullptr ? hrtfname : "?" );
+        }
+        else {
+            status += ", HRTF off";
+        }
+    }
+    if( m_resampler >= 0 ) {
+        auto const *resamplername { m_alGetStringiSOFT( AL_RESAMPLER_NAME_SOFT, m_resampler ) };
+        status += std::format( ", resampler {}", resamplername != nullptr ? resamplername : "?" );
+    }
+    if( m_lowpassfilter != 0 ) {
+        status += ", EFX";
+    }
+    return status;
+}
+
+// applies changed device options without a restart: reopens the device, or resets it with an older library
+bool
+openal_renderer::apply_device_settings() {
+
+    if( false == m_ready ) { return false; }
+
+    m_contextattributes = device_attributes();
+    auto applied { false };
+    if( m_alcReopenDeviceSOFT != nullptr ) {
+        auto const pinned { false == Global.AudioRenderer.empty() };
+        if( pinned ) {
+            // the playback is opened anew here anyway, so a name the list doesn't match is tried too
+            auto const name { find_preferred_output().value_or( Global.AudioRenderer ) };
+            applied = reopen_output_on( name.c_str() );
+            if( applied ) { Global.AudioRenderer = name; }
+        }
+        auto const fallback { pinned && false == applied };
+        if( false == applied ) {
+            // no device set, or the one set isn't there: the default one, which follow_output() leaves once the other is back
+            applied = reopen_output_on( nullptr );
+        }
+        if( applied ) {
+            // the device may have been changed in the settings: the output is followed by what is set now
+            m_output.start( pinned, fallback, output_follower::clock::now() );
+        }
+    }
+    else if( m_alcResetDeviceSOFT != nullptr ) {
+        // without ALC_SOFT_reopen_device another output device takes a restart
+        applied = ( m_alcResetDeviceSOFT( m_device, m_contextattributes.data() ) == ALC_TRUE );
+        if( applied ) {
+            WriteLog( "sound: this audio library can't switch the output device while running, a changed device takes a restart" );
+        }
+    }
+    if( applied ) {
+        WriteLog( "sound: audio settings applied, " + device_status() );
+    }
+    else {
+        ErrorLog( "sound: the audio device settings take a restart to apply" );
+    }
+    return applied;
+}
+
+// applies changed source options to every source; spare sources get them when taken
+void
+openal_renderer::apply_source_settings() {
+
+    if( false == m_ready ) { return; }
+
+    ::alDopplerFactor( Global.AudioDoppler );
+    m_resampler = resampler_index();
+    for( auto const &source : m_sources ) {
+        if( source.id != audio::null_resource ) {
+            configure_source( source.id );
+        }
+    }
+    // the filters follow with the gain, which this flag makes every source set anew
+    audio::event_volume_change = true;
 }
 
 } // audio

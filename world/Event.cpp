@@ -29,10 +29,13 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "vehicle/DynObj.h"
 #include "vehicle/Driver.h"
+#include "vehicle/crewchange.h"
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
 #include "widgets/map_objects.h"
+
+#include <format>
 
 void
 basic_event::event_conditions::bind( basic_event::node_sequence *Nodes ) {
@@ -41,19 +44,25 @@ basic_event::event_conditions::bind( basic_event::node_sequence *Nodes ) {
 }
 
 void
-basic_event::event_conditions::init() {
+basic_event::event_conditions::init( std::string_view const Eventname ) {
 
     tracks.clear();
 
-    if( flags & ( flags::track_busy | flags::track_free ) ) {
-        for( auto &target : *memcompare_cells ) {
-            tracks.emplace_back( simulation::Paths.find( std::get<std::string>( target ) ) );
-            if( tracks.back() == nullptr ) {
-                // legacy compatibility behaviour, instead of disabling the event we disable the memory cell comparison test
-//                m_ignored = true; // deaktywacja
-//                ErrorLog( "Bad event: track \"" + std::get<std::string>( target ) + "\" referenced in event \"" + asName + "\" doesn't exist" );
-                flags &= ~( flags::track_busy | flags::track_free ); // zerowanie flag
-            }
+    if( ( flags & ( flags::track_busy | flags::track_free ) ) == 0 ) {
+        return;
+    }
+    auto const *testname { ( flags & flags::track_free ) != 0 ? "trackfree" : "trackoccupied" };
+    if( memcompare_cells->empty() ) {
+        // the test goes over the targets of the event, so with none it has nothing to test and passes
+        ErrorLog( std::format( "Bad event: \"{}\" has no track to test with {}, so this test passes every time", Eventname, testname ) );
+    }
+    for( auto &target : *memcompare_cells ) {
+        tracks.emplace_back( simulation::Paths.find( std::get<std::string>( target ) ) );
+        if( tracks.back() == nullptr ) {
+            // legacy compatibility behaviour, instead of disabling the event we disable the memory cell comparison test
+//            m_ignored = true; // deaktywacja
+            ErrorLog( std::format( "Bad event: \"{}\" can't test \"{}\" with {}, it isn't a track (an isolated section isn't one either), so this test passes every time", Eventname, std::get<std::string>( target ), testname ) );
+            flags &= ~( flags::track_busy | flags::track_free ); // zerowanie flag
         }
     }
 }
@@ -175,110 +184,6 @@ basic_event::event_conditions::test() const {
     }
     // if we made it here it means we passed all checks
     return true;
-}
-
-void
-basic_event::event_conditions::deserialize( cParser &Input ) {
-    // przetwarzanie warunków, wspólne dla Multiple i UpdateValues
-
-    std::string token;
-    while( true == Input.getTokens()
-        && false == (token = Input.peek()).empty()
-        && false == basic_event::is_keyword(token) ) {
-
-        if( token == "trackoccupied" ) {
-            flags |= flags::track_busy;
-        }
-        else if( token == "trackfree" ) {
-            flags |= flags::track_free;
-        }
-        else if( token == "propability" || token == "probability") { //remove propability in few years after changing old scenery scripts 01.2021
-            flags |= flags::probability;
-            Input.getTokens();
-            Input >> probability;
-        }
-        else if( token == "memcompare" ) {
-            Input.getTokens( 1, false ); // case sensitive
-            if( Input.peek() != "*" ) //"*" - nie brac command pod uwage
-            { // zapamiętanie łańcucha do porównania
-                Input >> memcompare_text;
-                flags |= flags::text;
-            }
-            Input.getTokens();
-            if( Input.peek() != "*" ) //"*" - nie brac val1 pod uwage
-            {
-                Input >> memcompare_value1;
-                flags |= flags::value1;
-            }
-            Input.getTokens();
-            if( Input.peek() != "*" ) //"*" - nie brac val2 pod uwage
-            {
-                Input >> memcompare_value2;
-                flags |= flags::value2;
-            }
-        }
-        else if( token == "memcompareex" ) {
-            memcompare_pass = comparison_pass_from_string( Input.getToken<std::string>() );
-            Input.getTokens();
-            if( Input.peek() != "*" ) //"*" - nie brac pod uwage
-            { // two tokens, operator followed by comparison value
-                std::string operatorstring;
-                Input >> operatorstring;
-                memcompare_text_operator = comparison_operator_from_string( operatorstring );
-                Input.getTokens( 1, false ); // case sensitive
-                Input >> memcompare_text;
-                flags |= flags::text;
-            }
-            Input.getTokens();
-            if( Input.peek() != "*" ) //"*" - nie brac pod uwage
-            { // two tokens, operator followed by comparison value
-                std::string operatorstring;
-                Input >> operatorstring;
-                memcompare_value1_operator = comparison_operator_from_string( operatorstring );
-                Input.getTokens();
-                Input >> memcompare_value1;
-                flags |= flags::value1;
-            }
-            Input.getTokens();
-            if( Input.peek() != "*" ) //"*" - nie brac pod uwage
-            { // two tokens, operator followed by comparison value
-                std::string operatorstring;
-                Input >> operatorstring;
-                memcompare_value2_operator = comparison_operator_from_string( operatorstring );
-                Input.getTokens();
-                Input >> memcompare_value2;
-                flags |= flags::value2;
-            }
-        }
-    }
-}
-
-// sends basic content of the class in legacy (text) format to provided stream
-void
-basic_event::event_conditions::export_as_text( std::ostream &Output ) const {
-
-    if( flags != 0 ) {
-        Output << "condition ";
-        if( ( flags & flags::track_busy ) != 0 ) {
-            Output << "trackoccupied ";
-        }
-        if( ( flags & flags::track_free ) != 0 ) {
-            Output << "trackfree ";
-        }
-        if( ( flags & flags::probability ) != 0 ) {
-            Output
-                << "probability "
-                << probability << ' ';
-        }
-        if( ( flags & ( flags::text | flags::value1 | flags::value2 ) ) != 0 ) {
-            // NOTE: export doesn't preserve original memcompare condition, these are all upgraded to memcompareex format for simplicity
-            Output
-                << "memcompareex "
-                << ( ( flags & flags::text )   == 0 ? "*" :            memcompare_text     + ' ' + to_string( memcompare_text_operator ) ) << ' '
-                << ( ( flags & flags::value1 ) == 0 ? "*" : std::to_string( memcompare_value1 ) + ' ' + to_string( memcompare_value1_operator ) ) << ' '
-                << ( ( flags & flags::value2 ) == 0 ? "*" : std::to_string( memcompare_value2 ) + ' ' + to_string( memcompare_value2_operator ) ) << ' ';
-        }
-    }
 }
 
 basic_event::~basic_event() {
@@ -439,12 +344,10 @@ basic_event::input_location() const {
     return glm::dvec3( 0, 0, 0 );
 };
 
-bool
-basic_event::is_keyword( std::string const &Token ) {
-    // TODO: convert to array lookup if keyword list gets longer
-    return Token == "endevent"
-        || Token == "randomdelay"
-        || Token == "departuredelay";
+TMemCell const *
+basic_event::input_cell() const {
+
+    return nullptr;
 }
 
 
@@ -469,7 +372,7 @@ updatevalues_event::init() {
     init_targets( simulation::Memory, "memory cell" );
     // conditional data
     m_conditions.bind( &m_targets );
-    m_conditions.init();
+    m_conditions.init( m_name );
 }
 
 // event type string
@@ -505,7 +408,7 @@ updatevalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpa
         && false == is_keyword(token) ) {
 
         if( token == "condition" ) {
-            m_conditions.deserialize( Input );
+            m_conditions.deserialize( Input, m_name );
             // NOTE: condition deserialization leaves preloaded next token
         }
     }
@@ -676,6 +579,12 @@ getvalues_event::input_location() const {
     return m_input.data_cell()->location(); // współrzędne podłączonej komórki pamięci
 }
 
+TMemCell const *
+getvalues_event::input_cell() const {
+
+    return m_input.data_cell();
+}
+
 
 
 // prepares event for use
@@ -716,7 +625,8 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
         if( contains( token, '#' ) ) {
             token.erase( token.find( '#' ) ); // obcięcie unikatowości
         }
-        win1250_to_ascii( token ); // get rid of non-ascii chars
+        // NOTE: the name stays as the scenery spells it, with its polish letters; whoever matches it with the name
+        // a timetable has goes by timetable::stop_point_is_for(), which takes any spelling of the station
         m_input.command_type = TCommandType::cm_PassengerStopPoint;
         // nie do kolejki (dla SetVelocity też, ale jak jest do toru dowiązany)
         m_passive = true;
@@ -781,6 +691,12 @@ putvalues_event::run_() {
         + to_string( m_input.data_value_1, 2 ) + "] ["
         + to_string( m_input.data_value_2, 2 ) + "]" );
 
+    if( crew::is_command( m_input.data_text ) ) {
+        // a driver for the vehicle named in the command, or none (eu07/maszyna#510). not a command for a driver or
+        // a vehicle to take, and it works with nothing setting the event off too (a key, an event launcher)
+        crew::change( crew::parse( m_input.data_text, m_input.data_value_1, m_input.data_value_2 ), m_activator );
+        return;
+    }
     if( m_activator == nullptr ) { return; }
     // zamiana, bo fizyka ma inaczej niż sceneria
     // NOTE: y & z swap, negative x
@@ -1266,12 +1182,22 @@ multi_event::init() {
     init_targets( simulation::Memory, "memory cell", conditiontchecksmemcell );
     if( m_ignored ) {
         // legacy compatibility behaviour, instead of disabling the event we disable the memory cell comparison test
+        if( conditiontchecksmemcell
+         && std::ranges::any_of( m_targets, []( basic_node const &Target ) { return std::get<scene::basic_node *>( Target ) == nullptr; } ) ) {
+            // init_targets() named the missing cell; say what it does to the event, as it isn't what the scenery asks for
+            // the track and probability tests still apply, only the comparison is off
+            auto const otherconditions { ( m_conditions.flags & ( flags::track_busy | flags::track_free | flags::probability ) ) != 0 };
+            ErrorLog( std::format(
+                "Bad event: \"{}\" compares a memory cell which doesn't exist, so its memcompare test is off{}",
+                m_name,
+                otherconditions ? std::string() : " and it always runs the events before its else" ) );
+        }
         m_conditions.flags &= ~( flags::text | flags::value1 | flags::value2 );
         m_ignored = false;
     }
     // conditional data
     m_conditions.bind( &m_targets );
-    m_conditions.init();
+    m_conditions.init( m_name );
     // child events bindings
     for( auto &childevent : m_children ) {
         std::get<basic_event *>( childevent ) = simulation::Events.FindEvent( std::get<std::string>( childevent ) );
@@ -1339,7 +1265,7 @@ multi_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
         && false == is_keyword(token) ) {
 
         if( token == "condition" ) {
-            m_conditions.deserialize( Input );
+            m_conditions.deserialize( Input, m_name );
             // NOTE: condition block comes last so we can bail out afterwards
             break;
         }
@@ -2056,6 +1982,69 @@ track_event::export_as_text_( std::ostream &Output ) const {
 
 // prepares event for use
 void
+buckle_event::init() {
+
+    init_targets( simulation::Paths, "track" );
+}
+
+// event type string
+std::string
+buckle_event::type() const {
+
+    return "trackbuckle";
+}
+
+// deserialize() subclass details
+void
+buckle_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
+
+    Input.getTokens();
+    Input >> m_buckle.amplitude;
+    m_buckle.amplitude = std::clamp( m_buckle.amplitude, 0.f, static_cast<float>( 1000.0 * track_buckle::most_amplitude ) );
+    Input.getTokens();
+    // the length, the centre and the side, each optional
+    if( false == is_keyword( Input.peek() ) ) {
+        Input >> m_buckle.length;
+        if( m_buckle.length > 0.f ) {
+            m_buckle.length = std::clamp( m_buckle.length, static_cast<float>( track_buckle::least_length ), static_cast<float>( track_buckle::most_length ) );
+        }
+        Input.getTokens();
+    }
+    if( false == is_keyword( Input.peek() ) ) {
+        Input >> m_buckle.centre;
+        Input.getTokens();
+    }
+    if( false == is_keyword( Input.peek() ) ) {
+        auto side { 0.f };
+        Input >> side;
+        m_buckle.side = ( side > 0.f ? 1 : side < 0.f ? -1 : 0 );
+        Input.getTokens();
+    }
+}
+
+// run() subclass details
+void
+buckle_event::run_() {
+
+    WriteLog( "Type: TrackBuckle - [" + to_string( m_buckle.amplitude, 0 ) + " mm]" );
+    for( auto &target : m_targets ) {
+        auto *targettrack = static_cast<TTrack *>( std::get<scene::basic_node *>( target ) );
+        if( targettrack == nullptr ) { continue; }
+        targettrack->buckle_now( m_buckle, "event " + m_name );
+    }
+}
+
+// export_as_text() subclass details
+void
+buckle_event::export_as_text_( std::ostream &Output ) const {
+
+    Output << m_buckle.amplitude << ' ' << m_buckle.length << ' ' << m_buckle.centre << ' ' << m_buckle.side << ' ';
+}
+
+
+
+// prepares event for use
+void
 voltage_event::init() {
     // zmiana napięcia w zasilaczu (TractionPowerSource)
     init_targets( simulation::Powergrid, "power source" );
@@ -2310,6 +2299,7 @@ make_event( cParser &Input, scene::scratch_data &Scratchpad ) {
     else if( type == "multiple" )     { event = new multi_event(); }
     else if( type == "switch" )       { event = new switch_event(); }
     else if( type == "trackvel" )     { event = new track_event(); }
+    else if( type == "trackbuckle" )  { event = new buckle_event(); }
     else if( type == "sound" )        { event = new sound_event(); }
     else if( type == "texture" )      { event = new texture_event(); }
     else if( type == "animation" )    { event = new animation_event(); }
@@ -2477,7 +2467,22 @@ bool
 event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, double delay ) {
 
     if( Event->m_passive )     { return false; } // jeśli może być dodany do kolejki (nie używany w skanowaniu)
-    if( Event->m_inqueue > 0 ) { return false; } // jeśli nie dodany jeszcze do kolejki
+    if( Event->m_inqueue > 0 ) { // jeśli nie dodany jeszcze do kolejki
+        // a call of another train is lost, the event runs once, for whoever queued it first.
+        // logged once per stay in the queue, as a standing vehicle repeats its event0 call every frame,
+        // and not for the other vehicles of the same train, which repeat its eventall0 call
+        if( Owner != Event->m_activator
+         && false == Event->m_lostcalllogged
+         && false == ( Owner != nullptr && Owner->is_connected( Event->m_activator ) ) ) {
+            Event->m_lostcalllogged = true;
+            WriteLog( std::format(
+                "EVENT ALREADY IN QUEUE, NOT ADDED{}: {}{}",
+                Owner ? " by " + Owner->asName : std::string(),
+                Event->m_name,
+                Event->m_activator ? " (queued by " + Event->m_activator->asName + ")" : std::string() ) );
+        }
+        return false;
+    }
 
     // kolejka eventów jest posortowana względem (fStartTime)
     Event->m_activator = Owner;
@@ -2498,6 +2503,8 @@ event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, doub
     if( Event != nullptr
      && false == Event->m_ignored ) {
         // standardowe dodanie do kolejki
+        Event->m_activator = Owner; // a joint event reached above still holds the vehicle of its previous run
+        Event->m_lostcalllogged = false;
         ++Event->m_inqueue; // zabezpieczenie przed podwójnym dodaniem do kolejki
         WriteLog( "EVENT ADDED TO QUEUE" + ( Owner ? " by " + Owner->asName : "" ) + ": " + Event->m_name );
         Event->m_launchtime = delay + std::abs( Event->m_delay ) + Timer::GetTime(); // czas od uruchomienia scenerii
@@ -2572,6 +2579,7 @@ event_manager::CheckQuery() {
             QueryRootEvent->m_launchtime = m_workevent->m_launchtime; // czas musi być ten sam, bo nie jest aktualizowany
             QueryRootEvent->m_activator = m_workevent->m_activator; // pojazd aktywujący
             QueryRootEvent->m_inqueue = 1;
+            QueryRootEvent->m_lostcalllogged = false;
             // w sumie można by go dodać normalnie do kolejki, ale trzeba te połączone posortować wg czasu wykonania
         }
         else // a jak nazwa jest unikalna, to kolejka idzie dalej

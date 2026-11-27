@@ -914,6 +914,18 @@ sound_source::location() const {
         + m_owner->VectorFront() * (double)m_offset.z };
 }
 
+// returns location-based gain factor of the emitter for the current position of the listener
+float
+sound_source::soundproofing_factor() {
+
+    // NOTE: the calculation needs the listener to be assigned to a vehicle or in one of the outside views.
+    // this may not be the case yet when we're called from vehicle update, as the global camera data is refreshed later in the frame
+    if( FreeFlyModeFlag || Global.CabWindowOpen || Global.pCamera.m_owner != nullptr ) {
+        update_soundproofing();
+    }
+    return m_properties.soundproofing;
+}
+
 void
 sound_source::range( float const Range ) {
 
@@ -998,6 +1010,8 @@ sound_source::update_soundproofing() {
                     occupiedcab );
         }
     }
+    // the walls muffle the sound, the trim below only lowers its volume
+    m_properties.soundproofing_hf = m_properties.soundproofing;
     // for ambient sounds reduce their volume to account for their placement right on top of the listener
     if( m_range < -1 ) {
         m_properties.soundproofing *= 0.4f;

@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/driveruipanels.h"
+#include "application/editoruipanels.h"
 
 #include "utilities/Globals.h"
 #include "application/application.h"
@@ -19,10 +20,13 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "world/Event.h"
 #include "world/TractionPower.h"
+#include "world/catenary_span.h"
 #include "vehicle/Camera.h"
 #include "world/mtable.h"
+#include "world/stationnames.h"
 #include "vehicle/Train.h"
 #include "vehicle/Driver.h"
+#include "vehicle/drivingaid.h"
 #include "model/AnimModel.h"
 #include "vehicle/DynObj.h"
 #include "model/Model3d.h"
@@ -39,6 +43,10 @@ http://mozilla.org/MPL/2.0/.
 #endif
 
 #include <format>
+#include <string_view>
+#include <vector>
+
+#include "audio/audiorenderer.h"
 
 namespace {
 
@@ -76,6 +84,13 @@ drivingaid_panel::update() {
     auto const *mover = controlled->MoverParameters;
     auto const *vehicledriver = controlled->Mechanik;
     auto const *owner = controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik;
+    // the numbers of the throttle and brakes lines, with the controls of the cab the driver is in
+    auto const readout { drivingaid::compute( drivingaid::from_movers(
+        *mover,
+        *vehicledriver->Controlling(),
+        drivingaid::cab_controls {
+            train->ggLocalBrake.SubModel != nullptr,
+            train->ggJointCtrl.SubModel != nullptr } ) ) };
 
     { // throttle, velocity, speed limits and grade
         std::string expandedtext;
@@ -116,8 +131,8 @@ drivingaid_panel::update() {
         std::snprintf(
             m_buffer.data(), m_buffer.size(),
             STR_C("Throttle: %3d+%d %c%s"),
-            mover->EIMCtrlType > 0 ? std::max(0, static_cast<int>(100.4 * mover->eimic_real)) : vehicledriver->Controlling()->MainCtrlPos,
-            mover->EIMCtrlType > 0 ? vehicledriver->Controlling()->MainCtrlPos : vehicledriver->Controlling()->ScndCtrlPos,
+            readout.throttle_first,
+            readout.throttle_second,
             mover->SpeedCtrlUnit.IsActive ? 'T' :
 		              mover->DirActive > 0          ? 'D' :
 		              mover->DirActive < 0          ? 'R' :
@@ -137,16 +152,32 @@ drivingaid_panel::update() {
                 mover->PipePress * 100 );
             expandedtext = m_buffer.data();
         }
-        auto const basicbraking { mover->fBrakeCtrlPos };
-        auto const eimicbraking { std::max( 0.0, -100.0 * mover->eimic_real ) };
-        std::snprintf(
-            m_buffer.data(), m_buffer.size(),
-            STR_C("Brakes: %5.1f+%-2.0f%c%s"),
-//            ( mover->EIMCtrlType == 0 ? basicbraking : mover->EIMCtrlType == 3 ? ( mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking ) : eimicbraking ),
-            mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking,
-            mover->LocalBrakePosA * LocalBrakePosNo,
-            mover->SlippingWheels ? '!' : ' ',
-            expandedtext.c_str() );
+        if( readout.ed_percent ) {
+            // the ED braking demand, ahead of the expanded data (eu07/maszyna#558)
+            std::snprintf(
+                m_buffer.data(), m_buffer.size(),
+                STR_C(" ED brake: %d%%%%"),
+                *readout.ed_percent );
+            expandedtext.insert( 0, m_buffer.data() );
+        }
+        if( readout.show_local_brake ) {
+            std::snprintf(
+                m_buffer.data(), m_buffer.size(),
+                STR_C("Brakes: %5.1f+%-2.0f%c%s"),
+                readout.brake_first,
+                readout.local_brake,
+                mover->SlippingWheels ? '!' : ' ',
+                expandedtext.c_str() );
+        }
+        else {
+            // the cab has no local brake control: its setting is left out (eu07/maszyna#555)
+            std::snprintf(
+                m_buffer.data(), m_buffer.size(),
+                STR_C("Brakes: %5.1f%c%s"),
+                readout.brake_first,
+                mover->SlippingWheels ? '!' : ' ',
+                expandedtext.c_str() );
+        }
 
         text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
     }
@@ -326,9 +357,10 @@ timetable_panel::update() {
 
     // destination
     {
-        auto textline = Bezogonkow( owner->Relation(), true );
+        // the names with the letters their files have, in utf-8 as the user interface takes it
+        auto textline = table.relation_caption();
         if( false == textline.empty() ) {
-            textline += " (" + Bezogonkow( owner->TrainName(), true ) + ")";
+            textline += " (" + data_name_to_utf8( owner->TrainName(), true ) + ")";
         }
         text_lines.emplace_back( textline, Global.UITextColor );
     }
@@ -395,10 +427,9 @@ timetable_panel::update() {
                     vmax += to_string( tableline->vmax, 0 );
                     vmax = vmax.substr( vmax.size() - 3, 3 ); // z wyrównaniem do prawej
                 }
-                auto const station { (
-                    Bezogonkow( tableline->StationName, true )
-                    + "                                  " )
-                    .substr( 0, 34 ) };
+                // the name as the timetable spells it; in utf-8 a letter can take more than one byte, the column is
+                // 34 characters wide
+                auto const station { utf8_fit( timetable::station_caption( tableline->StationLabel ), 34 ) };
                 auto const location { (
                     ( tableline->km > 0.0 ?
                         to_string( tableline->km, 2 ) :
@@ -546,6 +577,22 @@ void debug_panel::update()
 #endif
 }
 
+namespace {
+
+// memory cells of the scenery, to look into and play with while the simulation runs
+bool render_section_memcells() {
+
+    if( false == ImGui::CollapsingHeader( "Memory Cells" ) ) { return false; }
+    static memcells_panel memcells { "Memory cells", true };
+    memcells.listheight = ImGui::GetTextLineHeightWithSpacing() * 12.f;
+    ImGui::PushID( "memcells" );
+    memcells.render_body();
+    ImGui::PopID();
+    return true;
+}
+
+} // namespace
+
 void
 debug_panel::render() {
     if( false == is_open ) { return; }
@@ -580,12 +627,13 @@ debug_panel::render() {
         render_section( "Vehicle Scan Table", m_scantablelines );
         render_section_scenario();
         render_section_eventqueue();
+        render_section_memcells();
         if( true == render_section( "Power Grid", m_powergridlines ) ) {
             // traction state debug
             ImGui::Checkbox( "Debug Traction", &DebugTractionFlag );
         }
         render_section( "Camera", m_cameralines );
-        render_section( "Gfx Renderer / Statistics", m_rendererlines );
+        render_section_renderer();
         render_section_settings();
 		render_section_developer(); // Developer tools
 #ifdef WITH_UART
@@ -1140,7 +1188,7 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) const {
     if( mechanik.VelNext == 0.0
      && mechanik.eSignNext ) {
         // jeśli ma zapamiętany event semafora, nazwa eventu semafora
-        Output.emplace_back( "Current signal: " + Bezogonkow( mechanik.eSignNext->m_name ), Global.UITextColor );
+        Output.emplace_back( "Current signal: " + data_name_to_utf8( mechanik.eSignNext->m_name ), Global.UITextColor );
     }
 
     // distances
@@ -1251,7 +1299,7 @@ debug_panel::update_section_scantable( std::vector<text_line> &Output ) const {
 	do {
 		auto const scanline = mechanik.TableText( i );
 		if( scanline.empty() ) { break; }
-		Output.emplace_back( Bezogonkow( scanline ), Global.UITextColor );
+		Output.emplace_back( data_name_to_utf8( scanline ), Global.UITextColor );
 		++i;
 	} while( i < speedtablesize );
 	if( Output.size() == 1 ) {
@@ -1423,7 +1471,7 @@ debug_panel::update_section_camera( std::vector<text_line> &Output ) const {
 }
 
 void
-debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
+debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
 
             // gfx renderer data
             auto textline =
@@ -1445,29 +1493,9 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
 	        {
 		        textline += "Shaders";
 	        }
-            else if (Global.GfxRenderer == "experimental")
-            {
-		        textline += "NVRHI on ";
-            }
-	        else
+	        else if (Global.GfxRenderer == "vulkan")
 	        {
-		        if (Global.BasicRenderer)
-		        {
-			        textline += "Legacy Simple";
-		        }
-		        else
-		        {
-			        textline += "Legacy";
-		        }
-	        }
-
-	        if (Global.bUseVBO)
-	        {
-		        textline += ", VBO";
-	        }
-	        else
-	        {
-		        textline += ", Display Lists";
+		        textline += "Vulkan";
 	        }
 
 	        textline += " ";
@@ -1480,9 +1508,12 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
 
 			Output.emplace_back( textline, Global.UITextColor );
 
-            // renderer stats
-            Output.emplace_back( GfxRenderer->info_times(), Global.UITextColor );
-            Output.emplace_back( GfxRenderer->info_stats(), Global.UITextColor );
+            // renderer stats, in sections when the renderer has them (render_section_renderer())
+            m_renderersections = GfxRenderer->info_sections();
+            if( m_renderersections.empty() ) {
+                Output.emplace_back( GfxRenderer->info_times(), Global.UITextColor );
+                Output.emplace_back( GfxRenderer->info_stats(), Global.UITextColor );
+            }
 
             // CPU related
             Output.emplace_back("CPU:", Global.UITextColor);
@@ -1668,6 +1699,30 @@ debug_panel::render_section( std::string const &Header, std::vector<text_line> c
     return render_section( Lines );
 }
 
+// the lines of the renderer, then its data in sections which fold, the long lines wrapped to the width of the panel
+bool
+debug_panel::render_section_renderer() {
+
+    if( false == render_section( "Gfx Renderer / Statistics", m_rendererlines ) ) { return false; }
+
+    ImGui::PushStyleColor( ImGuiCol_Text, { Global.UITextColor.r, Global.UITextColor.g, Global.UITextColor.b, Global.UITextColor.a } );
+    ImGui::PushTextWrapPos( 0.f );
+    for( auto const &section : m_renderersections ) {
+        ImGui::SetNextItemOpen( section.open, ImGuiCond_Once );
+        if( true == ImGui::TreeNode( section.title.c_str() ) ) {
+            ImGui::TextUnformatted( section.text.c_str() );
+            ImGui::TreePop();
+        }
+    }
+    ImGui::PopTextWrapPos();
+    ImGui::PopStyleColor();
+    // the physics of the vehicles, timed in the section of the main loop
+    ImGui::Checkbox( "let vehicles standing still and held by their brakes sleep (physics.sleepheld)", &Global.physics_sleepheld );
+    ImGui::Checkbox( "one step of the physics in a frame for road vehicles farther than 1 km (physics.roadlod)", &Global.physics_roadlod );
+    ImGui::SliderFloat( "bar: change of the pressure in a pipe which wakes the physics of a vehicle, 0 any (physics.pipewake)", &Global.physics_pipewake, 0.f, 0.05f, "%.4f" );
+    return true;
+}
+
 bool
 debug_panel::render_section( std::vector<text_line> const &Lines ) const {
 
@@ -1695,6 +1750,81 @@ bool debug_panel::render_section_developer() const
 	return true;
 }
 
+namespace {
+
+// a combo choosing one of the names, the first entry standing for the library's own choice. the names are asked for
+// each time the list opens, as devices come and go. returns: true if the choice changed
+template <class Names_>
+bool name_combo( char const *Label, std::string &Value, Names_ const &Names, char const *Defaultlabel, std::string_view const Defaultvalue ) {
+
+    auto const preview { Value == Defaultvalue ? std::string{ Defaultlabel } : Value };
+    if( false == ImGui::BeginCombo( Label, preview.c_str() ) ) { return false; }
+
+    static std::vector<std::string> names; // one list per call site, as each passes its own lambda
+    if( ImGui::IsWindowAppearing() ) {
+        names = Names();
+    }
+    auto changed { false };
+    if( ImGui::Selectable( Defaultlabel, Value == Defaultvalue ) ) {
+        Value = Defaultvalue;
+        changed = true;
+    }
+    for( auto const &name : names ) {
+        if( ImGui::Selectable( name.c_str(), name == Value ) ) {
+            Value = name;
+            changed = true;
+        }
+    }
+    ImGui::EndCombo();
+    return changed;
+}
+
+// options of the audio device, applied by reopening it: output device, output mode, HRTF, limiter, mixing rate, sources
+void render_audio_device_settings() {
+
+    auto changed { false };
+    changed |= name_combo( "Output device###audiodevice", Global.AudioRenderer,
+        [] { return audio::renderer.output_devices(); }, "System default", "" );
+    changed |= name_combo( "Output mode###audiooutputmode", Global.AudioOutputMode,
+        [] { return std::vector<std::string>{ "mono", "stereo", "stereo-basic", "uhj", "headphones", "quad", "5.1", "6.1", "7.1" }; },
+        "Automatic", "auto" );
+    changed |= name_combo( "HRTF###audiohrtf", Global.AudioHrtf,
+        [] { return std::vector<std::string>{ "on", "off" }; }, "Automatic", "auto" );
+    changed |= name_combo( "HRTF data set###audiohrtfprofile", Global.AudioHrtfProfile,
+        [] { return audio::renderer.hrtf_profiles(); }, "Library's choice", "" );
+    changed |= name_combo( "Limiter###audiolimiter", Global.AudioLimiter,
+        [] { return std::vector<std::string>{ "on", "off" }; }, "Automatic", "auto" );
+
+    auto frequency { Global.AudioFrequency > 0 ? std::to_string( Global.AudioFrequency ) : std::string{} };
+    if( name_combo( "Mixing rate###audiofrequency", frequency,
+            [] { return std::vector<std::string>{ "22050", "32000", "44100", "48000", "96000" }; }, "Device's", "" ) ) {
+        Global.AudioFrequency = ( frequency.empty() ? 0 : std::stoi( frequency ) );
+        changed = true;
+    }
+
+    if( changed ) {
+        audio::renderer.apply_device_settings();
+    }
+}
+
+// options of the sources, applied to the playing ones right away: resampler, Doppler effect, EFX
+void render_audio_source_settings() {
+
+    auto changed { false };
+    changed |= name_combo( "Resampler###audioresampler", Global.AudioResampler,
+        [] { return audio::renderer.resamplers(); }, "Library's default", "" );
+    changed |= ImGui::SliderFloat( ( to_string( Global.AudioDoppler, 2 ) + "###audiodoppler" ).c_str(), &Global.AudioDoppler, 0.0f, 1.0f, "Doppler effect" );
+    changed |= ImGui::Checkbox( "Soundproofing muffles high frequencies###audiolowpass", &Global.AudioLowpass );
+    changed |= ImGui::SliderFloat( ( to_string( Global.AudioAirAbsorption, 1 ) + "###audioairabsorption" ).c_str(), &Global.AudioAirAbsorption, 0.0f, 10.0f, "Air absorption" );
+
+    if( changed ) {
+        audio::renderer.apply_source_settings();
+    }
+    ImGui::TextWrapped( "%s", audio::renderer.device_status().c_str() );
+}
+
+} // namespace
+
 bool
 debug_panel::render_section_settings() const {
 
@@ -1703,11 +1833,18 @@ debug_panel::render_section_settings() const {
     ImGui::PushStyleColor( ImGuiCol_Text, { Global.UITextColor.r, Global.UITextColor.g, Global.UITextColor.b, Global.UITextColor.a } );
     ImGui::TextUnformatted( "Graphics" );
     ImGui::PopStyleColor();
-    // reflection fidelity
-    ImGui::SliderInt( ( std::to_string( Global.reflectiontune.fidelity ) + "###reflectionfidelity" ).c_str(), &Global.reflectiontune.fidelity, 0, 2, "Reflection fidelity" );
+    // screen space reflections
+    {
+        char const *ssrlevels[] { "off", "low", "medium", "high" };
+        ImGui::SliderInt( ( std::string( ssrlevels[ std::clamp( Global.gfx_ssr, 0, 3 ) ] ) + "###screenreflections" ).c_str(), &Global.gfx_ssr, 0, 3, "Reflections" );
+    }
     ImGui::SliderInt( ( std::to_string( Global.gfx_shadow_rank_cutoff ) + "###shadowrankcutoff" ).c_str(), &Global.gfx_shadow_rank_cutoff, 1, 3, "Shadow ranks" );
     if( ImGui::SliderFloat( ( to_string( std::abs( Global.gfx_shadow_angle_min ), 2 ) + "###shadowanglecutoff" ).c_str(), &Global.gfx_shadow_angle_min, -1.0, -0.2f, "Shadow angle cutoff" ) ) {
         Global.gfx_shadow_angle_min = quantize( Global.gfx_shadow_angle_min, 0.05f );
+    }
+    // sieć trakcyjna: zasięg rysowania przewodów, lin i uchwytów jako brył; 0 wyłącza bryły
+    if( ImGui::SliderFloat( ( to_string( CatenarySettings.solid_range, 0 ) + " m###catenarysolidrange" ).c_str(), &CatenarySettings.solid_range, 0.0f, 500.0f, "3D overhead wires range" ) ) {
+        CatenarySettings.solid_range = quantize( CatenarySettings.solid_range, 10.0f );
     }
     if( DebugModeFlag ) {
         // sky sliders
@@ -1741,6 +1878,10 @@ debug_panel::render_section_settings() const {
             command_relay commandrelay;
             commandrelay.post(user_command::radiovolumeset, val, 0.0, GLFW_PRESS, 0);
         }
+    }
+    if( Global.bSoundEnabled ) {
+        render_audio_device_settings();
+        render_audio_source_settings();
     }
 
     return true;

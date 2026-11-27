@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "world/Track.h"
 #include "world/TrackRails.h"
+#include "world/TrackCheck.h"
 #include "simulation/simulation.h"
 #include "scene/scene.h"
 #include "utilities/Globals.h"
@@ -749,11 +750,42 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             m_timber_model_name = modelpath;
             m_timber_skin_name = ( skinpath == "none" ? std::string{} : skinpath );
         }
+        else if( str == "blendrails" || str == "blendballast" || str == "blend" ) {
+            // blendrails/blendballast <end> <length>: how far from the end 1 (p1), 2 (p2) or 3 (p4 of a switch) the rails or the ballast
+            // blend into those of the track joined there, where their textures differ; 0: not at all. blend: both of them
+            auto const end { parser->getToken<int>() };
+            auto const length { static_cast<float>( std::max( 0.0, parser->getToken<double>() ) ) };
+            if( end >= 1 && end <= static_cast<int>( m_blend[ 0 ].size() ) ) {
+                if( str != "blendballast" ) {
+                    m_blend[ static_cast<int>( track_blend::kind::rails ) ][ end - 1 ] = length;
+                }
+                if( str != "blendrails" ) {
+                    m_blend[ static_cast<int>( track_blend::kind::ballast ) ][ end - 1 ] = length;
+                }
+            }
+            else {
+                ErrorLog( "Bad track: " + str + " at end " + std::to_string( end ) + " of track \"" + m_name + "\" which has no such end" );
+            }
+        }
         else if( str == "uneven" ) {
             // uneven <mm>[;<mm>...]: see TrackUneven.h. The semicolons stay in the token
             auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
             if( ( eType == tt_Normal || eType == tt_Switch ) && iCategoryFlag == 1 ) {
                 m_uneven = track_uneven::read_attribute( values, eType == tt_Switch );
+            }
+        }
+        else if( str == "buckle" ) {
+            // buckle <mm>;<m>;<m>[;<side>]: the track buckled by the heat, see TrackBuckle.h
+            auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
+            if( eType == tt_Normal && iCategoryFlag == 1 ) {
+                m_buckledeclared = track_buckle::read_buckle( values );
+            }
+        }
+        else if( str == "cwr" ) {
+            // cwr <C>;<grade>[;<worked>]: the welded rail, for the buckling by the temperature
+            auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
+            if( eType == tt_Normal && iCategoryFlag == 1 ) {
+                m_cwr = track_buckle::read_cwr( values );
             }
         }
         else if( str == "friction" ) {
@@ -818,8 +850,15 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     // from the scenery is put back after it
     auto const velocity { fVelocity };
     init_segments( true );
+    // the buckle goes along the path made
+    if( Global.track_buckling != global_settings::track_buckling_mode::off && track_buckle::given( m_buckledeclared ) ) {
+        m_buckle = resolve_buckle( m_buckledeclared, 0 );
+        if( false == is_buckled() ) {
+            ErrorLog( "Bad track: \"" + m_name + "\" too short for its buckle" );
+        }
+    }
     // made with no unevenness, which is read with the attributes and goes onto them by making them again
-    if( is_uneven() ) {
+    if( is_uneven() || is_buckled() ) {
         init_segments( false );
     }
     if( SwitchExtension ) {
@@ -875,6 +914,7 @@ void TTrack::init_segments( bool const Initial ) {
     }
     else if( Segment ) {
         Segment->set_uneven( is_uneven() );
+        Segment->set_buckled( is_buckled() );
     }
 
     switch (eType) {
@@ -1266,6 +1306,10 @@ bool TTrack::AddDynamicObject(TDynamicObject *Dynamic)
             }
         }
     }
+    if( Dynamics.empty() ) {
+        // a train comes onto the track, which can buckle under it in the heat
+        buckle_pass_enter( *Dynamic );
+    }
     Dynamics.emplace_back( Dynamic );
     Dynamic->MyTrack = this; // ABu: na ktorym torze jesteśmy
     if( Dynamic->iOverheadMask ) {
@@ -1312,6 +1356,10 @@ bool TTrack::RemoveDynamicObject(TDynamicObject *Dynamic)
                 ++idx;
             }
         }
+    }
+    if( result ) {
+        // the head of a train leaving the track the pass was drawn to buckle
+        buckle_pass_leave();
     }
     if( Global.iMultiplayer ) {
         // jeśli multiplayer
@@ -1600,8 +1648,27 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
     }
     // bake per-instance sleeper transforms now that the owning cell has assigned m_origin.
     // safe to call here even if the track has no sleepermodel (early-outs internally).
-    if( m_sleeper_enabled && m_sleeper_local_transforms.empty() ) {
+    // a track laying the 3D sleepers draws its sleeper model with them, the transforms of the model alone wouldn't be drawn
+    if( m_sleeper_enabled && false == m_sleepers3d.active && m_sleeper_local_transforms.empty() ) {
         build_sleeper_transforms();
+    }
+    // the rails and the ballast blended into those of the tracks joined at the ends, where their textures differ. the weights go with
+    // the geometry as it's made, so the materials change only with it; not where the chunks are laid again as a movable nose moves
+    track_blend::blending railsblend;
+    track_blend::blending ballastblend;
+    if( Bank != null_handle && false == movable ) {
+        if( Geometry1.empty() ) {
+            railsblend = track_blend::setup( *this, track_blend::kind::rails );
+            m_blendmaterial1 = railsblend.material;
+        }
+        if( eType == tt_Switch ) {
+            ballastblend = track_blend::setup( *this, track_blend::kind::ballast );
+            m_blendmaterial3 = ballastblend.material;
+        }
+        else if( Geometry2.empty() ) {
+            ballastblend = track_blend::setup( *this, track_blend::kind::ballast );
+            m_blendmaterial2 = ballastblend.material;
+        }
     }
     switch (iCategoryFlag & 15)
     {
@@ -1618,6 +1685,16 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
         auto const layout { plan_rails( Bank != 0 ) };
         if( Bank != 0 ) {
             m_crossings = layout.crossed;
+            for( int path = 0; path < 2; ++path ) {
+                for( int side = 0; side < 2; ++side ) {
+                    m_railplans[ path ][ side ] = layout.plans[ path ][ side ];
+                    m_railguards[ path ][ side ].clear();
+                    for( auto const &guard : layout.guards[ path ][ side ] ) {
+                        m_railguards[ path ][ side ].emplace_back( guard.from, guard.to );
+                    }
+                }
+            }
+            track_sleepers::forget_rails( *this );
         }
         switch (eType) // dalej zależnie od typu
         {
@@ -1639,6 +1716,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 gfx::vertex_array vertices;
                 Segment->RenderLoft(vertices, m_origin, bpts1, iTrapezoid > 0, texturelength);
                 if( Bank != 0 && true == Geometry2.empty() ) {
+                    track_blend::weighing const weighing { &ballastblend };
                     Geometry2.emplace_back(track_rails::insert_chunk(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
                 }
                 if( Bank == 0 && false == Geometry2.empty() ) {
@@ -1653,6 +1731,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 gfx::vertex_array vertices;
                 auto const open { eType == tt_Normal && ( trPrev == nullptr || trNext == nullptr ) };
                 if( Bank != 0 && true == Geometry1.empty() ) {
+                    track_blend::weighing const weighing { &railsblend };
                     for( auto const side : { 1, -1 } ) {
                         auto const &profile { side > 0 ? rpts1 : rpts2 };
                         if( eType == tt_Normal && iTrapezoid == 0 && lay_rail( layout, drawing, profile, { .path = 0, .side = side, .texturelength = texturelength, .from = track_rails::blade_runon( *this, side ), .openstart = ( trPrev == nullptr ), .openend = ( trNext == nullptr ) }, Geometry1, GeometryCut1 ) ) {
@@ -1752,6 +1831,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
             if( true == Global.CreateSwitchTrackbeds ) {
                 gfx::vertex_array vertices;
                 create_switch_trackbed( vertices );
+                track_blend::weighing const weighing { &ballastblend };
                 SwitchExtension->Geometry3 = track_rails::insert_chunk(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP);
                 vertices.clear();
             }
@@ -2375,8 +2455,9 @@ void TTrack::loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::ver
             offsets.emplace_back( bend.x, -thrown * bend.y );
         }
         auto const size { rail_dimensions() };
+        auto const rise { track_sleepers::blade_rise( *this ) };
         auto const length { SwitchExtension->Segments[ Path ]->GetLength() };
-        SwitchExtension->Segments[ Path ]->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = shape.tip, .to = std::min( shape.heel, length ), .offsets = offsets, .extents = shape.extents, .walls = true, .drops = shape.drops, .head = { size.neck, size.crest } } );
+        SwitchExtension->Segments[ Path ]->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = shape.tip, .to = std::min( shape.heel, length ), .offsets = offsets, .extents = shape.extents, .walls = true, .drops = shape.drops, .head = { size.neck, size.crest }, .rise = rise } );
         // the blade running on past the end of the path goes on along the plain track joined there, whose rail starts behind the heel
         if( auto const *next { track_rails::runon_track( *this, Path ) }; next != nullptr && shape.heel > length + 1e-3 ) {
             auto const along = [&]( std::vector<glm::dvec2> const &Knots ) {
@@ -2385,7 +2466,7 @@ void TTrack::loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::ver
                     result.emplace_back( knot.x - length, knot.y );
                 }
                 return result; };
-            next->Segment->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = 0.0, .to = shape.heel - length, .offsets = along( offsets ), .extents = along( shape.extents ), .walls = true, .drops = along( shape.drops ), .head = { size.neck, size.crest } } );
+            next->Segment->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = 0.0, .to = shape.heel - length, .offsets = along( offsets ), .extents = along( shape.extents ), .walls = true, .drops = along( shape.drops ), .head = { size.neck, size.crest }, .rise = rise } );
         }
         return;
     }
@@ -2868,6 +2949,9 @@ TTrack::export_as_text_( std::ostream &Output ) const {
         Output << "railprofile " << m_profile1.first << ' ';
     }
     Output << track_uneven::write_attribute( m_uneven, eType == tt_Switch );
+    if( eType == tt_Normal && iCategoryFlag == 1 ) {
+        Output << track_buckle::write_buckle( m_buckledeclared ) << track_buckle::write_cwr( m_cwr );
+    }
     if( false == m_friction.first.empty() ) {
         Output << "friction " << m_friction.first << ' ';
     }
@@ -2887,6 +2971,14 @@ TTrack::export_as_text_( std::ostream &Output ) const {
             << "timbermodel "
             << m_timber_model_name << ' '
             << ( m_timber_skin_name.empty() ? std::string{ "none" } : m_timber_skin_name ) << ' ';
+    }
+    for( auto const kind : { track_blend::kind::rails, track_blend::kind::ballast } ) {
+        auto const &lengths { m_blend[ static_cast<int>( kind ) ] };
+        for( std::size_t end = 0; end < lengths.size(); ++end ) {
+            if( lengths[ end ] != track_blend::default_length ) {
+                Output << ( kind == track_blend::kind::rails ? "blendrails " : "blendballast " ) << end + 1 << ' ' << lengths[ end ] << ' ';
+            }
+        }
     }
     // footer
     Output
@@ -3579,8 +3671,9 @@ TTrack::create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previ
                 {0.5f + map12, 0.f} }; // prawy skos
         }
     }
-    if( m_sleepers3d.active ) {
-        // the ballast lowered under the sleepers laid on it, so they stick out of it
+    if( m_sleepers3d.active && false == ( m_sleeper_enabled && false == m_sleeper_model_name.empty() ) ) {
+        // the ballast lowered under the sleepers laid on it, so they stick out of it; the ballast under the sleepers of
+        // the model of the track itself is moved by its own trackbed shift, as without the 3D sleepers
         for( auto &point : Output ) {
             point.position.y -= static_cast<float>( track_sleepers::bed_drop );
         }
@@ -4162,6 +4255,68 @@ path_table::InitTracks() {
     }
 
     TTrack::fetch_default_profiles();
+}
+
+namespace {
+
+// the tightest radius of the curve of a path in the plan [m], from the circles through its design points about 5 m apart
+// (without the unevenness, whose short waves would bend it): the curve the axles of a vehicle follow, whether the track
+// gives the radius or only its control points. 0 for a straight one; a radius over 15 km is taken for one, as
+// TDynamicObject::Update() takes it
+double tightest_radius(TSegment const &Segment) {
+
+    auto const length { Segment.GetLength() };
+    if( length < 0.5 ) {
+        return 0.0;
+    }
+    auto const intervals { std::max( 2, static_cast<int>( std::ceil( length / 5.0 ) ) ) };
+    auto const flat = [&]( int const Index ) {
+        auto const point { Segment.FastGetPoint( static_cast<double>( Index ) / intervals ) };
+        return glm::dvec2 { point.x, point.z }; };
+    auto tightest { 0.0 };
+    for( int index = 1; index < intervals; ++index ) {
+        auto const a { flat( index - 1 ) };
+        auto const b { flat( index ) };
+        auto const c { flat( index + 1 ) };
+        auto const ab { b - a };
+        auto const ac { c - a };
+        auto const area2 { std::abs( ab.x * ac.y - ab.y * ac.x ) };
+        if( area2 < 1e-9 ) {
+            continue;
+        }
+        auto const radius { glm::length( ab ) * glm::length( c - b ) * glm::length( ac ) / ( 2.0 * area2 ) };
+        if( radius < 15000.0 && ( tightest == 0.0 || radius < tightest ) ) {
+            tightest = radius;
+        }
+    }
+    return tightest;
+}
+
+} // namespace
+
+void
+path_table::CheckTracks() const {
+
+    std::vector<track_check::track> tracks;
+    for( auto *path : sequence() ) {
+        if( path == nullptr || ( path->iCategoryFlag & 1 ) == 0 || path->Segment == nullptr ) {
+            continue;
+        }
+        track_check::track track;
+        track.name = path->name();
+        track.velocity = path->VelocityGet();
+        track.plain = ( path->eType == tt_Normal );
+        track.radius = track.plain ? tightest_radius( *path->Segment ) : 0.0;
+        float roll1 { 0.f }, roll2 { 0.f };
+        path->Segment->GetRolls( roll1, roll2 );
+        track.gauge = path->fTrackWidth;
+        auto const spacing { 1000.0 * derailment::contact_spacing( track.gauge ) };
+        track.cant = { spacing * std::sin( roll1 ), spacing * std::sin( roll2 ) };
+        track.damage = path->iDamageFlag;
+        track.uneven = path->m_uneven;
+        tracks.emplace_back( std::move( track ) );
+    }
+    track_check::scan( tracks, []( std::string const &Line ) { WriteLog( Line ); } );
 }
 
 // legacy method, sends list of occupied paths over network

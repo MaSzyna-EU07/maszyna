@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Button.h"
 #include "vehicle/Gauge.h"
 #include "vehicle/enginestart.h"
+#include "vehicle/linebreaker.h"
 #include "audio/sound.h"
 #include "scripting/PyInt.h"
 #include "input/command.h"
@@ -172,6 +173,11 @@ class TTrain {
     inline
     std::string GetLabel( TSubModel const *Control ) const {
         return m_controlmapper.find( Control ); }
+    // the direction the mouse drags universal control Index in to any position between its ends, none if the control
+    // is only set to its ends (MaSzyna-EU07/maszyna#62)
+    universal_drag::direction universal_drag_direction( int const Index ) const;
+    // the position universal control Index is set to, from 0 to 1
+    float universal_position( int const Index ) const;
     void UpdateCab();
     bool Update( double const Deltatime );
 	void UpdateDirectionRelays();
@@ -235,6 +241,7 @@ class TTrain {
     void update_sounds_runningnoise( sound_source &Sound );
     void update_sounds_resonancenoise( sound_source &Sound ) const;
     void update_sounds_radio();
+    void update_sounds_fmradio( double const Deltatime );
     inline
     end cab_to_end( int const End ) const {
         return End == 2 ? end::rear : end::front; }
@@ -368,6 +375,12 @@ class TTrain {
     static void OnCommand_oilfuelpumptoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_oilpumpenable( TTrain *Train, command_data const &Command );
     static void OnCommand_oilpumpdisable( TTrain *Train, command_data const &Command );
+    static void OnCommand_tractionmodetoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_tractionmodecatenary( TTrain *Train, command_data const &Command );
+    static void OnCommand_tractionmodegenset( TTrain *Train, command_data const &Command );
+    static void OnCommand_gensettoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_gensetenable( TTrain *Train, command_data const &Command );
+    static void OnCommand_gensetdisable( TTrain *Train, command_data const &Command );
     static void OnCommand_waterheaterbreakertoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_waterheaterbreakerclose( TTrain *Train, command_data const &Command );
     static void OnCommand_waterheaterbreakeropen( TTrain *Train, command_data const &Command );
@@ -512,12 +525,20 @@ class TTrain {
 	static void OnCommand_radiovolumeincrease(TTrain *Train, command_data const &Command);
 	static void OnCommand_radiovolumedecrease(TTrain *Train, command_data const &Command);
 	static void OnCommand_radiovolumeset(TTrain *Train, command_data const &Command);
+	static void OnCommand_fmradiotoggle(TTrain *Train, command_data const &Command);
+	static void OnCommand_fmradiovolumeincrease(TTrain *Train, command_data const &Command);
+	static void OnCommand_fmradiovolumedecrease(TTrain *Train, command_data const &Command);
+	static void OnCommand_fmradiovolumeset(TTrain *Train, command_data const &Command);
+	static void OnCommand_fmradiotuneincrease(TTrain *Train, command_data const &Command);
+	static void OnCommand_fmradiotunedecrease(TTrain *Train, command_data const &Command);
+	static void OnCommand_fmradiotuneset(TTrain *Train, command_data const &Command);
 	static void OnCommand_radiofusetoggle(TTrain *Train, command_data const &Command);
 	static void OnCommand_radiofuseenable(TTrain *Train, command_data const &Command);
 	static void OnCommand_radiofusedisable(TTrain *Train, command_data const &Command);
     static void OnCommand_cabchangeforward( TTrain *Train, command_data const &Command );
     static void OnCommand_cabchangebackward( TTrain *Train, command_data const &Command );
     static void OnCommand_generictoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_genericset( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehiclemoveforwards( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehiclemovebackwards( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehicleboost( TTrain *Train, command_data const &Command );
@@ -547,7 +568,7 @@ class TTrain {
     TMoverParameters *mvThird { nullptr }; // trzeci człon (SN61)
     TMoverParameters *mvPantographUnit { nullptr }; // nearest pantograph equipped unit
     // helper variable, to prevent immediate switch between closing and opening line breaker circuit
-    int m_linebreakerstate { 0 }; // 0: open, 1: closed, 2: freshly closed (and yes this is awful way to go about it)
+    linebreaker::state m_linebreakerstate { linebreaker::state::open };
     static const commandhandler_map m_commandhandlers;
     control_mapper m_controlmapper;
 
@@ -592,6 +613,7 @@ public: // reszta może by?publiczna
     TGauge ggWiperSw; // przelacznik wycieraczek
 
     TGauge ggMaxCurrentCtrl;
+    TGauge ggAutoRelayButton; // przełącznik AutoRelay: rozruch automatyczny, załączenie bocznikowania spalinowozu
 
     TGauge ggMainOffButton;
     TGauge ggMainOnButton;
@@ -737,6 +759,8 @@ public: // reszta może by?publiczna
     TGauge ggFuelPumpButton; // fuel pump switch
     TGauge ggOilPumpButton; // oil pump switch
     TGauge ggOilFuelPumpButton; // joint oil and fuel pump switch
+    TGauge ggTractionModeSwitch; // traction selector of a dual-mode vehicle (catenary/genset)
+    TGauge ggGensetButton; // genset start switch of a dual-mode vehicle
     TGauge ggMotorBlowersFrontButton; // front traction motor fan switch
     TGauge ggMotorBlowersRearButton; // rear traction motor fan switch
     TGauge ggMotorBlowersAllOffButton; // motor fans shutdown switch
@@ -967,6 +991,17 @@ private:
     bool m_couplingdisconnect { false };
 	bool m_couplingdisconnectback { false };
     float m_radiovolume { Global.DefaultRadioVolume };
+    // broadcast radio receiver
+    bool m_fmradiopresent { false }; // the cab is equipped with the receiver
+    audio::fmradio_type m_fmradiotype { audio::fmradio_type::cheap };
+    bool m_fmradiopower { false };
+    bool m_fmradiotuned { false }; // helper, the tuning knob was set to its initial position
+    float m_fmradiovolume { 0.5f }; // position of the volume knob, in range 0-1
+    float m_fmradiodial { 50.f }; // position of the tuning knob, in range 0-100 covering the whole band. NOTE: gauges ignore changes of bound value smaller than 0.01, hence the wide range
+    int m_fmradiovolumechange { 0 }; // direction in which the volume knob is being turned
+    int m_fmradiotunechange { 0 }; // direction in which the tuning knob is being turned
+    float m_fmradiotunetime { 0.f }; // how long the tuning knob is being turned, it gets faster with time
+    sound_source m_fmradiosound { sound_placement::internal, 2 * EU07_SOUND_CABCONTROLSCUTOFFRANGE }; // provides location and soundproofing of the receiver
 
   public:
     float fPress[20][7]; // cisnienia dla wszystkich czlonow

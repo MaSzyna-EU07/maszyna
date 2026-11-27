@@ -1,0 +1,62 @@
+{
+  "description": "An ET22 with 20 loaded heavy wagons 764 (Uaai, 84 t of machinery each, KE, G; about 2650 t) on the line of et41_coal_td_downgrade_restriction: down 20 per mille into a 20 km/h restriction 400 m long, then to the signal at stop. The train is to keep above 10 km/h through the restriction (#187: it almost stops).",
+  "xfail": "#187, #263: down 20 per mille the AI holds the 20 km/h restriction by applying and releasing the train brake in turn (handle 0, then 1.25-2.75, then 0 again); the release of this G train takes 10-15 s, so each one comes late and the train dips to 8.5 km/h, below the 10 km/h #263 counts as a defect. It doesn't stop. Known limitation of the AI, not fixed here",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_downgrade_restriction.scn",
+  "timetable": "td_freight_downgrade.txt",
+  "vars": {
+    "consist": [
+      "node -1 0 {{vehicle}} dynamic pkp\\et22_v3 201E-1150 201E 0 headdriver 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w01 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w02 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w03 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w04 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w05 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w06 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w07 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w08 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w09 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w10 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w11 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w12 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w13 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w14 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w15 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w16 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w17 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w18 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w19 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic",
+      "node -1 0 {{vehicle}}_w20 dynamic db\\uaaikks_v1 993_6_221-5 764 0 nobody 3 84 hmachinnery1 enddynamic"
+    ]
+  },
+  "expect": "standstill",
+  "duration": 1200,
+  "timeout": 1500,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 20,
+      "within": 300
+    },
+    {
+      "type": "max_speed",
+      "limit": 60,
+      "tolerance": 5
+    },
+    {
+      "type": "keeps_moving",
+      "moving_speed": 20,
+      "min_speed": 10,
+      "until_distance": 2450
+    },
+    {
+      "type": "stops",
+      "moving_speed": 15,
+      "stop_speed": 1.0,
+      "hold": 20,
+      "min_distance": 2950,
+      "max_distance": 3110
+    }
+  ]
+}

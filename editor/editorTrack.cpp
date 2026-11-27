@@ -26,6 +26,7 @@ http:
 #include "utilities/utilities.h"
 #include "utilities/parser.h"
 #include "utilities/Logs.h"
+#include "utilities/asciiname.h"
 
 #include <algorithm>
 #include <cmath>
@@ -316,6 +317,7 @@ editor_track::state editor_track::capture(TTrack const &Track)
 	result.sleeper_ballast = Track.m_sleeper_ballast_z;
 	result.timber_model = Track.m_timber_model_name;
 	result.timber_skin = Track.m_timber_skin_name;
+	result.blend = Track.m_blend;
 	result.rail_profile = Track.m_profile1;
 	for (int i = 0; i < 6; ++i)
 		result.events[i] = events(const_cast<TTrack &>(Track), i);
@@ -423,6 +425,7 @@ void editor_track::apply(TTrack &Track, state const &State)
 	Track.m_sleeper_ballast_z = State.sleeper_ballast;
 	Track.m_timber_model_name = State.timber_model;
 	Track.m_timber_skin_name = State.timber_skin;
+	Track.m_blend = State.blend;
 	Track.m_profile1 = State.rail_profile;
 	for (int i = 0; i < 6; ++i)
 		events(Track, i) = State.events[i];
@@ -479,6 +482,12 @@ bool editor_track::name_valid(TTrack const &Track, std::string &Name, std::strin
 	if (Name.find_first_of(" \t\r\n\"';") != std::string::npos || Name.find("//") != std::string::npos)
 	{
 		Reason = "The name can't hold blanks, quotes, semicolons or //";
+		return false;
+	}
+	// the names the editor gives are plain ASCII: the code page of a scenery file decides what other letters turn into
+	if (false == ascii_name::plain(Name))
+	{
+		Reason = "The name can hold ASCII only: no Polish letters or other characters outside of it";
 		return false;
 	}
 	auto *owner{simulation::Paths.find(Name)};
@@ -577,11 +586,6 @@ bool editor_track::can_edit_geometry(TTrack const &Track, std::string &Reason)
 	if (false == is_supported(Track))
 	{
 		Reason = "Editing of this path type isn't supported";
-		return false;
-	}
-	if (Global.NvRenderer)
-	{
-		Reason = "Path geometry can't be rebuilt with the experimental renderer";
 		return false;
 	}
 	std::string why;
@@ -3400,6 +3404,9 @@ void write_ending(std::ostream &Text, TTrack const &Style, bool const Switch)
 	if ((Style.iCategoryFlag & 15) == 1 && false == Style.m_profile1.first.empty())
 		Text << "railprofile " << Style.m_profile1.first << ' ';
 	Text << track_uneven::write_attribute(Style.m_uneven, Switch);
+	// the welded rail goes on in the piece; a buckle stays where it was
+	if (false == Switch && (Style.iCategoryFlag & 15) == 1)
+		Text << track_buckle::write_cwr(Style.m_cwr);
 	// a piece of the track made from another one stays in its track circuit and under the same overhead line
 	for (auto const *isolated : Style.Isolated)
 		Text << "isolated " << isolated->asName << ' ';
@@ -3409,6 +3416,13 @@ void write_ending(std::ostream &Text, TTrack const &Style, bool const Switch)
 		Text << "sleepermodel " << Style.m_sleeper_frequency << ' ' << Style.m_sleeper_model_name << ' ' << (Style.m_sleeper_skin_name.empty() ? std::string{"none"} : Style.m_sleeper_skin_name) << ' ' << Style.m_sleeper_offset.x << ' ' << Style.m_sleeper_offset.y << ' ' << Style.m_sleeper_offset.z << ' ' << Style.m_sleeper_ballast_z << ' ';
 	if (false == Style.m_timber_model_name.empty())
 		Text << "timbermodel " << Style.m_timber_model_name << ' ' << (Style.m_timber_skin_name.empty() ? std::string{"none"} : Style.m_timber_skin_name) << ' ';
+	for (auto const kind : {track_blend::kind::rails, track_blend::kind::ballast})
+	{
+		auto const &lengths{Style.m_blend[static_cast<int>(kind)]};
+		for (std::size_t end = 0; end < lengths.size(); ++end)
+			if (lengths[end] != track_blend::default_length)
+				Text << (kind == track_blend::kind::rails ? "blendrails " : "blendballast ") << end + 1 << ' ' << lengths[end] << ' ';
+	}
 	Text << "endtrack\n";
 }
 

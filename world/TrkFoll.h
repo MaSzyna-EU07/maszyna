@@ -43,6 +43,11 @@ public:
         return pCurrentSegment ? pCurrentSegment->uneven_bend( fCurrentDistance ) : glm::dvec3 { 0.0 }; };
     // TTrack::rail_phase of the point Offset ahead of the axle along the vehicle
     double RailPhase( double const Offset ) const;
+    // TTrack::buckle_curvature at the axle, averaged over Base around it
+    double BuckleCurvature( double const Base ) const;
+    // the level direction of the path the axle runs on, with its buckle and its uneven track, over Reach [m] behind and
+    // ahead of it, the way the axle goes forwards; none without a path
+    glm::dvec3 PathDirection( double const Reach = 1.0 ) const;
     bool Init(TTrack *pTrack, TDynamicObject *NewOwner, double fDir);
 	void Reset();
     void Render(float fNr);
@@ -53,6 +58,7 @@ public:
   private:
 // methods
     bool ComputatePosition(); // przeliczenie pozycji na torze
+    int CrossEntry( TTrack const &Cross, int const Wish, int const End ) const;
 // members
     TTrack *pCurrentTrack = nullptr; // na którym torze siê znajduje
 	std::shared_ptr<TSegment> pCurrentSegment; // zwrotnice mog¹ mieæ dwa segmenty

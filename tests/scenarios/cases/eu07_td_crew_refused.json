@@ -1,0 +1,40 @@
+{
+  "description": "Crew events which must change nothing (eu07/maszyna#510): the run of eu07_td_timetable, with a coach standing on track 2, and crew events set off at the start and again at 10:36, on the run: a second driver for the locomotive (it has one), a driver for the coach (no cab), a cab which is none of 1, -1, 0, a driver taken off the coach (it has none) and a vehicle the scenery lacks. Each is refused in the log and the train runs its timetable to the stop at Przystanek.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_crew.scn",
+  "vars": {
+    "trainsets": [
+      "trainset td/rozklad tdo_n1734 0.0 0.1",
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic",
+      "endtrainset",
+      "trainset none tor2k 30.0 0.0",
+      "node -1 0 {{vehicle}}_coach dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "crew": [
+      "event autotest_crew_second putvalues 0 none 0 0 0 Crew:{{vehicle}} 1 0 endevent",
+      "event autotest_crew_coach putvalues 0 none 0 0 0 Crew:{{vehicle}}_coach 1 0 endevent",
+      "event autotest_crew_cab putvalues 0 none 0 0 0 Crew:{{vehicle}} 2 0 endevent",
+      "event autotest_crew_nobody putvalues 0 none 0 0 0 Crew:{{vehicle}}_coach 0 0 endevent",
+      "event autotest_crew_unknown putvalues 0 none 0 0 0 Crew:autotest_no_such_vehicle 0 0 endevent",
+      "event autotest_crew_all multiple 0 none autotest_crew_second autotest_crew_coach autotest_crew_cab autotest_crew_nobody autotest_crew_unknown endevent",
+      "node -1 0 autotest_crew_launcher1 eventlauncher 0 0 0 -1 none 1034 autotest_crew_all end",
+      "node -1 0 autotest_crew_launcher2 eventlauncher 0 0 0 -1 none 1036 autotest_crew_all end"
+    ]
+  },
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    { "type": "starts", "min_speed": 20, "within": 150 },
+    { "type": "max_speed", "limit": 90, "tolerance": 3 },
+    { "type": "brakes", "min_pressure": 0.5 },
+    { "type": "stops", "moving_speed": 20, "stop_speed": 1.0, "hold": 0, "min_distance": 1380, "max_distance": 1420 },
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_eu07_td_crew_refused\\] refused, the vehicle has a driver already" },
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_eu07_td_crew_refused_coach\\] refused, the vehicle has no cab" },
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_eu07_td_crew_refused\\] refused, the cab has to be 1, -1 or 0" },
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_eu07_td_crew_refused_coach\\] no driver to take off" },
+    { "type": "log_contains", "pattern": "PutValues - \\[Crew:autotest_no_such_vehicle\\]" },
+    { "type": "log_lacks", "pattern": "Crew: .* (takes cab|leaves)" }
+  ]
+}
