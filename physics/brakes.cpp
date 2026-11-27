@@ -13,9 +13,9 @@ Copyright (C) 2007-2014 Maciej Cierniak
 */
 
 #include "stdafx.h"
-#include "hamulce.h"
+#include "physics/brakes.h"
 #include <typeinfo>
-#include "MOVER.h"
+#include "physics/mover.h"
 #include "utilities/utilities.h"
 
 //---FUNKCJE OGOLNE---

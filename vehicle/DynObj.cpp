@@ -3130,7 +3130,7 @@ derail_motion::formation TDynamicObject::track_bed() const {
 int TDynamicObject::outward_side() const {
 
     // the track as designed turns from the rear axle to the front one: the outside of its curve, or its inside where a
-    // buckle bends the line the other way more than the curve does (the criteria of derailment, McZapkie/derailment.h)
+    // buckle bends the line the other way more than the curve does (the criteria of derailment, physics/derailment.h)
     if( auto const design { std::sin( Axle1.vAngles.z - Axle0.vAngles.z ) }; std::abs( design ) >= 1e-4 ) {
         auto const outside { design > 0.0 ? -1 : 1 };
         return MoverParameters->DerailAcceleration < 0.0 ? -outside : outside;

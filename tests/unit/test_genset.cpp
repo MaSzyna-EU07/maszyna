@@ -4,7 +4,7 @@
 #include "drive.h"
 #include "golden.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 
 // the genset of a dual-mode vehicle (eu07/maszyna#536): a second source of the traction circuit of an induction
 // motor vehicle next to its pantographs, which the traction selector picks. the vehicle is the game's E6ACT

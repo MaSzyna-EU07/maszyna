@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "McZapkie/derailment.h"
+#include "physics/derailment.h"
 #include "world/TrackUneven.h"
 
 #include <array>
@@ -20,7 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 
 // the check of the geometry of the rail tracks of a scenery (physics.trackcheck yes in eu07.ini): what the criteria of
-// derailment (McZapkie/derailment.h) and the plain rules of the track find suspicious, to the log once the scenery
+// derailment (physics/derailment.h) and the plain rules of the track find suspicious, to the log once the scenery
 // loaded, so a run can tell a faulty scenery from a faulty simulation. one line for a track with all it found
 // ("trackcheck: <name>: ..."), and a summary with the count of each kind. the damage flags are only counted: sceneries
 // set them for the jolts of a worn track (damage 31 on every track of line 107). a curve without a speed limit of its

@@ -8,10 +8,10 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "MOVER.h"
+#include "physics/mover.h"
 
 #include "vehicle/DynObj.h"
-#include "Oerlikon_ESt.h"
+#include "physics/oerlikonest.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/Timer.h"

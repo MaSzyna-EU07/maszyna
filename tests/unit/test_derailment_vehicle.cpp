@@ -1,13 +1,13 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
-#include "McZapkie/derailment.h"
-#include "McZapkie/MOVER.h"
+#include "physics/derailment.h"
+#include "physics/mover.h"
 #include "utilities/Globals.h"
 
 #include <cmath>
 
-// a vehicle too fast in a curve with physics.derailment of eu07.ini: the criteria of McZapkie/derailment.h checked by
+// a vehicle too fast in a curve with physics.derailment of eu07.ini: the criteria of physics/derailment.h checked by
 // TMoverParameters::check_derailment(), and what the vehicle comes to off the rails
 
 using test::definition;

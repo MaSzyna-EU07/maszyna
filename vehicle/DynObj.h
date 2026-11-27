@@ -14,7 +14,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "interfaces/IMaterial.h"
-#include "MOVER.h"
+#include "physics/mover.h"
 #include "world/TrkFoll.h"
 #include "vehicle/Button.h"
 #include "vehicle/AirCoupler.h"
@@ -774,7 +774,7 @@ private:
     void crop_off_track_terrain();
     // the bed of the track at the axles, the level direction of the track there, and the side the derailment throws the
     // vehicle to (1 the left of the front, -1 the right, 0 none): out of the curve of the track as designed, into it
-    // where a buckle bends the line the other way more (McZapkie/derailment.h); on a straight track out of the turn of
+    // where a buckle bends the line the other way more (physics/derailment.h); on a straight track out of the turn of
     // the path as it lies, a buckle on it
     derail_motion::formation track_bed() const;
     glm::dvec3 track_front() const;

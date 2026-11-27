@@ -13,7 +13,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 */
 
 #include "stdafx.h"
-#include "Oerlikon_ESt.h"
+#include "physics/oerlikonest.h"
 #include "utilities/utilities.h"
 
 // wstepny nacisk sprezyn na glowny przyrzad rozrzadczy, wyrazony jako roznica cisnien ZS - PG [bar]

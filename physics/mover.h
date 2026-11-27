@@ -14,10 +14,10 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <optional>
 #include <unordered_map>
-#include "hamulce.h"
-#include "couplerphysics.h"
-#include "derailment.h"
-#include "collision.h"
+#include "physics/brakes.h"
+#include "physics/couplerphysics.h"
+#include "physics/derailment.h"
+#include "physics/collision.h"
 #include "scripting/ladderlogic.h"
 #include "vehicle/derailmotion.h"
 #include "vehicle/odometerreading.h"

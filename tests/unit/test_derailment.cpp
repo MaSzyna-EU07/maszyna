@@ -1,11 +1,11 @@
 #include "stdafx.h"
 #include "doctest.h"
-#include "McZapkie/derailment.h"
+#include "physics/derailment.h"
 
 #include <cmath>
 #include <optional>
 
-// the criteria of derailment (McZapkie/derailment.h): overturning by the lateral acceleration the cant doesn't
+// the criteria of derailment (physics/derailment.h): overturning by the lateral acceleration the cant doesn't
 // balance, the flange climbing the rail by Nadal's Y/Q, either held over 2 m
 
 namespace dr = derailment;

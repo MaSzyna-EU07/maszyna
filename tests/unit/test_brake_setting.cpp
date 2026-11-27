@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "doctest.h"
 
-#include "McZapkie/MOVER.h"
-#include "McZapkie/hamulce.h"
+#include "physics/mover.h"
+#include "physics/brakes.h"
 #include "vehicle.h"
 #include "vehicle/brakesetting.h"
 #include "vehicle/Driver.h"

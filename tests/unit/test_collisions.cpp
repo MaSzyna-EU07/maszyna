@@ -3,8 +3,8 @@
 #include "consist.h"
 #include "drive.h"
 #include "vehicle.h"
-#include "McZapkie/collision.h"
-#include "McZapkie/MOVER.h"
+#include "physics/collision.h"
+#include "physics/mover.h"
 #include "utilities/Globals.h"
 
 #include <cmath>
@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-// collisions past the buffers with physics.collisions new (McZapkie/collision.h): the crush of the ends, the override,
+// collisions past the buffers with physics.collisions new (physics/collision.h): the crush of the ends, the override,
 // the push off the track, and what they do in trains of real vehicles
 
 using test::consist;

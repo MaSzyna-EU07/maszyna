@@ -4,7 +4,7 @@
 #include "drive.h"
 #include "real_vehicles.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 
 // the dynamic brake of the diesel-electric vehicles (Engine: EDBrake=, MaSzyna-EU07/maszyna#82): the traction motors
 // brake into resistors while the engine runs, with the force of the definition (EDBrakeFmax, the power limit

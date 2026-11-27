@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "doctest.h"
-#include "McZapkie/derailment.h"
+#include "physics/derailment.h"
 #include "world/TrackBuckle.h"
 
 #include <cmath>

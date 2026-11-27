@@ -2,13 +2,13 @@
 #include "doctest.h"
 #include "vehicle.h"
 #include "consist.h"
-#include "McZapkie/couplerphysics.h"
+#include "physics/couplerphysics.h"
 #include "utilities/Globals.h"
 
 #include <algorithm>
 #include <cmath>
 
-// the physical model of the couplings (McZapkie/couplerphysics.h, couplerphysics in eu07.ini): progressive buffers and
+// the physical model of the couplings (physics/couplerphysics.h, couplerphysics in eu07.ini): progressive buffers and
 // draw gear with friction hysteresis, pressed in series, the play of the coupling, its yield and its breaking
 
 using test::definition;

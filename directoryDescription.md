@@ -2,7 +2,7 @@
 # File structure
 | Directory| Description|
 |--|--|
-| McZapkie/ | Train Physics Engine |
+| physics/ | Vehicle physics: the mover, brakes, couplers, collisions, derailment |
 | gl/ |  OpenGL Abstraction Layer|
 | network/ |  Multiplayer Support
 | launcher/ |  Scenario/Vehicle Selection (built in starter)|

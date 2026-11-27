@@ -10,8 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/drivingaid.h"
 
-#include "McZapkie/MOVER.h"
-#include "McZapkie/hamulce.h"
+#include "physics/mover.h"
+#include "physics/brakes.h"
 
 #include <algorithm>
 #include <cmath>

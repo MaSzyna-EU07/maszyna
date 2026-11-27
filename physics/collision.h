@@ -12,8 +12,8 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 #include <optional>
 
-#include "couplerphysics.h"
-#include "derailment.h"
+#include "physics/couplerphysics.h"
+#include "physics/derailment.h"
 
 // what a collision of two vehicles does to them past their buffers (physics.collisions new in eu07.ini, see
 // TMoverParameters::CollisionDetect()), as plain functions of the vehicles and the hit:
