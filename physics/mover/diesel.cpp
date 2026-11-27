@@ -28,31 +28,22 @@ http://mozilla.org/MPL/2.0/.
 #include <utility>
 #include <vector>
 #include "physics/mover/internal.h"
+#include "physics/mover/drive.h"
 
 
 double TMoverParameters::EngineRPMRatio() const
 {
-
-	return std::clamp(EngineType == TEngineType::DieselElectric ? 60.0 * std::abs(enrot) / DElist[MainCtrlPosNo].RPM :
-	                  EngineType == TEngineType::DieselEngine   ? std::abs(enrot) / nmax :
-	                                                              1.0, // shouldn't ever get here but, eh
-	             0.0, 1.0);
+	return Drive().EngineRpmRatio(*this);
 }
 
 double TMoverParameters::EngineIdleRPM() const
 {
-
-	return EngineType == TEngineType::DieselEngine   ? dizel_nmin * 60 :
-	       EngineType == TEngineType::DieselElectric ? DElist[MainCtrlNoPowerPos()].RPM :
-	                                                   std::numeric_limits<double>::max(); // shouldn't ever get here but, eh
+	return Drive().EngineIdleRpm(*this);
 }
 
 double TMoverParameters::EngineMaxRPM() const
 {
-
-	return EngineType == TEngineType::DieselEngine   ? dizel_nmax * 60 :
-	       EngineType == TEngineType::DieselElectric ? DElist[MainCtrlPosNo].RPM :
-	                                                   std::numeric_limits<double>::max(); // shouldn't ever get here but, eh
+	return Drive().EngineMaxRpm(*this);
 }
 
 // water pump status check

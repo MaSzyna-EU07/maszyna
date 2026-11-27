@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include <utility>
 #include <vector>
 #include "physics/mover/internal.h"
+#include "physics/mover/drive.h"
 
 
 double TableInterpolation(std::map<double, double> &Map, double Parameter)
@@ -390,25 +391,7 @@ bool TMoverParameters::MotorBlowerPowerIsAvailable(cooling_fan const &Blower) co
 
 double TMoverParameters::ShowCurrent(int AmpN) const
 { // Odczyt poboru prądu na podanym amperomierzu
-	switch (EngineType)
-	{
-	case TEngineType::ElectricInductionMotor:
-		switch (AmpN)
-		{ // do asynchronicznych
-		case 1:
-			return WindingRes * Mm / Vadd;
-		case 2:
-			return eimv_pr * WindingRes;
-		default:
-			return ShowCurrentP(AmpN); // T_MoverParameters::
-		}
-		break;
-	case TEngineType::DieselElectric:
-		return fabs(Im);
-		break;
-	default:
-		return ShowCurrentP(AmpN); // T_MoverParameters::
-	}
+	return Drive().ShowCurrent(*this, AmpN);
 };
 
 bool TMoverParameters::MotorBlowersSwitch(bool State, end const Side, range_t const Notify)
@@ -585,7 +568,6 @@ bool TMoverParameters::DynamicBrakeSwitch(bool Switch)
 // *************************************************************************************************
 double TMoverParameters::TractionForce(double dt)
 {
-	using enum TEngineType;
 	Ft = 0;
 	double dtrans{0.0};
 	double dmoment{0.0};
@@ -602,65 +584,17 @@ double TMoverParameters::TractionForce(double dt)
 	// hunter-091012: przeniesione z if DirActive<>0 (zeby po zejsciu z kierunku dalej spadala predkosc wentylatorow)
 	// wentylatory rozruchowe
 	// TBD, TODO: move this to update, it doesn't exactly have much to do with traction
-	UpdateVentilators(dt);
-	auto const PosRatio{UpdateEnginePower()};
+	auto const &drive{Drive()};
+	drive.UpdateVentilators(*this, dt);
+	auto const PosRatio{drive.UpdateEnginePower(*this)};
 	VoltageRelaysCheck();
 
-	if (EngineType == DieselElectric && DEDynamicBrake.source != diesel_electric_dynamic_brake::control::none)
-	{
-		update_dieselelectric_dynamic_brake(dt);
-	}
-
+	drive.BeforeTractionForce(*this, dt);
 	if (DirActive != 0)
-		switch (EngineType)
-		{
-		case Dumb:
-		{
-			DumbTractionForce(PosRatio);
-			break;
-		}
-		case WheelsDriven:
-		{
-			WheelsDrivenTractionForce(dt);
-			break;
-		}
-		case ElectricSeriesMotor:
-		{
-			SeriesMotorTractionForce(dt);
-			break;
-		}
-		case DieselEngine:
-		{
-			DieselEngineTractionForce(dt, dmoment, dtrans);
-			break;
-		}
-		case DieselElectric: // youBy
-		{
-			DieselElectricTractionForce(revolutions);
-			if (DEDynamicBrake.level > 0.0)
-			{
-				// braking: no power asked for, so the drive above gave no force
-				apply_dieselelectric_dynamic_brake(dt);
-			}
-			break;
-		}
-		case ElectricInductionMotor:
-		{
-			InductionMotorTractionForce(dt);
-			break;
-		}
-		case None:
-		default:
-		{
-			break;
-		}
-		} // case EngineType
-
-	if (EngineType == DieselElectric)
 	{
-		// rough approximation of extra effort to overcome friction etc
-		EnginePower += EngineRPMRatio() * 0.15 * DElist[MainCtrlPosNo].GenPower;
+		drive.UpdateTractionForce(*this, DriveStep{dt, PosRatio, revolutions, dmoment, dtrans});
 	}
+	drive.AfterTractionForce(*this);
 
 	return Ft;
 }
@@ -668,62 +602,7 @@ double TMoverParameters::TractionForce(double dt)
 // the starting resistors' blowers, and the diesels' radiator fans
 void TMoverParameters::UpdateVentilators(double dt)
 {
-	switch (EngineType)
-	{
-
-	case TEngineType::ElectricSeriesMotor:
-	{
-		if (MainCircuitPowered())
-		{
-			UpdateResistorBlowers(dt);
-		} // mains
-		else
-		{
-			RventRot *= std::max(0.0, 1.0 - RVentSpeed * dt);
-		}
-		break;
-	}
-
-	case TEngineType::DieselElectric:
-	{
-		// NOTE: for this type RventRot is the speed of motor blowers; we also update radiator fans while at it
-		if (true == Mains)
-		{
-			// TBD, TODO: currently ignores RVentType, fix this?
-			RventRot += std::clamp(enrot - RventRot, -100.0, 50.0) * dt;
-			dizel_heat.rpmw += static_cast<float>(std::clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt);
-			dizel_heat.rpmw2 += static_cast<float>(std::clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt);
-		}
-		else
-		{
-			RventRot *= std::max(0.0, 1.0 - RVentSpeed * dt);
-			dizel_heat.rpmw *= static_cast<float>(std::max(0.0, 1.0 - dizel_heat.rpmw * dt));
-			dizel_heat.rpmw2 *= static_cast<float>(std::max(0.0, 1.0 - dizel_heat.rpmw2 * dt));
-		}
-		break;
-	}
-
-	case TEngineType::DieselEngine:
-	{
-		// NOTE: we update only radiator fans, as vehicles with diesel engine don't have other ventilators
-		if (true == Mains)
-		{
-			dizel_heat.rpmw += static_cast<float>(std::clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt);
-			dizel_heat.rpmw2 += static_cast<float>(std::clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt);
-		}
-		else
-		{
-			dizel_heat.rpmw *= static_cast<float>(std::max(0.0, 1.0 - dizel_heat.rpmw * dt));
-			dizel_heat.rpmw2 *= static_cast<float>(std::max(0.0, 1.0 - dizel_heat.rpmw2 * dt));
-		}
-		break;
-	}
-
-	default:
-	{
-		break;
-	}
-	}
+	Drive().UpdateVentilators(*this, dt);
 }
 
 // the starting resistors' blowers of the series motors with the line breaker closed, worked by hand or by the current
@@ -778,38 +657,7 @@ void TMoverParameters::UpdateResistorBlowers(double dt)
 // the power of a dumb or diesel engine; returns the ratio of the power a dumb engine is set to
 double TMoverParameters::UpdateEnginePower()
 {
-	double PosRatio{0.0};
-	switch (EngineType)
-	{
-	case TEngineType::Dumb:
-	{
-		PosRatio = (MainCtrlPos + ScndCtrlPos) / (MainCtrlPosNo + ScndCtrlPosNo + 0.01);
-		EnginePower = /*1000.0 **/ Power * PosRatio;
-		break;
-	}
-	case TEngineType::DieselEngine:
-	{
-		dizel_Power = Mm * enrot * (2.0 * M_PI / 1000.0);
-		EnginePower = (dizel_Mstand + Mm) * enrot * (2.0 * M_PI / 1000.0);
-		if (MainCtrlPowerPos() > 1)
-		{
-			// dodatkowe opory z powodu sprezarki}
-			//                dmoment -= dizel_Mstand * ( 0.2 * enrot / dizel_nmax ); //yB: skąd to w ogóle się bierze?!
-		}
-		break;
-	}
-	case TEngineType::DieselElectric:
-	{
-		EnginePower = 0; // the actual calculation is done in two steps later in the method
-		break;
-	}
-	default:
-	{
-		break;
-	}
-	}
-
-	return PosRatio;
+	return Drive().UpdateEnginePower(*this);
 }
 
 // the line breaker opened by a voltage out of the motors' range, and the line contactors of a diesel-electric
@@ -1878,4 +1726,10 @@ double TMoverParameters::ShowCurrentP(int AmpN) const
 				current = static_cast<int>(Couplers[b].Connected->ShowCurrent(AmpN));
 		return current;
 	}
+}
+
+// the drive of the kind of engine of the vehicle
+TractionDrive const &TMoverParameters::Drive() const
+{
+	return DriveOf(EngineType);
 }

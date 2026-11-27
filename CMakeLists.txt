@@ -746,6 +746,7 @@ set(CORE_SOURCES
 "physics/brakes.cpp"
 "physics/vehiclecommand.cpp"
 "physics/mover/mover.cpp"
+"physics/mover/drive.cpp"
 "physics/mover/cab.cpp"
 "physics/mover/collisions.cpp"
 "physics/mover/commands.cpp"
