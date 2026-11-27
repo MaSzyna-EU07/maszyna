@@ -10,7 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/enginestart.h"
 
-#include "McZapkie/MOVER.h"
+#include "physics/mover.h"
 #include "utilities/utilities.h"
 
 namespace engine_start {
@@ -30,7 +30,7 @@ TMoverParameters *find_along(TMoverParameters const &Start, int const Side, TMov
 	// a train can't loop back on itself, the limit only guards against a broken chain of couplers
 	for (auto steps = 0; steps < 1000; ++steps) {
 		auto const &coupler{vehicle->Couplers[side]};
-		if (coupler.Connected == nullptr || false == TestFlag(coupler.CouplingFlag, coupling::control)) {
+		if (coupler.Connected == nullptr || false == coupler.CouplingFlag.HasAll(Coupling::control)) {
 			return nullptr;
 		}
 		// onwards through the other end of the next vehicle, whichever way round it stands

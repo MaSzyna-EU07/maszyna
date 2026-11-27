@@ -11,9 +11,32 @@
 #include <fstream>
 #include <sstream>
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 
 namespace test {
+
+namespace {
+
+// the number the traces record for the type of a vehicle: the bit it was before the type became an enum, so the traces
+// recorded before it still compare
+int legacy_code(train_type const Type) {
+	switch (Type) {
+	case train_type::emu: return 0x1;
+	case train_type::et41: return 0x2;
+	case train_type::et42: return 0x4;
+	case train_type::pseudodiesel: return 0x8;
+	case train_type::et22: return 0x10;
+	case train_type::sn61: return 0x20;
+	case train_type::ep05: return 0x40;
+	case train_type::et40: return 0x80;
+	case train_type::skoda181: return 0x100;
+	case train_type::dmu: return 0x200;
+	case train_type::generic: return 0;
+	}
+	return 0;
+}
+
+} // namespace
 
 namespace channels {
 
@@ -103,7 +126,7 @@ std::vector<channel> doors() {
 std::vector<channel> parameters() {
 	std::vector<channel> result{
 	    {"CategoryFlag", [](auto const &M) { return M.CategoryFlag; }},
-	    {"TrainType", [](auto const &M) { return M.TrainType; }},
+	    {"TrainType", [](auto const &M) { return legacy_code(M.TrainType); }},
 	    {"EngineType", [](auto const &M) { return static_cast<int>(M.EngineType); }},
 	    {"Vmax", [](auto const &M) { return M.Vmax; }},
 	    {"Mass", [](auto const &M) { return M.Mass; }},

@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+#include "physics/mover.h"
 
 void
 TController::hint( driver_hint const Value, hintpredicate const Predicate, float const Predicateparameter ) {
@@ -329,7 +330,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 // the local switch of the converter too, where the line contactors wait for the vehicle's own converter
                 // (LineContactorsInterlock): left off by the human driver, that vehicle would never take power
                 pVehicle->for_each(
-                    coupling::control,
+                    Coupling::control,
                     []( TDynamicObject * Vehicle ) {
                         auto *vehicle { Vehicle->MoverParameters };
                         if( vehicle->LineContactorsHeldByLocalConverterSwitch() ) {
@@ -1321,7 +1322,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         }
         case driver_hint::headcodepc5: {
             if( AIControllFlag
-             || ( Global.AITrainman && false == pVehicles[end::rear]->is_connected(pVehicle, coupling::control) ) ) {
+             || ( Global.AITrainman && false == pVehicles[end::rear]->is_connected(pVehicle, Coupling::control) ) ) {
                 pVehicles[ end::rear ]->RaLightsSet( -1, light::redmarker_left | light::redmarker_right | light::rearendsignals );
             }
             remove_hint( driver_hint::headcodetb1 );

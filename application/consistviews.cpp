@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "vehicle/Driver.h"
 #include "vehicle/DynObj.h"
+#include "physics/mover.h"
 
 namespace {
 
@@ -143,7 +144,7 @@ TDynamicObject *consist_views::pick(std::vector<TDynamicObject *> const &Train, 
 
 double consist_views::gap_beyond(TDynamicObject const *Vehicle, int const End) {
 	auto const &neighbour{Vehicle->MoverParameters->Neighbours[End]};
-	if (neighbour.vehicle == nullptr || Vehicle->MoverParameters->Couplers[End].CouplingFlag != 0) {
+	if (neighbour.vehicle == nullptr || false == Vehicle->MoverParameters->Couplers[End].CouplingFlag.Empty()) {
 		return -1.0;
 	}
 	if (neighbour.distance > cameraviews::coupler_watch_range) {

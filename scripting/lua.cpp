@@ -7,6 +7,7 @@
 #include "simulation/simulation.h"
 #include "scripting/luasandbox.h"
 #include "utilities/utilities.h"
+#include "physics/mover.h"
 
 lua::lua()
 {

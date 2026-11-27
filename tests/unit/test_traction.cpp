@@ -9,7 +9,7 @@
 #include "real_vehicles.h"
 #include "scenario.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 
 using test::definition;
 using test::vehicle;

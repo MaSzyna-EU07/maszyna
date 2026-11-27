@@ -15,7 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "utilities/Logs.h"
 #include "utilities/Globals.h"
-#include "MOVER.h"
+#include "physics/mover.h"
 
 void locale::init()
 {
@@ -419,25 +419,25 @@ std::string locale::label_cab_control(std::string const &Label)
 
 const std::string& locale::coupling_name(int c)
 {
-	static std::unordered_map<coupling, std::string> coupling_names =
+	static std::unordered_map<Coupling, std::string> coupling_names =
 	{
-	    { coupling::faux, STRN("faux") },
-	    { coupling::coupler, STRN("coupler") },
-	    { coupling::brakehose, STRN("brake hose") },
-	    { coupling::control, STRN("control") },
-	    { coupling::highvoltage, STRN("high voltage") },
-	    { coupling::gangway, STRN("gangway") },
-	    { coupling::mainhose, STRN("main hose") },
-	    { coupling::heating, STRN("heating") },
-	    { coupling::permanent, STRN("permanent") },
-        { coupling::power24v, STRN("power 24V") },
-        { coupling::power110v, STRN("power 110V") },
-        { coupling::power3x400v, STRN("power 3x400V") },
+	    { Coupling::none, STRN("faux") },
+	    { Coupling::coupler, STRN("coupler") },
+	    { Coupling::brakeHose, STRN("brake hose") },
+	    { Coupling::control, STRN("control") },
+	    { Coupling::highVoltage, STRN("high voltage") },
+	    { Coupling::gangway, STRN("gangway") },
+	    { Coupling::mainHose, STRN("main hose") },
+	    { Coupling::heating, STRN("heating") },
+	    { Coupling::permanent, STRN("permanent") },
+        { Coupling::power24v, STRN("power 24V") },
+        { Coupling::power110v, STRN("power 110V") },
+        { Coupling::power3x400v, STRN("power 3x400V") },
 	};
 
 	static std::string unknown(STRN("unknown"));
 
-	auto it = coupling_names.find(static_cast<coupling>(c));
+	auto it = coupling_names.find(static_cast<Coupling>(c));
 	if (it != coupling_names.end())
 		return lookup_s(it->second);
 	else

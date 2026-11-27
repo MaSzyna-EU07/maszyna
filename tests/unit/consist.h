@@ -21,8 +21,8 @@ namespace test {
 class consist {
 public:
 	// everything a coupler can join, as two vehicles of a train coupled by a crew
-	static constexpr int full_coupling{coupling::coupler | coupling::brakehose | coupling::mainhose | coupling::control | coupling::gangway | coupling::heating |
-	                                   coupling::permanent | coupling::power110v | coupling::power24v | coupling::highvoltage};
+	static constexpr CouplingSet full_coupling{Coupling::coupler | Coupling::brakeHose | Coupling::mainHose | Coupling::control | Coupling::gangway | Coupling::heating |
+	                                   Coupling::permanent | Coupling::power110v | Coupling::power24v | Coupling::highVoltage};
 
 	consist();
 	~consist();
@@ -31,8 +31,8 @@ public:
 
 	// a vehicle at the back of the train, its front coupler joined to the rear one of the last vehicle with
 	// the given coupling (coupling flags), Gap [m] between their buffers. Cab as for a vehicle. a vehicle
-	// with no coupling (coupling::faux) is free on the same track, as one about to be coupled or hit
-	vehicle &add(definition const &Definition, int Cab = 0, int Coupling = full_coupling, double Velocity = 0.0, double Gap = 0.0);
+	// with no coupling (Coupling::none) is free on the same track, as one about to be coupled or hit
+	vehicle &add(definition const &Definition, int Cab = 0, CouplingSet couplings = full_coupling, double Velocity = 0.0, double Gap = 0.0);
 
 	vehicle &operator[](std::size_t Index) { return *m_vehicles[Index]; }
 	std::size_t size() const { return m_vehicles.size(); }

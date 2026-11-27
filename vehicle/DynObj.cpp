@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/DynObj.h"
+#include "physics/mover.h"
 
 #include "vehicle/lightsprogrammer.h"
 
@@ -75,18 +76,6 @@ TSubModel *
 GetSubmodelFromName( TModel3d * const Model, std::string const Name ) {
 
     return Model ? Model->GetFromName(Name) : nullptr;
-}
-
-// Ra 2015-01: sprawdzenie dostępności tekstury o podanej nazwie
-std::string
-TextureTest( std::string const &Name ) {
-
-    auto const lookup {
-        FileExists(
-            { Global.asCurrentTexturePath + Name, Name, paths::textures + Name },
-            { ".mat", ".dds", ".tga", ".ktx", ".png", ".bmp", ".jpg", ".tex" } ) };
-
-    return lookup.first + lookup.second;
 }
 
 //---------------------------------------------------------------------------
@@ -257,72 +246,6 @@ void TAnim::Parovoz(){
 */
 
 
-// assigns specified texture or a group of textures to replacable texture slots
-void
-material_data::assign( std::string const &Replacableskin ) {
-
-    // a template puts its parameter after a folder ("tabl/(p6)"): a texture made by a script given there keeps its scheme
-    if( auto const scheme { Replacableskin.find( "/make:" ) };
-        scheme != std::string::npos
-     && false == contains( Replacableskin, '|' ) ) {
-        assign( Replacableskin.substr( scheme + 1 ) );
-        return;
-    }
-    // check for the pipe method first
-    if( contains( Replacableskin,  '|' ) ) {
-        cParser nameparser( Replacableskin );
-        nameparser.getTokens( 4, false, "|" );
-        int skinindex = 0;
-        std::string texturename; nameparser >> texturename;
-        while( texturename != "" && skinindex < 4 ) {
-            replacable_skins[ skinindex + 1 ] = GfxRenderer->Fetch_Material( texturename );
-            ++skinindex;
-            texturename = ""; nameparser >> texturename;
-        }
-        multi_textures = skinindex;
-    }
-    else {
-        // otherwise try the basic approach
-        int skinindex = 0;
-        do {
-            // test quietly for file existence so we don't generate tons of false errors in the log
-            // NOTE: this means actual missing files won't get reported which is hardly ideal, but still somewhat better
-            auto const material { TextureTest( ToLower( Replacableskin + "," + std::to_string( skinindex + 1 ) ) ) };
-            if( true == material.empty() ) { break; }
-
-            replacable_skins[ skinindex + 1 ] = GfxRenderer->Fetch_Material( material );
-            ++skinindex;
-        } while( skinindex < 4 );
-        multi_textures = skinindex;
-        if( multi_textures == 0 ) {
-            // zestaw nie zadziałał, próbujemy normanie
-            replacable_skins[ 1 ] = GfxRenderer->Fetch_Material( Replacableskin );
-        }
-    }
-    if( replacable_skins[ 1 ] == null_handle ) {
-        // last ditch attempt, check for single replacable skin texture
-        replacable_skins[ 1 ] = GfxRenderer->Fetch_Material( Replacableskin );
-    }
-
-    // BUGS! it's not entierly designed whether opacity is property of material or submodel,
-    // and code does confusing things with this in various places
-    textures_alpha = GfxRenderer->Material(replacable_skins[1])->is_translucent() ? 0x31310031 : // tekstura -1 z kanałem alfa - nie renderować w cyklu nieprzezroczystych
-	                                                                                0x30300030; // wszystkie tekstury nieprzezroczyste - nie renderować w cyklu przezroczystych
-    if( GfxRenderer->Material( replacable_skins[ 2 ] )->is_translucent() ) {
-        // tekstura -2 z kanałem alfa - nie renderować w cyklu nieprzezroczystych
-        textures_alpha |= 0x02020002;
-    }
-    if( GfxRenderer->Material( replacable_skins[ 3 ] )->is_translucent() ) {
-        // tekstura -3 z kanałem alfa - nie renderować w cyklu nieprzezroczystych
-        textures_alpha |= 0x04040004;
-    }
-    if( GfxRenderer->Material( replacable_skins[ 4 ] )->is_translucent() ) {
-        // tekstura -4 z kanałem alfa - nie renderować w cyklu nieprzezroczystych
-        textures_alpha |= 0x08080008;
-    }
-}
-
-
 namespace {
 
 // a luadestinationsign: or wasmdestinationsign: block, its script in the vehicle folder when it has no path of its own
@@ -376,7 +299,7 @@ bool TDynamicObject::destination_data::deserialize_mapping( cParser &Input ) {
 
 
 //---------------------------------------------------------------------------
-TDynamicObject * TDynamicObject::FirstFind(int &coupler_nr, int cf)
+TDynamicObject * TDynamicObject::FirstFind(int &coupler_nr, CouplingSet const cf)
 { // szukanie skrajnego połączonego pojazdu w pociagu
     // od strony sprzegu (coupler_nr) obiektu (start)
     TDynamicObject *temp = this;
@@ -384,7 +307,7 @@ TDynamicObject * TDynamicObject::FirstFind(int &coupler_nr, int cf)
     {
         if (!temp)
             return nullptr; // Ra: zabezpieczenie przed ewentaulnymi błędami sprzęgów
-        if ((temp->MoverParameters->Couplers[coupler_nr].CouplingFlag & cf) != cf)
+        if (false == temp->MoverParameters->Couplers[coupler_nr].CouplingFlag.HasAll(cf))
             return temp; // nic nie ma już dalej podłączone sprzęgiem cf
         if (coupler_nr == end::front)
         { // jeżeli szukamy od sprzęgu 0
@@ -427,7 +350,7 @@ float TDynamicObject::GetEPP()
             break; // Ra: zabezpieczenie przed ewentaulnymi błędami sprzęgów
         eq += temp->MoverParameters->PipePress * temp->MoverParameters->Dim.L;
         am += temp->MoverParameters->Dim.L;
-        if ((temp->MoverParameters->Couplers[coupler_nr].CouplingFlag & coupling::brakehose) != coupling::brakehose)
+        if ((temp->MoverParameters->Couplers[coupler_nr].CouplingFlag & Coupling::brakeHose) != Coupling::brakeHose)
             break; // nic nie ma już dalej podłączone
         if (coupler_nr == 0)
         { // jeżeli szukamy od sprzęgu 0
@@ -461,7 +384,7 @@ float TDynamicObject::GetEPP()
             break; // Ra: zabezpieczenie przed ewentaulnymi błędami sprzęgów
         eq += temp->MoverParameters->PipePress * temp->MoverParameters->Dim.L;
         am += temp->MoverParameters->Dim.L;
-        if ((temp->MoverParameters->Couplers[coupler_nr].CouplingFlag & coupling::brakehose) != coupling::brakehose)
+        if ((temp->MoverParameters->Couplers[coupler_nr].CouplingFlag & Coupling::brakeHose) != Coupling::brakeHose)
             break; // nic nie ma już dalej podłączone
         if (coupler_nr == 0)
         { // jeżeli szukamy od sprzęgu 0
@@ -492,7 +415,7 @@ float TDynamicObject::GetEPP()
 };
 
 //---------------------------------------------------------------------------
-TDynamicObject * TDynamicObject::GetFirstDynamic(int cpl_type, int cf)
+TDynamicObject * TDynamicObject::GetFirstDynamic(int cpl_type, CouplingSet const cf)
 { // Szukanie skrajnego połączonego pojazdu w pociagu
     // od strony sprzegu (cpl_type) obiektu szukajacego
     // Ra: wystarczy jedna funkcja do szukania w obu kierunkach
@@ -1007,7 +930,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             // display _xon if connected with another vehicle and not the coupling owner
             // display _xon if not connected, but equipped with coupling adapter
             // display _off if not connected, not equipped with coupling adapter or if _xon model is missing
-            if( TestFlag( MoverParameters->Couplers[ end::front ].CouplingFlag, coupling::coupler ) ) {
+            if( MoverParameters->Couplers[ end::front ].CouplingFlag.HasAll(Coupling::coupler) ) {
                 if( MoverParameters->Couplers[ end::front ].Render ) {
                     btCoupler1.TurnOn();
                 }
@@ -1022,7 +945,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                     btnOn = true;
                 }
             }
-            if( TestFlag( MoverParameters->Couplers[ end::rear ].CouplingFlag, coupling::coupler ) ) {
+            if( MoverParameters->Couplers[ end::rear ].CouplingFlag.HasAll(Coupling::coupler) ) {
                 if( MoverParameters->Couplers[ end::rear ].Render ) {
                     btCoupler2.TurnOn();
                 }
@@ -1049,7 +972,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                 SetPneumatic(true, true); // ktore z nich nalezy
                 SetPneumatic(false, true); // wyswietlic w tej klatce
 
-                if (TestFlag(MoverParameters->Couplers[end::front].CouplingFlag, ctrain_pneumatic))
+                if (MoverParameters->Couplers[end::front].CouplingFlag.HasAll(Coupling::brakeHose))
                 {
                     switch (cp1)
                     {
@@ -1069,7 +992,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                     btnOn = true;
                 }
 
-                if (TestFlag(MoverParameters->Couplers[end::rear].CouplingFlag, ctrain_pneumatic))
+                if (MoverParameters->Couplers[end::rear].CouplingFlag.HasAll(Coupling::brakeHose))
                 {
                     switch (cp2)
                     {
@@ -1090,7 +1013,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                 }
 
                 // przewody zasilajace, j.w. (yB)
-                if (TestFlag(MoverParameters->Couplers[end::front].CouplingFlag, ctrain_scndpneumatic))
+                if (MoverParameters->Couplers[end::front].CouplingFlag.HasAll(Coupling::mainHose))
                 {
                     switch (sp1)
                     {
@@ -1110,7 +1033,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                     btnOn = true;
                 }
 
-                if (TestFlag(MoverParameters->Couplers[end::rear].CouplingFlag, ctrain_scndpneumatic))
+                if (MoverParameters->Couplers[end::rear].CouplingFlag.HasAll(Coupling::mainHose))
                 {
                     switch (sp2)
                     {
@@ -1135,7 +1058,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             {
                 // przewody powietrzne j.w., ABu: decyzja czy rysowac tylko na podstawie
                 // 'render'
-                if (TestFlag(MoverParameters->Couplers[end::front].CouplingFlag, ctrain_pneumatic))
+                if (MoverParameters->Couplers[end::front].CouplingFlag.HasAll(Coupling::brakeHose))
                 {
                     if (MoverParameters->Couplers[end::front].Render)
                         btCPneumatic1.TurnOn();
@@ -1144,7 +1067,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                     btnOn = true;
                 }
 
-                if (TestFlag(MoverParameters->Couplers[end::rear].CouplingFlag, ctrain_pneumatic))
+                if (MoverParameters->Couplers[end::rear].CouplingFlag.HasAll(Coupling::brakeHose))
                 {
                     if (MoverParameters->Couplers[end::rear].Render)
                         btCPneumatic2.TurnOn();
@@ -1156,7 +1079,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                 // przewody powietrzne j.w., ABu: decyzja czy rysowac tylko na podstawie
                 // 'render'
                 // //yB - zasilajace
-                if (TestFlag(MoverParameters->Couplers[0].CouplingFlag, ctrain_scndpneumatic))
+                if (MoverParameters->Couplers[0].CouplingFlag.HasAll(Coupling::mainHose))
                 {
                     if (MoverParameters->Couplers[0].Render)
                         btPneumatic1.TurnOn();
@@ -1165,7 +1088,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                     btnOn = true;
                 }
 
-                if (TestFlag(MoverParameters->Couplers[1].CouplingFlag, ctrain_scndpneumatic))
+                if (MoverParameters->Couplers[1].CouplingFlag.HasAll(Coupling::mainHose))
                 {
                     if (MoverParameters->Couplers[1].Render)
                         btPneumatic2.TurnOn();
@@ -1201,26 +1124,26 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
         // Winger 160204 - podnoszenie pantografow
 
         // przewody sterowania ukrotnionego
-        if (TestFlag(MoverParameters->Couplers[0].CouplingFlag, coupling::control))
+        if (MoverParameters->Couplers[0].CouplingFlag.HasAll(Coupling::control))
         {
             btCCtrl1.Turn( true );
             btnOn = true;
         }
         // else btCCtrl1.TurnOff();
-        if (TestFlag(MoverParameters->Couplers[1].CouplingFlag, coupling::control))
+        if (MoverParameters->Couplers[1].CouplingFlag.HasAll(Coupling::control))
         {
             btCCtrl2.Turn( true );
             btnOn = true;
         }
         // else btCCtrl2.TurnOff();
         // McZapkie-181103: mostki przejsciowe
-        if (TestFlag(MoverParameters->Couplers[0].CouplingFlag, ctrain_passenger))
+        if (MoverParameters->Couplers[0].CouplingFlag.HasAll(Coupling::gangway))
         {
             btCPass1.Turn( true );
             btnOn = true;
         }
         // else btCPass1.TurnOff();
-        if (TestFlag(MoverParameters->Couplers[1].CouplingFlag, ctrain_passenger))
+        if (MoverParameters->Couplers[1].CouplingFlag.HasAll(Coupling::gangway))
         {
             btCPass2.Turn( true );
             btnOn = true;
@@ -1702,8 +1625,8 @@ TDynamicObject::ABuFindObject( int &Foundcoupler, double &Distance, TTrack const
             continue;
         }
 /*
-        if( ( ( dynamic == PrevConnected ) && ( MoverParameters->Couplers[ TMoverParameters::side::front ].CouplingFlag != coupling::faux ) )
-         || ( ( dynamic == NextConnected ) && ( MoverParameters->Couplers[ TMoverParameters::side::rear  ].CouplingFlag != coupling::faux ) )  ){
+        if( ( ( dynamic == PrevConnected ) && ( MoverParameters->Couplers[ TMoverParameters::side::front ].CouplingFlag != Coupling::none ) )
+         || ( ( dynamic == NextConnected ) && ( MoverParameters->Couplers[ TMoverParameters::side::rear  ].CouplingFlag != Coupling::none ) )  ){
             // stop-gap check to prevent 'detection' of attached vehicles
             // which seems to be a side-effect of inaccurate location calculation in 'simple' mode?
             // TODO: investigate actual cause
@@ -1763,7 +1686,7 @@ int TDynamicObject::DettachStatus(int dir)
     // rzeczywistych od strony (dir):
     // 0=przód,1=tył
     // Ra: dziwne, że ta funkcja nie jest używana
-    if( MoverParameters->Couplers[ dir ].CouplingFlag == coupling::faux ) {
+    if( MoverParameters->Couplers[ dir ].CouplingFlag == Coupling::none ) {
         return 0; // jeśli nic nie podłączone, to jest OK
     }
     return MoverParameters->DettachStatus(dir); // czy jest w odpowiedniej odległości?
@@ -1802,7 +1725,7 @@ int TDynamicObject::Dettach(int dir)
 */
     }
     // sprzęg po rozłączaniu (czego się nie da odpiąć
-    return MoverParameters->Couplers[dir].CouplingFlag;
+    return MoverParameters->Couplers[dir].CouplingFlag.Bits();
 }
 
 void
@@ -1817,15 +1740,15 @@ TDynamicObject::couple( int const Side ) {
     auto *othervehicleparams{ othervehicle->MoverParameters };
     auto const &othercoupler { othervehicleparams->Couplers[ neighbour.vehicle_end ] };
 
-    if( coupler.CouplingFlag == coupling::faux ) {
+    if( coupler.CouplingFlag == Coupling::none ) {
         // najpierw hak
         if( ( coupler.AllowedFlag
             & othercoupler.AllowedFlag
-            & coupling::coupler ) == coupling::coupler ) {
+            & Coupling::coupler ) == Coupling::coupler ) {
             if( MoverParameters->Attach(
                     Side, neighbour.vehicle_end,
                     othervehicleparams,
-                    coupling::coupler ) ) {
+                    Coupling::coupler ) ) {
                 // one coupling type per key press
                 return;
             }
@@ -1834,15 +1757,15 @@ TDynamicObject::couple( int const Side ) {
             }
         }
     }
-    if( false == TestFlag( MoverParameters->Couplers[ Side ].CouplingFlag, coupling::brakehose ) ) {
+    if( false == MoverParameters->Couplers[ Side ].CouplingFlag.HasAll(Coupling::brakeHose) ) {
         // pneumatyka
         if( ( coupler.AllowedFlag
             & othercoupler.AllowedFlag
-            & coupling::brakehose ) == coupling::brakehose ) {
+            & Coupling::brakeHose ) == Coupling::brakeHose ) {
             if( MoverParameters->Attach(
                     Side, neighbour.vehicle_end,
                     othervehicleparams,
-                    coupler.CouplingFlag | coupling::brakehose ) ) {
+                    coupler.CouplingFlag | Coupling::brakeHose ) ) {
                 SetPneumatic( Side != 0, true );
                 othervehicle->SetPneumatic( Side != 0, true );
                 // one coupling type per key press
@@ -1850,15 +1773,15 @@ TDynamicObject::couple( int const Side ) {
             }
         }
     }
-    if( false == TestFlag( MoverParameters->Couplers[ Side ].CouplingFlag, coupling::mainhose ) ) {
+    if( false == MoverParameters->Couplers[ Side ].CouplingFlag.HasAll(Coupling::mainHose) ) {
         // zasilajacy
         if( ( coupler.AllowedFlag
             & othercoupler.AllowedFlag
-            & coupling::mainhose ) == coupling::mainhose ) {
+            & Coupling::mainHose ) == Coupling::mainHose ) {
             if( MoverParameters->Attach(
                     Side, neighbour.vehicle_end,
                     othervehicleparams,
-                    coupler.CouplingFlag | coupling::mainhose ) ) {
+                    coupler.CouplingFlag | Coupling::mainHose ) ) {
                 SetPneumatic( Side != 0, false );
                 othervehicle->SetPneumatic( Side != 0, false );
                 // one coupling type per key press
@@ -1866,43 +1789,43 @@ TDynamicObject::couple( int const Side ) {
             }
         }
     }
-    if( false == TestFlag( MoverParameters->Couplers[ Side ].CouplingFlag, coupling::control ) ) {
+    if( false == MoverParameters->Couplers[ Side ].CouplingFlag.HasAll(Coupling::control) ) {
         // ukrotnionko
-        if( (coupler.AllowedFlag & othercoupler.AllowedFlag & coupling::control) == coupling::control
+        if( (coupler.AllowedFlag & othercoupler.AllowedFlag & Coupling::control) == Coupling::control
          && coupler.control_type == othercoupler.control_type
-         && ( MoverParameters->CompatibleCoupling( Side, *othervehicleparams, neighbour.vehicle_end, coupler.CouplingFlag | coupling::control ) & coupling::control ) != 0 ) {
+         && MoverParameters->CompatibleCoupling( Side, *othervehicleparams, neighbour.vehicle_end, coupler.CouplingFlag | Coupling::control ).HasAny( Coupling::control ) ) {
             if( MoverParameters->Attach(
                     Side, neighbour.vehicle_end,
                     othervehicleparams,
-                    coupler.CouplingFlag | coupling::control ) ) {
+                    coupler.CouplingFlag | Coupling::control ) ) {
                 // one coupling type per key press
                 return;
             }
         }
     }
-    if( false == TestFlag( MoverParameters->Couplers[ Side ].CouplingFlag, coupling::gangway ) ) {
+    if( false == MoverParameters->Couplers[ Side ].CouplingFlag.HasAll(Coupling::gangway) ) {
         // mostek
         if( ( coupler.AllowedFlag
             & othercoupler.AllowedFlag
-            & coupling::gangway ) == coupling::gangway ) {
+            & Coupling::gangway ) == Coupling::gangway ) {
             if( MoverParameters->Attach(
                     Side, neighbour.vehicle_end,
                     othervehicleparams,
-                    coupler.CouplingFlag | coupling::gangway ) ) {
+                    coupler.CouplingFlag | Coupling::gangway ) ) {
                 // one coupling type per key press
                 return;
             }
         }
     }
-    if( false == TestFlag( MoverParameters->Couplers[ Side ].CouplingFlag, coupling::heating ) ) {
+    if( false == MoverParameters->Couplers[ Side ].CouplingFlag.HasAll(Coupling::heating) ) {
         // heating
         if( ( coupler.AllowedFlag
             & othercoupler.AllowedFlag
-            & coupling::heating ) == coupling::heating ) {
+            & Coupling::heating ) == Coupling::heating ) {
             if( MoverParameters->Attach(
                     Side, neighbour.vehicle_end,
                     othervehicleparams,
-                    coupler.CouplingFlag | coupling::heating ) ) {
+                    coupler.CouplingFlag | Coupling::heating ) ) {
                 // one coupling type per key press
                 return;
             }
@@ -1915,9 +1838,9 @@ int
 TDynamicObject::uncouple( int const Side ) {
 
     if( DettachStatus(Side) >= 0
-     || true == TestFlag(MoverParameters->Couplers[Side].CouplingFlag, coupling::permanent) ) {
+     || true == MoverParameters->Couplers[Side].CouplingFlag.HasAll(Coupling::permanent) ) {
         // can't uncouple, return existing coupling state
-        return MoverParameters->Couplers[ Side ].CouplingFlag;
+        return MoverParameters->Couplers[ Side ].CouplingFlag.Bits();
     }
     // jeżeli sprzęg niezablokowany, jest co odczepić i się da
     auto const couplingflag { Dettach( Side ) };
@@ -3130,7 +3053,7 @@ derail_motion::formation TDynamicObject::track_bed() const {
 int TDynamicObject::outward_side() const {
 
     // the track as designed turns from the rear axle to the front one: the outside of its curve, or its inside where a
-    // buckle bends the line the other way more than the curve does (the criteria of derailment, McZapkie/derailment.h)
+    // buckle bends the line the other way more than the curve does (the criteria of derailment, physics/derailment.h)
     if( auto const design { std::sin( Axle1.vAngles.z - Axle0.vAngles.z ) }; std::abs( design ) >= 1e-4 ) {
         auto const outside { design > 0.0 ? -1 : 1 };
         return MoverParameters->DerailAcceleration < 0.0 ? -outside : outside;
@@ -3355,7 +3278,7 @@ void TDynamicObject::pull_neighbours( double const Distance ) {
     for( int end = end::front; end <= end::rear; ++end ) {
         auto const &coupler { MoverParameters->Couplers[ end ] };
         auto *neighbour { MoverParameters->Neighbours[ end ].vehicle };
-        if( coupler.CouplingFlag == coupling::faux || neighbour == nullptr || neighbour->MoverParameters->OffTrack.active()
+        if( coupler.CouplingFlag == Coupling::none || neighbour == nullptr || neighbour->MoverParameters->OffTrack.active()
          || TestFlag( neighbour->MoverParameters->DamageFlag, dtrain_out ) ) {
             m_pulledoff[ end ].reset();
             continue;
@@ -3414,7 +3337,7 @@ void TDynamicObject::AttachNext(TDynamicObject *Object, int iType)
     auto const vehicleend { iDirection };
     auto const othervehicleend { Object->iDirection ^ 1 };
 
-    MoverParameters->Attach( vehicleend, othervehicleend, Object->MoverParameters, iType, true, false );
+    MoverParameters->Attach( vehicleend, othervehicleend, Object->MoverParameters, CouplingSet::FromBits( iType ), true, false );
     // update neighbour data for both affected vehicles
     update_neighbours();
     Object->update_neighbours();
@@ -3856,8 +3779,8 @@ bool TDynamicObject::Update(double dt, double dt1)
     tp.Name = &MyTrack->name();
 
     // couplers
-    if( MoverParameters->Couplers[0].CouplingFlag != coupling::faux
-     && MoverParameters->Couplers[1].CouplingFlag != coupling::faux ) {
+    if( MoverParameters->Couplers[0].CouplingFlag != Coupling::none
+     && MoverParameters->Couplers[1].CouplingFlag != Coupling::none ) {
         MoverParameters->InsideConsist = true;
     }
     else {
@@ -3930,7 +3853,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 			if (MoverParameters->SpeedCtrl)
 				MoverParameters->CheckSpeedCtrl(dt1);
 			MoverParameters->eimic_real = std::min(MoverParameters->eimic,MoverParameters->eimicSpeedCtrl);
-			MoverParameters->SendCtrlToNext("EIMIC", MoverParameters->eimic_real, MoverParameters->CabActive);
+			MoverParameters->SendCtrlToNext(VehicleCommand::integratedController, MoverParameters->eimic_real, MoverParameters->CabActive);
 		}
 		if( Mechanik->primary()
          && MoverParameters->EngineType == TEngineType::ElectricInductionMotor ) {
@@ -3961,7 +3884,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 			// Elf: full braking at once in the lowest position, and in the emergency brake position below it
 			if (MoverParameters->EIMCtrlType == 2 && MoverParameters->MainCtrlPos <= MoverParameters->EIMCtrlEmergencyPositions())
 				eimic = -1.0;
-			MoverParameters->SendCtrlToNext("EIMIC", std::max(0., eimic), MoverParameters->CabActive);
+			MoverParameters->SendCtrlToNext(VehicleCommand::integratedController, std::max(0., eimic), MoverParameters->CabActive);
 			auto LBR = std::max(-eimic, 0.);
 			auto eim_lb = Mechanik->AIControllFlag || !MoverParameters->LocHandleTimeTraxx ? 0 : MoverParameters->eim_localbrake;
 
@@ -3972,8 +3895,8 @@ bool TDynamicObject::Update(double dt, double dt1)
 
             // 2. ustal mozliwa do realizacji sile hamowania ED
             //   - w szczegolnosci powinien brac pod uwage rozne sily hamowania
-            for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, 4); p;
-				kier ? p = p->Next(4) : p = p->Prev(4))
+            for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, Coupling::control); p;
+				kier ? p = p->Next(Coupling::control) : p = p->Prev(Coupling::control))
             {
                 ++np;
                 masamax +=
@@ -4124,8 +4047,8 @@ bool TDynamicObject::Update(double dt, double dt1)
             ////ALGORYTM 2 - KAZDEMU PO ROWNO, ale nie wiecej niz eped * masa
             // 1. najpierw daj kazdemu tyle samo
             int i = 0;
-			for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, 4); p;
-				p = kier == true ? p->Next(4) : p->Prev(4) )
+			for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, Coupling::control); p;
+				p = kier == true ? p->Next(Coupling::control) : p->Prev(Coupling::control) )
 			{
                 auto const Nmax = ((p->MoverParameters->P2FTrans * p->MoverParameters->MaxBrakePress[0] -
                                p->MoverParameters->BrakeCylSpring) *
@@ -4152,8 +4075,8 @@ bool TDynamicObject::Update(double dt, double dt1)
                 test = false;
                 i = 0;
                 float przek = 0;
-                for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, 4); p;
-                     p = kier == true ? p->Next(4) : p->Prev(4) )
+                for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, Coupling::control); p;
+                     p = kier == true ? p->Next(Coupling::control) : p->Prev(Coupling::control) )
                 {
                     if (FzEP[i] > 0.01 &&
                         FzEP[i] > p->MoverParameters->TotalMass * p->MoverParameters->eimc[eimc_p_eped] + std::min(p->MoverParameters->eimv[eimv_Fmax], 0.) * 1000 &&
@@ -4176,8 +4099,8 @@ bool TDynamicObject::Update(double dt, double dt1)
                 }
                 i = 0;
                 przek = przek / (np - nPrzekrF);
-                for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, 4); p;
-                     true == kier ? p = p->Next(4) : p = p->Prev(4))
+                for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, Coupling::control); p;
+                     true == kier ? p = p->Next(Coupling::control) : p = p->Prev(Coupling::control))
                 {
                     if (!PrzekrF[i])
                     {
@@ -4187,8 +4110,8 @@ bool TDynamicObject::Update(double dt, double dt1)
                 }
             }
             i = 0;
-            for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, 4); p;
-                 true == kier ? p = p->Next(4) : p = p->Prev(4))
+            for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, Coupling::control); p;
+                 true == kier ? p = p->Next(Coupling::control) : p = p->Prev(Coupling::control))
             {
                 float Nmax = ((p->MoverParameters->P2FTrans * p->MoverParameters->MaxBrakePress[0] -
                                p->MoverParameters->BrakeCylSpring) *
@@ -4240,8 +4163,8 @@ bool TDynamicObject::Update(double dt, double dt1)
 			{
 				MEDLogFile << MEDLogTime << "\t" << MoverParameters->Vel << "\t" << masa*0.001 << "\t" << osie << "\t" << FmaxPN*0.001 << "\t" << FmaxED*0.001 << "\t"
 					<< FfulED*0.001 << "\t" << FrED*0.001 << "\t" << Fzad*0.001 << "\t" << FzadED*0.001 << "\t" << FzadPN*0.001;
-				for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, 4); p;
-					true == kier ? p = p->Next(4) : p = p->Prev(4))
+				for (TDynamicObject *p = GetFirstDynamic(MoverParameters->CabOccupied < 0 ? 1 : 0, Coupling::control); p;
+					true == kier ? p = p->Next(Coupling::control) : p = p->Prev(Coupling::control))
 				{
 					MEDLogFile << "\t" << p->MoverParameters->BrakePress;
 				}
@@ -4285,7 +4208,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 */
             && MoverParameters->EngineType != TEngineType::DieselEngine
             && MoverParameters->EngineType != TEngineType::WheelsDriven ) { // jeśli bateria wyłączona, a nie diesel ani drezyna reczna
-            if( MoverParameters->MainSwitch( false, MoverParameters->TrainType == dt_EZT ? range_t::unit : range_t::local ) ) {
+            if( MoverParameters->MainSwitch( false, MoverParameters->TrainType == train_type::emu ? range_t::unit : range_t::local ) ) {
                 // wyłączyć zasilanie
                 // NOTE: we turn off entire EMU, but only the affected unit for other multi-unit consists
                 MoverParameters->EventFlag = true;
@@ -4294,8 +4217,8 @@ bool TDynamicObject::Update(double dt, double dt1)
                 // TODO: have this dependant on .fiz-driven flag
                 // NOTE: moved to pantspeed calculation part a little later in the function. all remarks and todo still apply
 /*
-                MoverParameters->PantFront( false, ( MoverParameters->TrainType == dt_EZT ? range::unit : range::local ) );
-                MoverParameters->PantRear( false, ( MoverParameters->TrainType == dt_EZT ? range::unit : range::local ) );
+                MoverParameters->PantFront( false, ( MoverParameters->TrainType == train_type::emu ? range::unit : range::local ) );
+                MoverParameters->PantRear( false, ( MoverParameters->TrainType == train_type::emu ? range::unit : range::local ) );
 */
             }
         }
@@ -4421,7 +4344,7 @@ bool TDynamicObject::Update(double dt, double dt1)
     // McZapkie-260202 end
 
     // fragment z EXE Kursa
-    /* if (MoverParameters->TrainType==dt_ET42)
+    /* if (MoverParameters->TrainType==train_type::et42)
          {
          if ((MoverParameters->DynamicBrakeType=dbrake_switch) &&
        ((MoverParameters->BrakePress >
@@ -4606,7 +4529,7 @@ bool TDynamicObject::Update(double dt, double dt1)
                 break;
             } // pozostałe na razie nie obsługiwane
             if( MoverParameters->PantPress > (
-                    MoverParameters->TrainType == dt_EZT ?
+                    MoverParameters->TrainType == train_type::emu ?
                         2.45 : // Ra 2013-12: Niebugocław mówi, że w EZT podnoszą się przy 2.5
                         3.45 ) ) {
                 // z EXE Kursa
@@ -4934,15 +4857,15 @@ void TDynamicObject::pants_up()
 		{
 			isAnyPantUp |= item.is_active;
 		}
-		d = d->Next(4); // pozostałe też
+		d = d->Next(Coupling::control); // pozostałe też
 	}
-	d = Prev(4);
+	d = Prev(Coupling::control);
 	while (d) {
 		for (auto &item : d->MoverParameters->Pantographs)
 		{
 			isAnyPantUp |= item.is_active;
 		}
-		d = d->Prev(4); // w drugą stronę też
+		d = d->Prev(Coupling::control); // w drugą stronę też
 	}
 	if (isAnyPantUp)
 	{
@@ -4950,13 +4873,13 @@ void TDynamicObject::pants_up()
 		while (d) {
 			d->MoverParameters->OperatePantographValve(end::front, operation_t::enable, range_t::local);
 			d->MoverParameters->OperatePantographValve(end::rear, operation_t::enable, range_t::local);
-			d = d->Next(4); // pozostałe też
+			d = d->Next(Coupling::control); // pozostałe też
 		}
-		d = Prev(4);
+		d = Prev(Coupling::control);
 		while (d) {
 			d->MoverParameters->OperatePantographValve(end::front, operation_t::enable, range_t::local);
 			d->MoverParameters->OperatePantographValve(end::rear, operation_t::enable, range_t::local);
-			d = d->Prev(4); // w drugą stronę też
+			d = d->Prev(Coupling::control); // w drugą stronę też
 		}
 	}
 }
@@ -8089,17 +8012,17 @@ void TDynamicObject::SetLights() {
         automaticmarkers > 0 ? automaticmarkers : MoverParameters->Lights[ end::rear ][ lightpos ] };
     // the custom position keeps the lights lit at coupled ends as well
     auto const ignorecouplings { MoverParameters->LightsPos == 18 };
-    auto *vehicle { GetFirstDynamic( MoverParameters->CabOccupied >= 0 ? end::front : end::rear, coupling::control ) };
+    auto *vehicle { GetFirstDynamic( MoverParameters->CabOccupied >= 0 ? end::front : end::rear, Coupling::control ) };
     while( vehicle != nullptr ) {
         // set lights on given side if there's no coupling with another vehicle, turn them off otherwise
         auto const iscoupled { [ vehicle, ignorecouplings ]( end const Side ) {
             return false == ignorecouplings
-                && ( vehicle->MoverParameters->Couplers[ Side ].CouplingFlag & coupling::coupler ) != 0
+                && vehicle->MoverParameters->Couplers[ Side ].CouplingFlag.HasAny(Coupling::coupler)
                 && vehicle->MoverParameters->Neighbours[ Side ].vehicle != nullptr; } };
         auto const lights { lights_programmer::vehicle_lights(
             cablights, isfrontcaboccupied, vehicle->iDirection, { iscoupled( end::front ), iscoupled( end::rear ) } ) };
         vehicle->RaLightsSet( lights.head, lights.rear );
-        vehicle = isfrontcaboccupied ? vehicle->Next(coupling::control) : vehicle->Prev(coupling::control);
+        vehicle = isfrontcaboccupied ? vehicle->Next(Coupling::control) : vehicle->Prev(Coupling::control);
     }
 };
 
@@ -8329,16 +8252,16 @@ int TDynamicObject::DirectionSet(int d)
 TDynamicObject * TDynamicObject::PrevAny() const {
     return MoverParameters->Neighbours[ iDirection ^ 1 ].vehicle;
 }
-TDynamicObject * TDynamicObject::Prev(int C) const {
-	return MoverParameters->Couplers[iDirection ^ 1].CouplingFlag & C ? MoverParameters->Neighbours[iDirection ^ 1].vehicle : nullptr;// gdy sprzęg wirtualny, to jakby nic nie było
+TDynamicObject * TDynamicObject::Prev(CouplingSet const couplings) const {
+	return MoverParameters->Couplers[iDirection ^ 1].CouplingFlag.HasAny(couplings) ? MoverParameters->Neighbours[iDirection ^ 1].vehicle : nullptr;// gdy sprzęg wirtualny, to jakby nic nie było
 }
-TDynamicObject * TDynamicObject::Next(int C) const {
-	return MoverParameters->Couplers[iDirection].CouplingFlag & C ? MoverParameters->Neighbours[iDirection].vehicle : nullptr;// gdy sprzęg wirtualny, to jakby nic nie było
+TDynamicObject * TDynamicObject::Next(CouplingSet const couplings) const {
+	return MoverParameters->Couplers[iDirection].CouplingFlag.HasAny(couplings) ? MoverParameters->Neighbours[iDirection].vehicle : nullptr;// gdy sprzęg wirtualny, to jakby nic nie było
 }
 
 // checks whether there's unbroken connection of specified type to specified vehicle
 bool
-TDynamicObject::is_connected( TDynamicObject const *Vehicle, coupling const Coupling ) const {
+TDynamicObject::is_connected( TDynamicObject const *Vehicle, CouplingSet const couplings ) const {
 
     auto *vehicle { this };
     if( vehicle == Vehicle ) {
@@ -8346,7 +8269,7 @@ TDynamicObject::is_connected( TDynamicObject const *Vehicle, coupling const Coup
         return true;
     }
     // check ahead, it's more likely the "owner" using this method is located there
-    while( ( vehicle = vehicle->Prev( Coupling ) ) != nullptr ) {
+    while( ( vehicle = vehicle->Prev( couplings ) ) != nullptr ) {
         if( vehicle == Vehicle ) {
             return true;
         }
@@ -8357,7 +8280,7 @@ TDynamicObject::is_connected( TDynamicObject const *Vehicle, coupling const Coup
     }
     // start anew in the other direction
     vehicle = this;
-    while( ( vehicle = vehicle->Next( Coupling ) ) != nullptr ) {
+    while( ( vehicle = vehicle->Next( couplings ) ) != nullptr ) {
         if( vehicle == Vehicle ) {
             return true;
         }
@@ -8371,7 +8294,7 @@ TDynamicObject *
 TDynamicObject::Neighbour(int &dir) {
 
     auto *neighbour { (
-        MoverParameters->Couplers[ dir ].CouplingFlag != coupling::faux ?
+        MoverParameters->Couplers[ dir ].CouplingFlag != Coupling::none ?
             MoverParameters->Neighbours[ dir ].vehicle :
             nullptr ) };
     // nowa wartość
@@ -8546,9 +8469,9 @@ TDynamicObject * TDynamicObject::FindPowered()
     // problematyczna może być kwestia wybranej kabiny (w silnikowym...)
     // jeśli silnikowy będzie zapięty odwrotnie (tzn. -1), to i tak powinno jeździć dobrze
     // również hamowanie wykonuje się zaworem w członie, a nie w silnikowym...
-    auto const coupling { MoverParameters->TrainType == dt_EZT || MoverParameters->TrainType == dt_DMU ?
-            coupling::permanent :
-            coupling::control };
+    auto const coupling { MoverParameters->is_multiple_unit() ?
+            Coupling::permanent :
+            Coupling::control };
 
     auto *lookup {
         find_vehicle(
@@ -8563,7 +8486,7 @@ TDynamicObject *
 TDynamicObject::FindPantographCarrier() {
 
     // try first within a single unit, broaden to all vehicles under our control if first attempt fails
-    std::array<coupling, 2> const couplings = { coupling::permanent, coupling::control };
+    std::array<Coupling, 2> const couplings = { Coupling::permanent, Coupling::control };
 
     for( auto const coupling : couplings ) {
         auto *result =
@@ -9615,7 +9538,7 @@ coupled_train( TDynamicObject *Vehicle ) {
             auto const &mover { *vehicle->MoverParameters };
             auto *next { mover.Neighbours[ side ].vehicle };
             if( next == nullptr
-             || ( mover.Couplers[ side ].CouplingFlag & coupling::coupler ) == 0
+             || false == mover.Couplers[ side ].CouplingFlag.HasAny(Coupling::coupler)
              || std::ranges::find( train, next ) != train.end() ) {
                 break;
             }
@@ -9638,7 +9561,7 @@ trains_closing_in( std::vector<TDynamicObject *> const &Train ) {
             auto const &mover { *vehicle->MoverParameters };
             auto const &neighbour { mover.Neighbours[ side ] };
             if( neighbour.vehicle == nullptr
-             || ( mover.Couplers[ side ].CouplingFlag & coupling::coupler ) != 0
+             || mover.Couplers[ side ].CouplingFlag.HasAny(Coupling::coupler)
              || neighbour.distance > coupler_physics_reach
              || std::ranges::find( Train, neighbour.vehicle ) != Train.end() ) {
                 continue;
@@ -9754,7 +9677,7 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
                 if( mover->Vel > 0.0001 ) { ++awake.speed; }
                 if( mover->accelerating() ) { ++awake.acceleration; }
                 if( mover->LastSwitchingTime < 5 ) { ++awake.switching; }
-                if( ( mover->TrainType == dt_EZT ) || ( mover->TrainType == dt_DMU ) ) { ++awake.multipleunit; }
+                if( mover->is_multiple_unit() ) { ++awake.multipleunit; }
                 if( moving( mover->Neighbours[ end::front ] ) || moving( mover->Neighbours[ end::rear ] ) ) { ++awake.neighbour; }
             }
         }
@@ -9933,7 +9856,7 @@ std::string_view overlap_kind( TDynamicObject const &First, TDynamicObject const
     auto const offtrack { First.MoverParameters->OffTrack.active() && Second.MoverParameters->OffTrack.active() };
     for( int end = end::front; end <= end::rear; ++end ) {
         if( First.MoverParameters->Couplers[ end ].Connected == Second.MoverParameters
-         && First.MoverParameters->Couplers[ end ].CouplingFlag != coupling::faux ) {
+         && First.MoverParameters->Couplers[ end ].CouplingFlag != Coupling::none ) {
             return offtrack ? "coupled, both off the track" : "coupled, one on the rails";
         }
         if( First.MoverParameters->Neighbours[ end ].vehicle == &Second ) {
@@ -10425,3 +10348,19 @@ vehicle_table::erase_disabled() {
 
     return true;
 }
+
+// the vehicles coupled at the ends, and the ends of theirs facing this one
+TDynamicObject *TDynamicObject::NextConnected() { return MoverParameters->Neighbours[ end::rear ].vehicle; }
+TDynamicObject *TDynamicObject::PrevConnected() { return MoverParameters->Neighbours[ end::front ].vehicle; }
+TDynamicObject *TDynamicObject::NextConnected() const { return MoverParameters->Neighbours[ end::rear ].vehicle; }
+TDynamicObject *TDynamicObject::PrevConnected() const { return MoverParameters->Neighbours[ end::front ].vehicle; }
+int TDynamicObject::NextConnectedNo() const { return MoverParameters->Neighbours[ end::rear ].vehicle_end; }
+int TDynamicObject::PrevConnectedNo() const { return MoverParameters->Neighbours[ end::front ].vehicle_end; }
+
+void TDynamicObject::SetdMoveLen( double dMoveLen ) { MoverParameters->dMoveLen = dMoveLen; }
+void TDynamicObject::ResetdMoveLen() { MoverParameters->dMoveLen = 0; }
+double TDynamicObject::GetdMoveLen() { return MoverParameters->dMoveLen; }
+
+double TDynamicObject::GetVelocity() const { return MoverParameters->Vel; }
+double TDynamicObject::GetLength() const { return MoverParameters->Dim.L; }
+double TDynamicObject::GetWidth() const { return MoverParameters->Dim.W; }

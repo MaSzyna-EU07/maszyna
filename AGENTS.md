@@ -93,6 +93,32 @@ To keep the gate passing, write new code so that it doesn't raise the rules that
 The project is C++20 (`CMAKE_CXX_STANDARD 20`), so no C++23 library addition is available on any compiler. That rules out
 `std::ranges::to`, `views::zip`, `views::enumerate`, `ranges::contains`, `std::print` and `std::expected`.
 
+## Naming and the vehicle code
+
+New code, and code that gets restructured, is named in English with these cases:
+
+- **PascalCase** for types (classes, structs, enums, aliases), for public member functions and for free functions declared in
+  headers.
+- **camelCase** for everything else: private and internal functions (those of an anonymous namespace too), all variables, members
+  (public ones too) and parameters, and the values of enums (`VehicleCommand::mainController`).
+- No prefixes of the type or the kind (`f`, `i`, `b`, `mv`, `p` and the like) and no Polish names (`zaluzje`, `temperatura1`).
+
+Code that isn't otherwise touched keeps its names; renaming a member goes together with the restructuring of its part. What files,
+scripts and the log read stays byte for byte the same whatever the C++ names are: the keywords of the `.fiz` and the scenery, the
+keys of the dictionaries of the Python screens, the texts of the log and of `STR(...)`.
+
+The vehicle code is in `physics/` (the physics of the vehicles: `mover.h` and `physics/mover/*.cpp` by subsystem, `brakes.*`,
+couplers, collisions, derailment) and `vehicle/` (the vehicle in the scenery, the cab, the AI). Keep it that way:
+
+- `physics/vehicletypes.h` holds the vocabulary the rest of the simulator passes around (vehicle ends, sides, couplings, lights,
+  sounds, the types of drive and brake). A header that only names these includes it, not `physics/mover.h`; a header that only
+  points at a `TMoverParameters` or a `TDynamicObject` declares it (`utilities/Classes.h`) and includes neither.
+- A state of several mutually exclusive values is an `enum class`, a set of independent conditions is named fields, not the bits of
+  an `int`. Numbers of the formats (`.scn`, events, the network) are read into these where they come in and written where they go out.
+- The commands between the vehicles are `VehicleCommand` (`physics/vehiclecommand.h`); their text names only matter where a command
+  comes as text.
+- What depends on the kind of drive (`EngineType`) goes into its class in `physics/mover/drive.*`, not into a new `switch`.
+
 ## Renderers: the move to OpenGL 4.6 and Vulkan
 
 The renderers on `master` are to be replaced. `feat/gl46-migration` (PR #216, a draft with milestone 27.04, to be merged after the

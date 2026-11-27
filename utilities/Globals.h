@@ -359,14 +359,14 @@ struct global_settings {
 	// buckles the scenery enters and its trackbuckle events; automatic, also by the temperature of the rails at the weak places
 	enum class track_buckling_mode { off, scenery, automatic };
 	track_buckling_mode track_buckling = track_buckling_mode::scenery;
-	// the physical model of the couplings (McZapkie/couplerphysics.h): progressive buffers and draw gear with hysteresis,
+	// the physical model of the couplings (physics/couplerphysics.h): progressive buffers and draw gear with hysteresis,
 	// the play of the coupling, its yield and breaking; the legacy model of TMoverParameters::CouplerForce() without it.
 	// it covers the player's train and the trains it closes in on (vehicle_table::update_coupler_physics()), or every
 	// train with coupler_physics_all
 	bool coupler_physics = false;
 	bool coupler_physics_all = false;
 	// a vehicle too fast in a curve (physics.derailment in eu07.ini): new, it overturns or its flange climbs the rail
-	// by the criteria of McZapkie/derailment.h held over 2 m, and slides on with the friction of the ballast; old, the
+	// by the criteria of physics/derailment.h held over 2 m, and slides on with the friction of the ballast; old, the
 	// legacy draw of the lateral acceleration against the gauge to the height of the vehicle in every step, which stops
 	// it; off, it stays on the rails at any speed; monitor, the legacy draw decides and the log tells where the criteria
 	// would derail a vehicle (derailment monitor:, once for a vehicle on a track), for the run of a scenery as it was.
@@ -375,7 +375,7 @@ struct global_settings {
 	enum class derailment_model { off, old, physical, monitor };
 	derailment_model derailment = derailment_model::monitor;
 	// the collisions of rail vehicles past their buffers (physics.collisions in eu07.ini): new, the ends crush, a vehicle
-	// may ride up onto the other one or be pushed off the track (McZapkie/collision.h); old, the legacy rule of the safe
+	// may ride up onto the other one or be pushed off the track (physics/collision.h); old, the legacy rule of the safe
 	// closing speed weighed by the masses; monitor, the legacy rule decides and the log tells what the crush would be
 	// (collision monitor:, once for a hit). the road vehicles of the traffic keep the legacy rule with any
 	enum class collision_model { old, physical, monitor };

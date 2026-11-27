@@ -33,7 +33,7 @@ Knorr/West EP - żeby był
 
 #pragma once
 
-#include "friction.h" // Pascal unit
+#include "physics/friction.h" // Pascal unit
 
 /// <summary>Number of positions of the local (auxiliary/manual) brake handle.</summary>
 static int const LocalBrakePosNo = 10; /*ilosc nastaw hamulca recznego lub pomocniczego*/

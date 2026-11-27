@@ -34,6 +34,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "widgets/vehicleparams.h"
 #include "utilities/U8.h"
+#include "physics/mover.h"
 
 #define DRIVER_HINT_CONTENT
 #include "application/driverhints.h"
@@ -387,8 +388,8 @@ timetable_panel::update() {
 				//odejmij lokomotywy czynne, a przynajmniej aktualną
 				consistmass -= owner->pVehicle->MoverParameters->TotalMass;
 				// subtract potential other half of a two-part vehicle
-				if( auto const *previous { owner->pVehicle->Prev( coupling::permanent ) }; previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
-				auto const *next { owner->pVehicle->Next( coupling::permanent ) };
+				if( auto const *previous { owner->pVehicle->Prev( Coupling::permanent ) }; previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
+				auto const *next { owner->pVehicle->Next( Coupling::permanent ) };
 				if( next != nullptr ) { consistmass -= next->MoverParameters->TotalMass; }
 			}
             std::snprintf(
@@ -892,7 +893,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         std::string( isdieselinshuntmode ? to_string( mover.AnPos, 2 ) + STR(" (shunt mode)") : std::to_string( mover.ScndCtrlPos ) + "(" + std::to_string( mover.ScndCtrlActualPos ) + ")" ).c_str(),
         // engine
         mover.EnginePower,
-        std::abs( mover.TrainType == dt_EZT ? mover.ShowCurrent( 0 ) : mover.Im ),
+        std::abs( mover.TrainType == train_type::emu ? mover.ShowCurrent( 0 ) : mover.Im ),
         // revolutions
         std::abs( mover.enrot ) * 60,
         std::abs( mover.nrot ) * mover.Transmision.Ratio * 60,
@@ -1270,17 +1271,10 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) const {
 	Output.emplace_back( textline, Global.UITextColor );
 
     // ai driving flags
-    std::vector<std::string> const drivingflagnames {
-        "StopCloser", "StopPoint", "Active", "Press", "Connect", "Primary", "Late", "StopHere",
-        "StartHorn", "StartHornNow", "StartHornDone", "Oerlikons", "IncSpeed", "TrackEnd", "SwitchFound", "GuardSignal",
-        "Visibility", "DoorOpened", "PushPull", "SignalFound", "StopPointFound", "GuardOpenDoor", "DepartureWarned"
-    	/*"SemaphorWasElapsed", "TrainInsideStation", "SpeedLimitFound"*/ };
-
 	textline = "Driving flags:";
-	for( int idx = 0, flagbit = 1; idx < drivingflagnames.size(); ++idx, flagbit <<= 1 ) {
-		if( mechanik.DrivigFlags() & flagbit ) {
-			textline += "\n " + drivingflagnames[ idx ];
-		}
+	for( auto const name : mechanik.DrivingFlagsState().ActiveNames() ) {
+		textline += "\n ";
+		textline += name;
 	}
 
 	Output.emplace_back( textline, Global.UITextColor );
@@ -1638,7 +1632,7 @@ debug_panel::update_section_coupler( std::vector<text_line> &Output ) {
         Global.UITextColor );
     if( neighbour.vehicle != nullptr ) {
         Output.emplace_back(
-            std::format( "Neighbour: {} ({} end), coupling [{}], gap {:.1f} mm", neighbour.vehicle->name(), neighbour.vehicle_end == end::front ? "front" : "rear", coupler.CouplingFlag, neighbour.distance * 1000.0 ),
+            std::format( "Neighbour: {} ({} end), coupling [{}], gap {:.1f} mm", neighbour.vehicle->name(), neighbour.vehicle_end == end::front ? "front" : "rear", coupler.CouplingFlag.Bits(), neighbour.distance * 1000.0 ),
             Global.UITextColor );
     }
     else {

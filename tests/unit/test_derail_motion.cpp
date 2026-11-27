@@ -2,8 +2,8 @@
 #include "doctest.h"
 #include "vehicle.h"
 #include "vehicle/derailmotion.h"
-#include "McZapkie/derailment.h"
-#include "McZapkie/MOVER.h"
+#include "physics/derailment.h"
+#include "physics/mover.h"
 #include "utilities/Globals.h"
 
 #include <cmath>

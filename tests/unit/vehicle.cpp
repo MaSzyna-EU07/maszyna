@@ -355,7 +355,7 @@ double pair::gap() const {
 	return std::abs(m_vehicles[1].position - m_vehicles[0].position) - 0.5 * (first.Dim.L + second.Dim.L);
 }
 
-int pair::coupling() const {
+CouplingSet pair::coupling() const {
 	return m_vehicles[0].owner->mover().Couplers[m_vehicles[0].end].CouplingFlag;
 }
 

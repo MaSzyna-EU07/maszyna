@@ -4,7 +4,7 @@
 #include "golden.h"
 #include "doctest.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 #include "vehicle/fieldshunting.h"
 
 namespace test {
@@ -74,7 +74,7 @@ void release_brakes(TMoverParameters &Cab) {
 		auto const *vehicle{pending.back()};
 		pending.pop_back();
 		for (auto const &thiscoupler : vehicle->Couplers) {
-			if (thiscoupler.Connected != nullptr && thiscoupler.CouplingFlag != coupling::faux && std::ranges::find(train, thiscoupler.Connected) == train.end()) {
+			if (thiscoupler.Connected != nullptr && thiscoupler.CouplingFlag != Coupling::none && std::ranges::find(train, thiscoupler.Connected) == train.end()) {
 				thiscoupler.Connected->DecManualBrakeLevel(ManualBrakePosNo);
 				thiscoupler.Connected->SpringBrake.Activate = false;
 				train.push_back(thiscoupler.Connected);
@@ -108,7 +108,7 @@ void prepare_diesel(driven const &Driven) {
 // the pantographs' own air topped up by their compressor, and the pantographs raised
 void raise_pantographs(driven const &Driven) {
 	auto &pantographs{Driven.pantographs};
-	if (auto const enough{(pantographs.TrainType == dt_EZT ? 2.5 : 3.5) + 0.1}; pantographs.PantPress < enough) {
+	if (auto const enough{(pantographs.TrainType == train_type::emu ? 2.5 : 3.5) + 0.1}; pantographs.PantPress < enough) {
 		if (false == pantographs.PantAutoValve) {
 			pantographs.bPantKurek3 = false; // the pantographs on their own air
 		}

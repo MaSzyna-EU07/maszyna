@@ -1,6 +1,6 @@
 # Coverage of the simulation core by the unit tests
 
-These tests characterise the physics of the vehicles (`McZapkie/Mover.cpp`, `hamulce.cpp`, `Oerlikon_ESt.cpp`, `friction.cpp`). They exist to show that refactors of those files, such as splitting `TractionForce` or `RunCommand`, leave the behaviour as it was. This page lists:
+These tests characterise the physics of the vehicles (`physics/mover.cpp`, `brakes.cpp`, `oerlikonest.cpp`, `friction.cpp`). They exist to show that refactors of those files, such as splitting `TractionForce` or `RunCommand`, leave the behaviour as it was. This page lists:
 
 - what the tests reach;
 - what nothing in the game ever runs;
@@ -14,9 +14,9 @@ Coverage was measured on Windows with MSVC's SanitizerCoverage (`/fsanitize-cove
 
 | File | Blocks run, at the start | Now |
 |---|---|---|
-| `Mover.cpp` | 8.9% | 80.7% (3323 of 4118) |
-| `hamulce.cpp` | 30% | 76.3% (649 of 851) |
-| `Oerlikon_ESt.cpp` | 58% | 87.4% (118 of 135) |
+| `mover.cpp` | 8.9% | 80.7% (3323 of 4118) |
+| `brakes.cpp` | 30% | 76.3% (649 of 851) |
+| `oerlikonest.cpp` | 58% | 87.4% (118 of 135) |
 | `friction.cpp` | 9% | 90.9% (10 of 11) |
 
 The aim is branch coverage with the rest explained below, not 100%.
@@ -34,8 +34,8 @@ Nothing creates these objects or calls these functions anywhere in the game, whi
 - **`TFV4a`** (`GetPF`, `Init`): the FV4a handle of the vehicle definitions creates `TFV4aM`.
 - **Base implementations always overridden:** `TFricMat::GetFC` (every material, the default P10 too, has its own) and `TPrzekladnik::Update` (every relay has its own).
 - **Functions without callers:**
-  - In `hamulce.cpp`: `PF_old`, `TBrake::GetBCF`, `TDriverHandle::OvrldButton`, `TReservoir::pa` and `TBrakeCyl::pa`.
-  - In `Mover.cpp`: `BrakeVP`, `PipeRatio`, `RealPipeRatio`, `IncBrakeLevel`, `DecBrakeLevel`, `IncBrakePress`, `DecBrakePress`, `MainCtrlActualPowerPos` and `GetExternalCommand`.
+  - In `brakes.cpp`: `PF_old`, `TBrake::GetBCF`, `TDriverHandle::OvrldButton`, `TReservoir::pa` and `TBrakeCyl::pa`.
+  - In `mover.cpp`: `BrakeVP`, `PipeRatio`, `RealPipeRatio`, `IncBrakeLevel`, `DecBrakeLevel`, `IncBrakePress`, `DecBrakePress` and `MainCtrlActualPowerPos`. (`GetExternalCommand` was removed.)
 - **Inverter failures** of the induction motor drives (`inverter::Failure_Drive`, `Failure_Const`, `Activate`): nothing ever sets them. The cab only shows them. The branches reading them in `TractionForce` can't be reached.
 
 ## Code only data no game vehicle has would run
@@ -95,7 +95,7 @@ The per-file table further down is from the run before the tests of the parser, 
 
 | File | Lines run | Functions run |
 |---|---|---|
-| `McZapkie/couplerphysics.cpp` | 93.6% (147 of 157) | 20 of 21 |
+| `physics/couplerphysics.cpp` | 93.6% (147 of 157) | 20 of 21 |
 | `scripting/ladderlogic.cpp` | 4.1% (9 of 217) | 2 of 11 |
 | `scripting/ladderlogic.h` | 0% (0 of 25) | 0 of 4 |
 | `scripting/luaprogram.cpp` | 74.7% (334 of 447) | 50 of 66 |
@@ -163,9 +163,9 @@ The tests are written for the first two columns, and for what the game doesn't c
 
 The tests record the behaviour as it is. The following points may deserve a look by someone who knows how the real vehicles behave.
 
-- **`Random(10) - Random(10)` (`Mover.cpp`, the noise of the control pipe pressure `CntrlPipePress`):** the order the two calls were evaluated in isn't specified. MSVC Release, MSVC Debug and GCC gave different traces, a control pipe pressure mirrored around 5 bar, which failed 32 tests on the Linux CI. Fixed: the draws are sequenced in the order of MSVC Release, which the golden traces were recorded with.
+- **`Random(10) - Random(10)` (`mover.cpp`, the noise of the control pipe pressure `CntrlPipePress`):** the order the two calls were evaluated in isn't specified. MSVC Release, MSVC Debug and GCC gave different traces, a control pipe pressure mirrored around 5 bar, which failed 32 tests on the Linux CI. Fixed: the draws are sequenced in the order of MSVC Release, which the golden traces were recorded with.
 - **`TCommand::Location` isn't initialised** in a new vehicle. The game always sets it through `PutCommand()`, but a test calling `RunCommand()` directly got different results run to run.
-- **`CompressorList` is `int[4][9]`** (`MOVER.h`), though its factors are fractions: 0.9 is read as 0. No game vehicle has the list yet.
+- **`CompressorList` is `int[4][9]`** (`mover.h`), though its factors are fractions: 0.9 is read as 0. No game vehicle has the list yet.
 - **A train whose pipe leaks under 2.75 bar before its start-up can't be released:**
   - Where this happens: an FV4a handle and an LSt valve, for example 4 minutes standing with wagons, waiting for a hot engine.
   - The cause: the pipe gets cut off the main reservoir (`lock_old` in `UpdatePipePressure`). The AI presses its unlock button only for the lock set by `LPOn` and `LPOff` (`control_main_pipe`).

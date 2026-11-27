@@ -111,7 +111,7 @@ TEST_CASE("engine start: only the vehicles with an engine and under control thro
 	// coupled without the control cable, the other railcar isn't under the cab's control
 	consist apart;
 	auto &alone{apart.add(sn61(), 1).mover()};
-	apart.add(sn61(), 0, coupling::coupler | coupling::brakehose);
+	apart.add(sn61(), 0, Coupling::coupler | Coupling::brakeHose);
 	CHECK(engine_start::engine(alone, alone, 2) == nullptr);
 }
 

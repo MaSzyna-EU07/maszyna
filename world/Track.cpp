@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
 #include "rendering/renderer.h"
+#include "physics/mover.h"
 
 #include <format>
 

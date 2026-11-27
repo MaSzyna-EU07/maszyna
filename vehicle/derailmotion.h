@@ -19,7 +19,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <glm/glm.hpp>
 
-// a rail vehicle off the rails (physics.derailment new, see McZapkie/derailment.h for when it derails): from then on
+// a rail vehicle off the rails (physics.derailment new, see physics/derailment.h for when it derails): from then on
 // it doesn't follow the track any more, it moves on the ground by itself until the friction stops it.
 //
 // along: the longitudinal motion stays with the physics of the vehicle (TMoverParameters), which brakes it with the
@@ -39,7 +39,7 @@ http://mozilla.org/MPL/2.0/.
 // the height and the attitude: the ground under the supports of the vehicle (the ends of its wheelbase, the wheels
 //   of both sides) gives its height, its pitch and its roll; it doesn't sink into the ground, it falls off a step
 // tipping over: about the wheels of one side, the body as a rigid one with the lean of its suspension, so it tips at
-//   the very lateral acceleration the wheel unloading of McZapkie/derailment.h reaches 1 at. what tips it: the
+//   the very lateral acceleration the wheel unloading of physics/derailment.h reaches 1 at. what tips it: the
 //   overturning in the curve while its outer wheels still run on the rail (the curve keeps pushing it out as v^2/R,
 //   the excess over the limit the faster it tips), the slope of the ground across it, and the friction under it
 //   while it slides sideways. once over its tipping angle it falls on its side, at 90 degrees, and stays there
@@ -67,7 +67,7 @@ inline constexpr double guided_friction{0.1};
 // of the wheels, or of the body on its side, sliding across the heading
 inline constexpr double lateral_friction{0.5};
 // the friction along the heading: upright on its wheels on the sleepers and the ballast, rising to the friction of a
-// vehicle on its side (McZapkie/derailment.h) as it tips over
+// vehicle on its side (physics/derailment.h) as it tips over
 double sliding_friction(double Tipping, bool Guided);
 
 // ---- the way the vehicle leaves the track
@@ -299,7 +299,7 @@ struct vehicle_shape {
 	double centre_of_gravity{1.5}; // its height above the rail [m]
 	double contact_spacing{1.5}; // of the wheels of a wheelset [m]
 	double base{10.0}; // between the bogie pivots or the outer axles, which it rests on lengthwise [m]
-	// the lean of the body on the suspension, as McZapkie/derailment.h takes it: flexibility and roll centre
+	// the lean of the body on the suspension, as physics/derailment.h takes it: flexibility and roll centre
 	double flexibility{0.4};
 	double roll_centre{0.5};
 	// [kg] for the forces of the couplings on it; none: they don't move it

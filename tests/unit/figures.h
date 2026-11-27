@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "McZapkie/MOVER.h"
+#include "physics/mover.h"
 
 namespace test {
 

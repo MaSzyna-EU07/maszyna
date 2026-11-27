@@ -4,7 +4,7 @@
 #include "drive.h"
 #include "vehicle.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 
 // the line contactors interlocked with the fans of the traction motors (eu07/maszyna#460): on the ET42 the fans of a
 // section run off its own converter, and with them switched off the line contactors of that section don't close.

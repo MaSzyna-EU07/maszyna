@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "scenario.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 
 namespace test {
 
@@ -24,8 +24,8 @@ scenario::scenario(std::string Name, std::vector<channel> Channels, track const 
 	reseed_random();
 }
 
-scenario &scenario::add(std::string const &Path, int Cab, int Coupling, double Velocity, double Gap) {
-	m_train.add(definition::fiz(Path), Cab, Coupling, Velocity, Gap);
+scenario &scenario::add(std::string const &Path, int Cab, CouplingSet const couplings, double Velocity, double Gap) {
+	m_train.add(definition::fiz(Path), Cab, couplings, Velocity, Gap);
 	return *this;
 }
 

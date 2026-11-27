@@ -2,6 +2,8 @@
 #include "widgets/trainingcard.h"
 #include "simulation/simulation.h"
 #include "utilities/utilities.h"
+#include "physics/mover.h"
+#include "vehicle/DynObj.h"
 
 #ifdef __linux__
 #include <unistd.h>

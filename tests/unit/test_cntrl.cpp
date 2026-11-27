@@ -22,7 +22,7 @@ TEST_CASE("cntrl: the brake delays of the settings come from BDelay1 to BDelay4"
 TEST_CASE("cntrl: the relays of a multiple unit start on their own, of other vehicles by hand") {
 	SUBCASE("multiple unit") {
 		vehicle unit{definition::load("wagon").set("Param", "Type", "ezt")};
-		REQUIRE(unit->TrainType == dt_EZT);
+		REQUIRE(unit->TrainType == train_type::emu);
 		CHECK(unit->GroundRelayStart == start_t::automatic);
 		CHECK(unit->ConverterOverloadRelayStart == start_t::converter); // activates when the converter is switched off
 	}
@@ -117,7 +117,7 @@ TEST_CASE("cntrl: ScndCtrlResistiveLock keeps the field shunting off at zero and
 		SUBCASE("the master controller taken back from a shunt step drops the shunt") {
 			controllers_at(locked, resistancefree);
 			REQUIRE(locked->IncScndCtrl(1));
-			if (locked->TrainType == dt_ET22) {
+			if (locked->TrainType == train_type::et22) {
 				// the ET22's master controller doesn't turn with the shunt on: the shunt goes off first, as before
 				CHECK_FALSE(locked->DecMainCtrl(1));
 				CHECK(locked->MainCtrlPos == resistancefree);
@@ -152,7 +152,7 @@ TEST_CASE("cntrl: ScndCtrlResistiveLock keeps the field shunting off at zero and
 			controllers_at(locked, lastseries);
 			locked->DirActive = 1;
 			REQUIRE(locked->IncScndCtrl(1));
-			if (locked->TrainType == dt_ET22) {
+			if (locked->TrainType == train_type::et22) {
 				CHECK_FALSE(locked->IncMainCtrl(1)); // the ET22's interlock, as before
 				CHECK(locked->ScndCtrlPos == 1);
 			}

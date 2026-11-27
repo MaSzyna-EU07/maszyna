@@ -3,7 +3,7 @@
 #include "scenario.h"
 #include "drive.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 
 // characterisation of the diesel engines besides their drive, recorded in golden traces (data/golden/diesel/):
 // the heat of the engine, its oil and its water circuits, which keep a too cold or too hot engine from starting

@@ -2,13 +2,13 @@
 #include "doctest.h"
 #include "vehicle.h"
 #include "consist.h"
-#include "McZapkie/couplerphysics.h"
+#include "physics/couplerphysics.h"
 #include "utilities/Globals.h"
 
 #include <algorithm>
 #include <cmath>
 
-// the physical model of the couplings (McZapkie/couplerphysics.h, couplerphysics in eu07.ini): progressive buffers and
+// the physical model of the couplings (physics/couplerphysics.h, couplerphysics in eu07.ini): progressive buffers and
 // draw gear with friction hysteresis, pressed in series, the play of the coupling, its yield and its breaking
 
 using test::definition;
@@ -268,9 +268,9 @@ TEST_CASE("coupler physics: a jerk on the solid draw gear breaks the coupling by
 namespace {
 
 // couples the facing ends of the two vehicles, as the scenery does
-void join(vehicle &First, int FirstEnd, vehicle &Second, int SecondEnd, int Coupling = coupling::coupler) {
-	REQUIRE(First->Attach(FirstEnd, SecondEnd, &Second.mover(), Coupling, true, false));
-	REQUIRE(Second->Attach(SecondEnd, FirstEnd, &First.mover(), Coupling, true, false));
+void join(vehicle &First, int FirstEnd, vehicle &Second, int SecondEnd, CouplingSet const couplings = Coupling::coupler) {
+	REQUIRE(First->Attach(FirstEnd, SecondEnd, &Second.mover(), couplings, true, false));
+	REQUIRE(Second->Attach(SecondEnd, FirstEnd, &First.mover(), couplings, true, false));
 }
 
 // the wagon of data/wagon.json with the given play of its screw couplings
@@ -391,7 +391,7 @@ TEST_CASE("coupler physics: a jerk on a coupling with play breaks it, the brake 
 	flag_setting const everywhere{Global.coupler_physics_all, true};
 	auto front{loose_wagon(0.05, 20.0, "front")};
 	auto rear{loose_wagon(0.05, 0.1, "rear")};
-	join(rear, end::front, front, end::rear, coupling::coupler | coupling::brakehose);
+	join(rear, end::front, front, end::rear, Coupling::coupler | Coupling::brakeHose);
 	test::pair pair{rear, end::front, front, end::rear, 0.0};
 	front.hold_brake_pipe(5.0);
 	rear.hold_brake_pipe(5.0);
@@ -439,7 +439,7 @@ TEST_CASE("coupler physics: automatic couplers still catch a wagon rolling into 
 	flag_setting const physics{Global.coupler_physics, true};
 	flag_setting const everywhere{Global.coupler_physics_all, true};
 	flag_setting const crashdamage{Global.crash_damage, true};
-	auto automatic{definition::load("wagon").set("BuffCoupl", "CType", "Automatic").set("BuffCoupl", "AutomaticFlag", coupling::coupler | coupling::brakehose)};
+	auto automatic{definition::load("wagon").set("BuffCoupl", "CType", "Automatic").set("BuffCoupl", "AutomaticFlag", Coupling::coupler | Coupling::brakeHose)};
 	auto moving{vehicle{automatic, 5.0, "moving"}};
 	auto standing{vehicle{automatic, 0.0, "standing"}};
 	test::pair pair{moving, end::front, standing, end::rear, 1.0};
@@ -460,18 +460,18 @@ TEST_CASE("couplers: a broken coupling of vehicles facing each other uncouples t
 	join(second, end::rear, third, end::front);
 
 	first->damage_coupler(end::front);
-	CHECK(first->Couplers[end::front].CouplingFlag == coupling::faux);
-	CHECK(second->Couplers[end::front].CouplingFlag == coupling::faux);
+	CHECK(first->Couplers[end::front].CouplingFlag == Coupling::none);
+	CHECK(second->Couplers[end::front].CouplingFlag == Coupling::none);
 	// the other coupling of the second vehicle stays
-	CHECK(second->Couplers[end::rear].CouplingFlag == coupling::coupler);
+	CHECK(second->Couplers[end::rear].CouplingFlag == Coupling::coupler);
 }
 
 TEST_CASE("couplers: a broken coupler is repaired alone, with the one of the vehicle it was coupled with") {
 	auto first{vehicle{definition::load("wagon"), 0.0, "first"}};
 	auto second{vehicle{definition::load("wagon"), 0.0, "second"}};
 	auto third{vehicle{definition::load("wagon"), 0.0, "third"}};
-	join(first, end::rear, second, end::front, coupling::coupler | coupling::brakehose);
-	join(second, end::rear, third, end::front, coupling::coupler | coupling::brakehose);
+	join(first, end::rear, second, end::front, Coupling::coupler | Coupling::brakeHose);
+	join(second, end::rear, third, end::front, Coupling::coupler | Coupling::brakeHose);
 
 	// both couplings of the second wagon break
 	second->damage_coupler(end::front);
@@ -499,8 +499,8 @@ TEST_CASE("couplers: a broken coupler is repaired alone, with the one of the veh
 	CHECK_FALSE(TestFlag(second->DamageFlag, dtrain_coupling));
 	CHECK_FALSE(second->AlarmChainFlag);
 	// repaired, not coupled: the vehicles are coupled again as usual
-	CHECK(second->Couplers[end::rear].CouplingFlag == coupling::faux);
-	CHECK(second->Attach(end::rear, end::front, &third.mover(), coupling::coupler, true, false));
+	CHECK(second->Couplers[end::rear].CouplingFlag == Coupling::none);
+	CHECK(second->Attach(end::rear, end::front, &third.mover(), Coupling::coupler, true, false));
 }
 
 TEST_CASE("coupler physics: with couplerphysics yes, only the pairs with a vehicle covered take the physical model") {
@@ -543,7 +543,7 @@ TEST_CASE("coupler physics: a hit on a braked train runs through it as a wave, w
 		train.add(definition::load("wagon"));
 	}
 	// a wagon rolling at 15 km/h into the rear of the standing train, its brakes applied
-	train.add(definition::load("wagon"), 0, coupling::faux, 15.0, 0.3);
+	train.add(definition::load("wagon"), 0, Coupling::none, 15.0, 0.3);
 
 	std::vector<double> peak(wagons, 0.0);
 	std::vector<double> started(wagons, -1.0);

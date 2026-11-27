@@ -19,8 +19,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 #include <memory>
-#include "hamulce.h" // Pascal unit
-#include "friction.h" // Pascal unit
+#include "physics/brakes.h" // Pascal unit
+#include "physics/friction.h" // Pascal unit
 
 /*
 (C) youBy

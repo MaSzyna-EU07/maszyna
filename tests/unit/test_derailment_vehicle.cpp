@@ -1,13 +1,13 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
-#include "McZapkie/derailment.h"
-#include "McZapkie/MOVER.h"
+#include "physics/derailment.h"
+#include "physics/mover.h"
 #include "utilities/Globals.h"
 
 #include <cmath>
 
-// a vehicle too fast in a curve with physics.derailment of eu07.ini: the criteria of McZapkie/derailment.h checked by
+// a vehicle too fast in a curve with physics.derailment of eu07.ini: the criteria of physics/derailment.h checked by
 // TMoverParameters::check_derailment(), and what the vehicle comes to off the rails
 
 using test::definition;
@@ -134,7 +134,7 @@ TEST_CASE("derailment: the model of eu07.ini") {
 TEST_CASE("derailment: the brake hoses tear") {
 	model_setting const physical{global_settings::derailment_model::physical};
 	vehicle eu07vehicle{definition::fiz("4e_v1/4e"), 150.0};
-	eu07vehicle->Couplers[end::rear].CouplingFlag = coupling::coupler | coupling::brakehose;
+	eu07vehicle->Couplers[end::rear].CouplingFlag = Coupling::coupler | Coupling::brakeHose;
 	test::track curve;
 	curve.radius = 300.0;
 	for (int step = 0; step < 20; ++step) {
@@ -235,10 +235,10 @@ TEST_CASE("derailment: SetDamage taking the derailment off puts the vehicle back
 	}
 	REQUIRE(eu07vehicle->Derailed == dr::outcome::overturned);
 	// another flag taken off leaves it derailed
-	eu07vehicle->RunCommand("SetDamage", dtrain_engine, 1);
-	eu07vehicle->RunCommand("SetDamage", dtrain_engine, -1);
+	eu07vehicle->RunCommand(VehicleCommand::setDamage, dtrain_engine, 1);
+	eu07vehicle->RunCommand(VehicleCommand::setDamage, dtrain_engine, -1);
 	CHECK(eu07vehicle->Derailed == dr::outcome::overturned);
-	CHECK(eu07vehicle->RunCommand("SetDamage", dtrain_out, -1));
+	CHECK(eu07vehicle->RunCommand(VehicleCommand::setDamage, dtrain_out, -1));
 	CHECK_FALSE(TestFlag(eu07vehicle->DamageFlag, dtrain_out));
 	CHECK(eu07vehicle->Derailed == dr::outcome::none);
 }

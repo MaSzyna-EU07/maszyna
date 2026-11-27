@@ -4,7 +4,7 @@
 #include "scenario.h"
 #include "drive.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 #include "utilities/utilities.h"
 
 // characterisation of what the cab (Train.cpp) and the AI (Driver.cpp, driverhints.cpp) call on a vehicle
@@ -38,7 +38,7 @@ TEST_CASE("cab: the engine rotation of up to three vehicles in multiple, on the 
 	// no control cable, no reading
 	consist apart;
 	auto const &alone{apart.add(definition::fiz("sn61_v2/sn61"), 1).mover()};
-	apart.add(definition::fiz("sn61_v2/sn61"), 0, coupling::coupler | coupling::brakehose);
+	apart.add(definition::fiz("sn61_v2/sn61"), 0, Coupling::coupler | Coupling::brakeHose);
 	CHECK(alone.ShowEngineRotation(2) == doctest::Approx(0.0));
 }
 

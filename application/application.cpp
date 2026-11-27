@@ -47,6 +47,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include <vector>
 #include "utilities/translation.h"
+#include "physics/mover.h"
 
 #if WITH_DISCORD_RPC
 #include "ref/discord-rpc/include/discord_rpc.h"

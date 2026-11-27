@@ -35,27 +35,27 @@ TEST_CASE("couplers: coupled by hand, touching or apart, of the same kind or not
 	consist train;
 	auto &locomotive{train.add(definition::fiz("4e_v1/4e")).mover()};
 	// the wagon's buffers touch the locomotive's, the unit's car stands a metre away
-	auto &wagon{train.add(definition::fiz("3wl_v2/3wl"), 0, coupling::faux).mover()};
+	auto &wagon{train.add(definition::fiz("3wl_v2/3wl"), 0, Coupling::none).mover()};
 	train.step();
 
 	// nothing to couple to, or nothing to couple
-	CHECK_FALSE(locomotive.Attach(end::rear, end::front, nullptr, coupling::coupler));
-	CHECK_FALSE(locomotive.Attach(end::rear, end::front, &wagon, coupling::faux));
+	CHECK_FALSE(locomotive.Attach(end::rear, end::front, nullptr, Coupling::coupler));
+	CHECK_FALSE(locomotive.Attach(end::rear, end::front, &wagon, Coupling::none));
 	// the hook first: the coupler alone, which sounds
 	locomotive.Couplers[end::rear].sounds = 0;
-	REQUIRE(locomotive.Attach(end::rear, end::front, &wagon, coupling::coupler));
+	REQUIRE(locomotive.Attach(end::rear, end::front, &wagon, Coupling::coupler));
 	CHECK(locomotive.Couplers[end::rear].Connected == &wagon);
 	CHECK(wagon.Couplers[end::front].Connected == &locomotive);
-	CHECK(wagon.Couplers[end::front].CouplingFlag == coupling::coupler);
+	CHECK(wagon.Couplers[end::front].CouplingFlag == Coupling::coupler);
 	CHECK(locomotive.Couplers[end::rear].sounds == sound::attachcoupler);
 	// then the hoses: only what changes sounds
 	locomotive.Couplers[end::rear].sounds = 0;
-	REQUIRE(locomotive.Attach(end::rear, end::front, &wagon, coupling::coupler | coupling::brakehose | coupling::mainhose));
+	REQUIRE(locomotive.Attach(end::rear, end::front, &wagon, Coupling::coupler | Coupling::brakeHose | Coupling::mainHose));
 	CHECK(locomotive.Couplers[end::rear].sounds == (sound::attachbrakehose | sound::attachmainhose));
 	// and again, quietly, the other side naming the coupler by the one it's connected to (2)
 	locomotive.Couplers[end::rear].sounds = 0;
-	REQUIRE(wagon.Attach(end::front, 2, &locomotive, coupling::coupler | coupling::brakehose, false, false));
-	CHECK(locomotive.Couplers[end::rear].CouplingFlag == (coupling::coupler | coupling::brakehose));
+	REQUIRE(wagon.Attach(end::front, 2, &locomotive, Coupling::coupler | Coupling::brakeHose, false, false));
+	CHECK(locomotive.Couplers[end::rear].CouplingFlag == (Coupling::coupler | Coupling::brakeHose));
 	CHECK(locomotive.Couplers[end::rear].sounds == 0);
 
 	// a screw coupler with the buffers pressed together comes apart whole
@@ -74,20 +74,20 @@ TEST_CASE("couplers: a screw coupler uncoupled with the buffers apart, or with t
 	struct state {
 		char const *name;
 		double gap; // between the buffers, the coupler stretched
-		int coupling;
+		CouplingSet coupling;
 		bool damaged;
 		bool apart; // whether it comes apart whole
 	};
 	for (auto const &[name, gap, couplingtype, damaged, apart] : {
-	         state{"stretched a little", 0.1, coupling::coupler | coupling::brakehose, false, false},
-	         state{"stretched far", 0.3, coupling::coupler | coupling::brakehose, false, true},
-	         state{"hoses alone", 0.1, coupling::brakehose, false, true},
-	         state{"broken", 0.1, coupling::coupler | coupling::brakehose, true, true},
+	         state{"stretched a little", 0.1, Coupling::coupler | Coupling::brakeHose, false, false},
+	         state{"stretched far", 0.3, Coupling::coupler | Coupling::brakeHose, false, true},
+	         state{"hoses alone", 0.1, Coupling::brakeHose, false, true},
+	         state{"broken", 0.1, Coupling::coupler | Coupling::brakeHose, true, true},
 	     }) {
 		CAPTURE(name);
 		consist train;
 		auto &locomotive{train.add(definition::fiz("4e_v1/4e")).mover()};
-		auto &wagon{train.add(definition::fiz("3wl_v2/3wl"), 0, coupling::faux, 0.0, gap).mover()};
+		auto &wagon{train.add(definition::fiz("3wl_v2/3wl"), 0, Coupling::none, 0.0, gap).mover()};
 		REQUIRE(locomotive.Attach(end::rear, end::front, &wagon, couplingtype, true));
 		if (damaged) {
 			SetFlag(locomotive.DamageFlag, dtrain_coupling);
@@ -96,16 +96,16 @@ TEST_CASE("couplers: a screw coupler uncoupled with the buffers apart, or with t
 		CHECK((locomotive.DettachStatus(end::rear) < 0) == apart);
 		CHECK(locomotive.Dettach(end::rear) == apart);
 		// what's left when it doesn't come apart is the coupler, the hoses taken off
-		CHECK(locomotive.Couplers[end::rear].CouplingFlag == (apart ? coupling::faux : coupling::coupler));
-		CHECK(wagon.Couplers[end::front].CouplingFlag == (apart ? coupling::faux : coupling::coupler));
+		CHECK(locomotive.Couplers[end::rear].CouplingFlag == (apart ? Coupling::none : Coupling::coupler));
+		CHECK(wagon.Couplers[end::front].CouplingFlag == (apart ? Coupling::none : Coupling::coupler));
 	}
 	// couplers of different kinds don't couple, unless forced
 	consist train;
 	auto &locomotive{train.add(definition::fiz("4e_v1/4e")).mover()};
-	auto &unit{train.add(definition::fiz("en57_v1/5bgb"), 0, coupling::faux).mover()};
+	auto &unit{train.add(definition::fiz("en57_v1/5bgb"), 0, Coupling::none).mover()};
 	train.step();
-	CHECK_FALSE(locomotive.Attach(end::rear, end::front, &unit, coupling::coupler));
-	CHECK(locomotive.Attach(end::rear, end::front, &unit, coupling::coupler, true));
+	CHECK_FALSE(locomotive.Attach(end::rear, end::front, &unit, Coupling::coupler));
+	CHECK(locomotive.Attach(end::rear, end::front, &unit, Coupling::coupler, true));
 }
 
 TEST_CASE("couplers: automatic couplers coupling on contact") {
@@ -115,17 +115,17 @@ TEST_CASE("couplers: automatic couplers coupling on contact") {
 		char const *name;
 		char const *standing; // its rear coupler met
 		char const *running; // its front coupler meets
-		int coupling; // what they couple: what both flags allow, the control cable only of one kind
+		CouplingSet coupling; // what they couple: what both flags allow, the control cable only of one kind
 	};
 	for (auto const &[name, standing, running, couplingtype] : {
-	         meeting{"en57 to en57", "en57_v1/5bgb", "en57_v1/5bgaiii_led_spot", 39},
-	         meeting{"impuls to en57", "en57_v1/5bgb", "impuls_v1/31we-a_pr", 39 & ~coupling::control},
-	         meeting{"en57 without the flag", "en57_v1/5bgaiii_led_spot", "en57_v1/6ba_840", coupling::coupler},
+	         meeting{"en57 to en57", "en57_v1/5bgb", "en57_v1/5bgaiii_led_spot", CouplingSet::FromBits(39)},
+	         meeting{"impuls to en57", "en57_v1/5bgb", "impuls_v1/31we-a_pr", CouplingSet::FromBits(39).Without(Coupling::control)},
+	         meeting{"en57 without the flag", "en57_v1/5bgaiii_led_spot", "en57_v1/6ba_840", Coupling::coupler},
 	     }) {
 		CAPTURE(name);
 		scenario scenario{std::string{"couplers/automatic/"} + name, motion(), test::track{}};
 		scenario.add(standing, 0, consist::full_coupling);
-		scenario.add(running, 0, coupling::faux, 3.0, 0.2);
+		scenario.add(running, 0, Coupling::none, 3.0, 0.2);
 		scenario.wait(10.0);
 		auto &first{scenario.vehicle(0)};
 		auto &second{scenario.vehicle(1)};
@@ -147,8 +147,8 @@ TEST_CASE("couplers: a coupler broken, with its brake hose torn off") {
 	locomotive.damage_coupler(end::rear);
 	CHECK(TestFlag(locomotive.DamageFlag, dtrain_coupling));
 	CHECK(locomotive.AlarmChainFlag);
-	CHECK(locomotive.Couplers[end::rear].CouplingFlag == coupling::faux);
-	CHECK(wagon.Couplers[end::front].CouplingFlag == coupling::faux);
+	CHECK(locomotive.Couplers[end::rear].CouplingFlag == Coupling::none);
+	CHECK(wagon.Couplers[end::front].CouplingFlag == Coupling::none);
 	// the front coupler of the wagon, broken on its own: no hose to tear
 	wagon.damage_coupler(end::front);
 	CHECK(TestFlag(wagon.DamageFlag, dtrain_coupling));
@@ -159,7 +159,7 @@ TEST_CASE("couplers: a coupler broken, with its brake hose torn off") {
 	articulated.add(definition::fiz("impuls_v1/31we-b_pr"));
 	unit.damage_coupler(end::rear);
 	CHECK_FALSE(TestFlag(unit.DamageFlag, dtrain_coupling));
-	CHECK(unit.Couplers[end::rear].CouplingFlag != coupling::faux);
+	CHECK(unit.Couplers[end::rear].CouplingFlag != Coupling::none);
 }
 
 TEST_CASE("couplers: collisions fast enough to derail") {
@@ -184,7 +184,7 @@ TEST_CASE("couplers: collisions fast enough to derail") {
 		CAPTURE(name);
 		scenario scenario{std::string{"couplers/collision/"} + name, motion(), test::track{}};
 		scenario.add(frontpath, 0, consist::full_coupling, frontspeed);
-		scenario.add(back, 0, coupling::faux, backspeed, 20.0);
+		scenario.add(back, 0, Coupling::none, backspeed, 20.0);
 		scenario.wait(10.0);
 		CHECK(TestFlag(scenario.vehicle(0).DamageFlag, dtrain_out) == frontout);
 		CHECK(TestFlag(scenario.vehicle(1).DamageFlag, dtrain_out) == backout);

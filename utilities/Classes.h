@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #ifndef ClassesH
 #define ClassesH
+
+#include "interfaces/ITexture.h" // null_handle, for the handles below
 //---------------------------------------------------------------------------
 // Ra: zestaw klas do robienia wskaźników, aby uporządkować nagłówki
 //---------------------------------------------------------------------------

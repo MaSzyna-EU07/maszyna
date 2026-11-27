@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/physicslog.h"
 #include "utilities/utilities.h"
 #include "world/stationnames.h"
+#include "physics/mover.h"
 
 #include <algorithm>
 #include <cctype>
@@ -207,7 +208,7 @@ bool coupled(TDynamicObject const *From, TDynamicObject const *To) {
 		for (int step = 0; step < 1000 && vehicle != nullptr; ++step) {
 			auto const *mover{vehicle->MoverParameters};
 			auto const &neighbour{mover->Neighbours[side]};
-			if (mover->Couplers[side].CouplingFlag == 0 || neighbour.vehicle == nullptr)
+			if (mover->Couplers[side].CouplingFlag.Empty() || neighbour.vehicle == nullptr)
 				break;
 			if (neighbour.vehicle == To)
 				return true;
@@ -620,8 +621,8 @@ void blackbox_recorder::look_at_couplers() {
 		for (int side = 0; side < 2; ++side) {
 			auto const flags{mover->Couplers[side].CouplingFlag};
 			// a neighbour not coupled is only seen on the same track
-			auto const *other{flags != 0 ? mover->Neighbours[side].vehicle : nullptr};
-			coupler_entry const now{other, other != nullptr ? mover->Neighbours[side].vehicle_end : 0, other != nullptr ? flags : 0};
+			auto const *other{false == flags.Empty() ? mover->Neighbours[side].vehicle : nullptr};
+			coupler_entry const now{other, other != nullptr ? mover->Neighbours[side].vehicle_end : 0, other != nullptr ? flags.Bits() : 0};
 			auto &last{entry.couplers[side]};
 			auto const changed{now.other != last.other || now.other_side != last.other_side || now.flags != last.flags};
 			auto const before{last};

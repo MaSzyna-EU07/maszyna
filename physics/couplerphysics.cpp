@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "couplerphysics.h"
+#include "physics/couplerphysics.h"
 
 #include <algorithm>
 #include <cmath>

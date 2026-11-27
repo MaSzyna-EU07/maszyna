@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "vehicle/Driver.h"
 #include "utilities/Logs.h"
+#include "physics/mover.h"
 
 namespace {
 

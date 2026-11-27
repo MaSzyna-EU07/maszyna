@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "vehicle/Train.h"
 #include "vehicle/handover.h"
+#include "physics/mover.h"
 
 namespace crew {
 

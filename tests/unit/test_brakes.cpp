@@ -102,7 +102,7 @@ TEST_CASE("brakes: service braking stops a heavier wagon too") {
 TEST_CASE("brakes: a dead EN57 hauled with the brake hose alone charges from the brake pipe and brakes") {
 	test::consist train;
 	auto &locomotive{train.add(definition::fiz("sm42_v1/6d1"))};
-	train.add(definition::fiz("en57_v1/5bgb"), 0, coupling::coupler | coupling::brakehose);
+	train.add(definition::fiz("en57_v1/5bgb"), 0, Coupling::coupler | Coupling::brakeHose);
 	train.add(definition::fiz("en57_v1/6ba_840"));
 	train.add(definition::fiz("en57_v1/5bgaiii_led_spot"));
 	// a unit standing dead: no air anywhere, nothing in its main reservoir pipe

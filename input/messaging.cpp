@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 #include "world/mtable.h"
 #include "utilities/Logs.h"
+#include "physics/mover.h"
 
 #ifdef _WIN32
 extern "C"

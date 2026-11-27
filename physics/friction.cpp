@@ -13,7 +13,7 @@ Copyright (C) 2007-2013 Maciej Cierniak
 */
 
 #include "stdafx.h"
-#include "friction.h"
+#include "physics/friction.h"
 
 double TFricMat::GetFC(double N, double Vel)
 {

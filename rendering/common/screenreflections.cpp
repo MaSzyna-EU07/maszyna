@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "gl/ubo.h"
 #include "utilities/Globals.h"
+#include "physics/mover.h"
 
 namespace
 {

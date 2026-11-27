@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/parser.h"
 #include "utilities/utilities.h"
+#include "physics/mover.h"
 
 namespace
 {

@@ -1060,7 +1060,7 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
 
     if (token == "physics.derailment")
     {
-        // new: the physical criteria (McZapkie/derailment.h), old: the legacy draw, off: no derailment from the speed,
+        // new: the physical criteria (physics/derailment.h), old: the legacy draw, off: no derailment from the speed,
         // monitor: the legacy draw, and the criteria to the log
         std::string model;
         ParseOne(Parser, model, 1);
@@ -1076,7 +1076,7 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
 
     if (token == "physics.collisions")
     {
-        // new: the crush of the ends past the buffers (McZapkie/collision.h), old: the legacy rule, monitor: the legacy
+        // new: the crush of the ends past the buffers (physics/collision.h), old: the legacy rule, monitor: the legacy
         // rule, and the crush to the log
         std::string model;
         ParseOne(Parser, model, 1);

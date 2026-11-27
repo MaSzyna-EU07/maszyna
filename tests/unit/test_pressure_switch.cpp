@@ -2,7 +2,7 @@
 #include "doctest.h"
 #include "drive.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 
 // the pressure switch of the EP05 (git.eu07.pl eu07/maszyna#48). the pressure switch of the simulator is two
 // conditions in one: it cuts the traction motors off above 2 bar in the brake cylinders and below 3.6 bar in the

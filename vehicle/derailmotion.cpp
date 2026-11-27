@@ -10,7 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/derailmotion.h"
 
-#include "McZapkie/derailment.h"
+#include "physics/derailment.h"
 
 #include <algorithm>
 #include <cmath>

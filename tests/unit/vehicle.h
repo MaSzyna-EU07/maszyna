@@ -9,7 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "McZapkie/MOVER.h"
+#include "physics/mover.h"
 
 namespace test {
 
@@ -39,6 +39,10 @@ public:
 
 	// sets the key of the section, adding either one when it's missing
 	definition &set(std::string const &Section, std::string const &Key, nlohmann::ordered_json const &Value);
+	// a set of couplings, as the number the definition writes
+	definition &set(std::string const &Section, std::string const &Key, CouplingSet const Value) {
+		return set(Section, Key, Value.Bits());
+	}
 	// drops the whole section, with its rows, or one key of it
 	definition &remove(std::string const &Section);
 	definition &remove(std::string const &Section, std::string const &Key);
@@ -148,9 +152,9 @@ public:
 	void run(double Seconds, track const &Track = {}, double Dt = 0.01);
 	// distance between the facing couplers [m], negative while the buffers are pressed in
 	double gap() const;
-	// type of the coupling between the vehicles, coupling::faux when they aren't coupled
-	int coupling() const;
-	bool coupled() const { return coupling() != coupling::faux; }
+	// type of the coupling between the vehicles, Coupling::none when they aren't coupled
+	CouplingSet coupling() const;
+	bool coupled() const { return false == coupling().Empty(); }
 
 private:
 	struct placement {

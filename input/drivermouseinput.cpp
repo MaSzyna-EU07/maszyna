@@ -21,6 +21,8 @@ http://mozilla.org/MPL/2.0/.
 #include "application/uilayer.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "physics/mover.h"
+#include "vehicle/DynObj.h"
 
 auto const EU07_CONTROLLER_MOUSESLIDERSIZE{ 0.6 };
 

@@ -8,7 +8,7 @@ namespace test {
 consist::consist() = default;
 consist::~consist() = default;
 
-vehicle &consist::add(definition const &Definition, int Cab, int Coupling, double Velocity, double Gap) {
+vehicle &consist::add(definition const &Definition, int Cab, CouplingSet const couplings, double Velocity, double Gap) {
 	auto added{std::make_unique<vehicle>(Definition, Velocity, std::format("test{}", m_vehicles.size()), Cab)};
 	auto &mover{added->mover()};
 
@@ -20,9 +20,9 @@ vehicle &consist::add(definition const &Definition, int Cab, int Coupling, doubl
 		auto &last{m_vehicles.back()->mover()};
 		position = m_positions.back() - 0.5 * (last.Dim.L + mover.Dim.L) - Gap;
 		mover.Loc = TLocation{position, 0.0, 0.0};
-		if (Coupling != coupling::faux) {
-			last.Attach(end::rear, end::front, &mover, Coupling, true, false);
-			mover.Attach(end::front, end::rear, &last, Coupling, true, false);
+		if (false == couplings.Empty()) {
+			last.Attach(end::rear, end::front, &mover, couplings, true, false);
+			mover.Attach(end::front, end::rear, &last, couplings, true, false);
 		}
 	}
 	else {

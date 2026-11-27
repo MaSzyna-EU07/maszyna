@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
 #include "rendering/common/skyocclusion.h"
+#include "physics/mover.h"
 #include <algorithm>
 #include <chrono>
 #include <string>
@@ -185,16 +186,16 @@ bool scene_walk::Render_interior( bool const Alpha ) {
         glm::dvec3 const originoffset { dynamic->vPosition - m_renderpass.pass_camera.position() };
         float const squaredistance{ glm::length2( glm::vec3{ originoffset } / Global.ZoomFactor ) };
         dynamics.emplace_back( squaredistance, dynamic );
-        dynamic = dynamic->Next( coupling::permanent );
+        dynamic = dynamic->Next( Coupling::permanent );
     }
     // draw also interiors of permanently coupled vehicles in front, if there's any
-    dynamic = simulation::Train->Dynamic()->Prev( coupling::permanent );
+    dynamic = simulation::Train->Dynamic()->Prev( Coupling::permanent );
     while( dynamic != nullptr ) {
 
         glm::dvec3 const originoffset { dynamic->vPosition - m_renderpass.pass_camera.position() };
         float const squaredistance{ glm::length2( glm::vec3{ originoffset } / Global.ZoomFactor ) };
         dynamics.emplace_back( squaredistance, dynamic );
-        dynamic = dynamic->Prev( coupling::permanent );
+        dynamic = dynamic->Prev( Coupling::permanent );
     }
     if( Alpha ) {
         std::sort(

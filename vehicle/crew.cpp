@@ -10,7 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/crew.h"
 
-#include "McZapkie/MOVER.h"
+#include "physics/mover.h"
 #include "vehicle/handover.h"
 
 namespace crew {
@@ -31,9 +31,9 @@ void cut_power(TMoverParameters &Vehicle) {
 	Vehicle.eimic_real = 0.0;
 	Vehicle.SpeedCtrlValue = 0.0;
 	Vehicle.SpeedCtrlUnit.IsActive = false;
-	Vehicle.SendCtrlToNext("MainCtrl", Vehicle.MainCtrlPosForCoupled(), Vehicle.CabActive);
-	Vehicle.SendCtrlToNext("ScndCtrl", Vehicle.ScndCtrlPos, Vehicle.CabActive);
-	Vehicle.SendCtrlToNext("EIMIC", 0.0, Vehicle.CabActive);
+	Vehicle.SendCtrlToNext(VehicleCommand::mainController, Vehicle.MainCtrlPosForCoupled(), Vehicle.CabActive);
+	Vehicle.SendCtrlToNext(VehicleCommand::secondaryController, Vehicle.ScndCtrlPos, Vehicle.CabActive);
+	Vehicle.SendCtrlToNext(VehicleCommand::integratedController, 0.0, Vehicle.CabActive);
 }
 
 } // namespace

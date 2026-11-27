@@ -112,7 +112,7 @@ struct vehicle_state {
 	std::array<end_force, 2> ends{};
 };
 
-// the dtrack_* flags of the track (MOVER.h) the criteria look at
+// the dtrack_* flags of the track (mover.h) the criteria look at
 namespace track_damage {
 inline constexpr int railwear{2};
 inline constexpr int freerail{4};

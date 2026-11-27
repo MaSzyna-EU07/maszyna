@@ -3,7 +3,7 @@
 #include "consist.h"
 #include "drive.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 
 #include <cmath>
 #include <initializer_list>

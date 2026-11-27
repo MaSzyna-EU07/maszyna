@@ -29,6 +29,8 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46geometrybank.h"
 #include "rendering/screenshot.h"
 #include "rendering/editoroverlay.h"
+#include "physics/mover.h"
+#include "vehicle/DynObj.h"
 #include <imgui/imgui_impl_opengl3.h>
 
 #include <algorithm>

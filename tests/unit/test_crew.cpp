@@ -3,7 +3,7 @@
 #include "consist.h"
 #include "drive.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 #include "vehicle/crew.h"
 
 // a driver put in a vehicle or taken off it by a "Crew:<vehicle>" putvalues event (eu07/maszyna#510): reading the

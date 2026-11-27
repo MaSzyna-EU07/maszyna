@@ -14,7 +14,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "interfaces/IMaterial.h"
-#include "MOVER.h"
+#include "model/materialdata.h"
+#include "physics/vehicletypes.h"
+#include "physics/derailment.h"
+#include "vehicle/derailmotion.h"
 #include "world/TrkFoll.h"
 #include "vehicle/Button.h"
 #include "vehicle/AirCoupler.h"
@@ -187,16 +190,6 @@ enum class announcement_t : int {
 };
 
 // parameters for the material object, as currently used by various simulator models
-struct material_data {
-
-    int textures_alpha{ 0x30300030 }; // maska przezroczystości tekstur. default: tekstury wymienne nie mają przezroczystości
-    material_handle replacable_skins[ 5 ] = { null_handle, null_handle, null_handle, null_handle, null_handle }; // McZapkie:zmienialne nadwozie
-    int multi_textures{ 0 }; //<0 tekstury wskazane wpisem, >0 tekstury z przecinkami, =0 jedna
-
-    // assigns specified texture or a group of textures to replacable texture slots
-    void assign( std::string const &Replacableskin );
-};
-
 class TDynamicObject { // klasa pojazdu
 
     friend opengl46_renderer;
@@ -228,12 +221,12 @@ public:
     std::string asDestination; // dokąd pojazd ma być kierowany "(stacja):(tor)"
 	glm::dmat4 mMatrix; // macierz przekształcenia do renderowania modeli
     TMoverParameters *MoverParameters; // parametry fizyki ruchu oraz przeliczanie
-    inline TDynamicObject *NextConnected() { return MoverParameters->Neighbours[ end::rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
-    inline TDynamicObject *PrevConnected() { return MoverParameters->Neighbours[ end::front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
-    inline TDynamicObject *NextConnected() const { return MoverParameters->Neighbours[ end::rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
-    inline TDynamicObject *PrevConnected() const { return MoverParameters->Neighbours[ end::front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
-    inline int NextConnectedNo() const { return MoverParameters->Neighbours[ end::rear ].vehicle_end; }
-    inline int PrevConnectedNo() const { return MoverParameters->Neighbours[ end::front ].vehicle_end; }
+    TDynamicObject *NextConnected(); // pojazd podłączony od strony sprzęgu 1 (kabina -1)
+    TDynamicObject *PrevConnected(); // pojazd podłączony od strony sprzęgu 0 (kabina 1)
+    TDynamicObject *NextConnected() const; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
+    TDynamicObject *PrevConnected() const; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
+    int NextConnectedNo() const;
+    int PrevConnectedNo() const;
 
     // Dev tools
 	void Reload();
@@ -667,16 +660,13 @@ private:
 	bool HeadlightsAoff{false}; // wygaszone swiatelki A
 	bool HeadlightsBoff{false}; // wygaszone swiatelki B
     // checks whether there's unbroken connection of specified type to specified vehicle
-    bool is_connected( TDynamicObject const *Vehicle, coupling const Coupling = coupling::coupler ) const;
+    bool is_connected( TDynamicObject const *Vehicle, CouplingSet const couplings = Coupling::coupler ) const;
 	TDynamicObject * PrevAny() const;
-	TDynamicObject * Prev(int C = -1) const;
-	TDynamicObject * Next(int C = -1) const;
-    void SetdMoveLen(double dMoveLen) {
-        MoverParameters->dMoveLen = dMoveLen; }
-    void ResetdMoveLen() {
-        MoverParameters->dMoveLen = 0; }
-    double GetdMoveLen() {
-        return MoverParameters->dMoveLen; }
+	TDynamicObject * Prev(CouplingSet couplings = CouplingSet::All()) const; // the vehicle coupled with any of the couplings given
+	TDynamicObject * Next(CouplingSet couplings = CouplingSet::All()) const;
+    void SetdMoveLen(double dMoveLen);
+    void ResetdMoveLen();
+    double GetdMoveLen();
 
     int GetPneumatic(bool front, bool red);
     void SetPneumatic(bool front, bool red);
@@ -697,7 +687,7 @@ private:
 
 	TDynamicObject * ABuScanNearestObject(glm::vec3 pos, TTrack *Track, double ScanDir, double ScanDist,
 	                                                int &CouplNr);
-    TDynamicObject * GetFirstDynamic(int cpl_type, int cf = 1);
+    TDynamicObject * GetFirstDynamic(int cpl_type, CouplingSet cf = Coupling::coupler);
 	void ABuSetModelShake(glm::dvec3 mShake);
 
     // place in vehicle_table::m_items, set by its update for the groups of the physics steps on many threads
@@ -774,7 +764,7 @@ private:
     void crop_off_track_terrain();
     // the bed of the track at the axles, the level direction of the track there, and the side the derailment throws the
     // vehicle to (1 the left of the front, -1 the right, 0 none): out of the curve of the track as designed, into it
-    // where a buckle bends the line the other way more (McZapkie/derailment.h); on a straight track out of the turn of
+    // where a buckle bends the line the other way more (physics/derailment.h); on a straight track out of the turn of
     // the path as it lies, a buckle on it
     derail_motion::formation track_bed() const;
     glm::dvec3 track_front() const;
@@ -849,12 +839,9 @@ public:
         return glm::value_ptr(mMatrix); };
     inline double * Matrix() {
         return glm::value_ptr(mMatrix); };
-    inline double GetVelocity() const {
-        return MoverParameters->Vel; };
-    inline double GetLength() const {
-        return MoverParameters->Dim.L; };
-    inline double GetWidth() const {
-        return MoverParameters->Dim.W; };
+    double GetVelocity() const;
+    double GetLength() const;
+    double GetWidth() const;
     double radius() const;
     // calculates distance between event-starting axle and front of the vehicle
     double tracing_offset() const;
@@ -899,7 +886,7 @@ public:
     bool has_signal_pc5_on() const;
     bool has_signal_on( int const Side, int const Pattern ) const;
     void set_cab_lights( int const Cab, float const Level );
-    TDynamicObject * FirstFind(int &coupler_nr, int cf = 1);
+    TDynamicObject * FirstFind(int &coupler_nr, CouplingSet cf = Coupling::coupler);
     float GetEPP(); // wyliczanie sredniego cisnienia w PG
     int DirectionSet(int d); // ustawienie kierunku w składzie
     // odczyt kierunku w składzie; returns 1 if true, -1 otherwise
@@ -918,11 +905,11 @@ public:
     auto find_vehicle( int const Direction, double const Range, bool const InLine = false ) const -> std::tuple<TDynamicObject *, int, double, bool>;
     // locates potential vehicle connected with specific coupling type and satisfying supplied predicate
     template <typename Predicate_>
-    auto find_vehicle( coupling const Coupling, Predicate_ const Predicate ) -> TDynamicObject *;
+    auto find_vehicle( CouplingSet const couplings, Predicate_ const Predicate ) -> TDynamicObject *;
     TDynamicObject * FindPowered();
     TDynamicObject * FindPantographCarrier();
     template <typename UnaryFunction_>
-    void for_each( coupling const Coupling, UnaryFunction_ const Function );
+    void for_each( CouplingSet const couplings, UnaryFunction_ const Function );
     void ParamSet(int what, int into);
     // zapytanie do AI, po którym segmencie skrzyżowania jechać
     int RouteWish(TTrack *tr);
@@ -1063,18 +1050,18 @@ private:
 
 template <typename Predicate_>
 auto
-TDynamicObject::find_vehicle( coupling const Coupling, Predicate_ const Predicate ) -> TDynamicObject * {
+TDynamicObject::find_vehicle( CouplingSet const couplings, Predicate_ const Predicate ) -> TDynamicObject * {
 
     if( Predicate( this ) ) {
         return this; }
     // try first to look towards the rear
     auto *vehicle { this };
-    while( ( vehicle = vehicle->Next( Coupling ) ) != nullptr ) {
+    while( ( vehicle = vehicle->Next( couplings ) ) != nullptr ) {
         if( Predicate( vehicle ) ) {
             return vehicle; } }
     // if we didn't yet find a suitable vehicle try in the other direction
     vehicle = this;
-    while( ( vehicle = vehicle->Prev( Coupling ) ) != nullptr ) {
+    while( ( vehicle = vehicle->Prev( couplings ) ) != nullptr ) {
         if( Predicate( vehicle ) ) {
             return vehicle; } }
     // if we still don't have a match give up
@@ -1083,16 +1070,16 @@ TDynamicObject::find_vehicle( coupling const Coupling, Predicate_ const Predicat
 
 template <typename UnaryFunction_>
 void
-TDynamicObject::for_each( coupling const Coupling, UnaryFunction_ const Function ) {
+TDynamicObject::for_each( CouplingSet const couplings, UnaryFunction_ const Function ) {
 
     Function( this );
     // walk first towards the rear
     auto *vehicle { this };
-    while( ( vehicle = vehicle->Next( Coupling ) ) != nullptr ) {
+    while( ( vehicle = vehicle->Next( couplings ) ) != nullptr ) {
         Function( vehicle ); }
     // then towards the front
     vehicle = this;
-    while( ( vehicle = vehicle->Prev( Coupling ) ) != nullptr ) {
+    while( ( vehicle = vehicle->Prev( couplings ) ) != nullptr ) {
         Function( vehicle ); }
 }
 

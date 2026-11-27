@@ -6,7 +6,7 @@
 #include "drive.h"
 #include "consist.h"
 
-#include "McZapkie/hamulce.h"
+#include "physics/brakes.h"
 
 using test::definition;
 using test::vehicle;
