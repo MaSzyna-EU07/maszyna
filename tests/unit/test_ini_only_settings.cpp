@@ -143,3 +143,14 @@ TEST_CASE("ini only settings: nothing changed, nothing to tell") {
 	CHECK(ini.restore(*settings).empty());
 	CHECK(settings->exec_on_exit == "notify.exe");
 }
+
+TEST_CASE("ini only settings: a scenery's config block doesn't change the period of the odometer states") {
+	auto const settings{std::make_unique<global_settings>()};
+	settings->odometer_expiry = 730;
+	ini_only_settings const ini{*settings};
+	// "config odometer.expiry 1 endconfig" in the .scn would drop the states of the vehicles not run yesterday
+	settings->odometer_expiry = 1;
+	auto const changed{ini.restore(*settings)};
+	CHECK(settings->odometer_expiry == 730);
+	CHECK(changed == std::vector<std::string_view>{"odometer.expiry"});
+}

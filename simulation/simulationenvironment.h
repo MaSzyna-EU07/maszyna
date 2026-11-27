@@ -14,19 +14,18 @@ http://mozilla.org/MPL/2.0/.
 #include "environment/moon.h"
 #include "environment/stars.h"
 #include "environment/skydome.h"
+#include "environment/weather.h"
 #include "rendering/precipitation.h"
 #include "audio/sound.h"
 
 #include <array>
 
-class opengl_renderer;
-class opengl33_renderer;
+class opengl46_renderer;
 
 // wrapper for environment elements -- sky, sun, stars, clouds etc
 class world_environment {
 
-    friend opengl_renderer;
-    friend opengl33_renderer;
+    friend opengl46_renderer;
 
 public:
 // methods
@@ -72,6 +71,13 @@ public:
         wind_state() const;
     void
         wind_state( std::array<float, 8> const &State );
+    // clouds, fog and precipitation of the scenery, see environment/weather.h
+    inline auto const &
+        weather() const {
+            return m_weather; }
+    inline auto &
+        weather() {
+            return m_weather; }
 
 private:
 // types
@@ -97,6 +103,7 @@ private:
     basic_precipitation m_precipitation;
     sound_source m_rainsound { sound_placement::external, -1 };
     basic_wind m_wind;
+    world_weather m_weather;
 };
 
 namespace simulation {

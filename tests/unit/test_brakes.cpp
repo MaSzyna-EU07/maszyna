@@ -2,6 +2,9 @@
 #include "doctest.h"
 #include "vehicle.h"
 #include "consist.h"
+#include "utilities/Globals.h"
+
+#include <cmath>
 
 using test::definition;
 using test::vehicle;
@@ -136,4 +139,60 @@ TEST_CASE("brakes: a dead EN57 hauled with the brake hose alone charges from the
 		CAPTURE(i);
 		CHECK(train[i]->BrakePress < 0.1);
 	}
+}
+
+TEST_CASE("brakes: a wagon standing braked on a gradient sleeps while the brakes hold, and wakes and rolls away once they release") {
+	// Global.physics_sleepheld: a vehicle standing still held by its brakes lets its physics sleep, keeping the brake force of
+	// the step it fell asleep in. the brake system of the test vehicle steps on while asleep, as in the vehicle the user is in
+	REQUIRE(Global.physics_sleepheld);
+	test::track slope;
+	slope.gradient = 0.01; // the brakes hold it, the running resistance alone (about 2.5 per mille) doesn't
+	vehicle wagon{definition::load("wagon")};
+	// made standing, it has the hand brake on too (SetBraked()), which is the other test's
+	wagon->DecManualBrakeLevel(ManualBrakePosNo);
+	wagon.hold_brake_pipe(3.5);
+	wagon.run(30.0, slope);
+	REQUIRE(wagon->BrakePress > 1.0);
+	CHECK(std::abs(wagon.speed()) < 0.01);
+	CHECK_FALSE(wagon->PhysicActivation);
+
+	// the brakes holding as they are, it sleeps on
+	auto wakes{0};
+	for (int step = 0; step < 12000; ++step) {
+		auto const asleep{false == wagon->PhysicActivation};
+		wagon.step(slope);
+		if (asleep && wagon->PhysicActivation) {
+			++wakes;
+		}
+	}
+	CHECK(wakes == 0);
+	CHECK(std::abs(wagon.speed()) < 0.01);
+
+	// released, it wakes, the force of the brakes is gone and it rolls down the gradient
+	wagon.hold_brake_pipe(5.0);
+	wagon.run(60.0, slope);
+	CHECK(wagon->BrakePress < 0.1);
+	CHECK(wagon->Fb < 1.0);
+	CHECK(std::abs(wagon.speed()) > 1.0);
+	CHECK(wagon->PhysicActivation);
+}
+
+TEST_CASE("brakes: a wagon held by its hand brake on a gradient wakes and rolls away once the hand brake is released") {
+	// the setting changes by hand on a sleeping vehicle, whose brake system doesn't step in the game while asleep
+	REQUIRE(Global.physics_sleepheld);
+	test::track slope;
+	slope.gradient = 0.01;
+	vehicle wagon{definition::load("wagon")};
+	// made standing, it has the hand brake on (SetBraked())
+	REQUIRE(wagon->ManualBrakePos == ManualBrakePosNo);
+	wagon.hold_brake_pipe(5.0);
+	wagon.run(90.0, slope);
+	REQUIRE(wagon->BrakePress < 0.1);
+	CHECK(std::abs(wagon.speed()) < 0.01);
+	CHECK_FALSE(wagon->PhysicActivation);
+
+	wagon->DecManualBrakeLevel(ManualBrakePosNo);
+	wagon.run(30.0, slope);
+	CHECK(wagon->Fb < 1.0);
+	CHECK(std::abs(wagon.speed()) > 1.0);
 }

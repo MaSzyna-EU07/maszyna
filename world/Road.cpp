@@ -956,6 +956,14 @@ void road_node::import_from(cParser &Input, glm::dvec3 const &Offset)
 			m_state.surface = Input.getToken<std::string>();
 			replace_slashes(m_state.surface);
 		}
+		else if (token == "surfacetype")
+		{
+			auto const type{Input.getToken<std::string>()};
+			if (false == road_surface::from_name(type, m_state.surfacetype))
+			{
+				ErrorLog("Bad road: unknown surface type \"" + type + "\" defined for " + label + ", paved is used instead");
+			}
+		}
 		else if (token == "texlength")
 		{
 			Input.getTokens();
@@ -4135,6 +4143,7 @@ void road_node::export_as_text_(std::ostream &Output) const
 	}
 	// appearance
 	Output << "surface " << road.surface << ' ' << "texlength " << road.texturelength << ' ';
+	Output << road_surface::entry(road.surfacetype);
 	char const *sidenames[]{"left", "right"};
 	for (int side = 0; side < 2; ++side)
 	{
@@ -4224,10 +4233,9 @@ void road_table::create_geometry(scene::scratch_data &Scratchpad)
 		{
 			continue;
 		}
-		if (Global.editor_session && false == Global.NvRenderer)
+		if (Global.editor_session)
 		{
 			// scenery opened for editing: the road keeps its geometry apart, so it can be changed later.
-			// NOTE: the experimental renderer draws only what the scenery had when it was loaded
 			road->show();
 			continue;
 		}
@@ -4278,7 +4286,7 @@ void junction_table::create_geometry(scene::scratch_data &Scratchpad)
 		{
 			continue;
 		}
-		if (Global.editor_session && false == Global.NvRenderer)
+		if (Global.editor_session)
 		{
 			junction->show();
 			continue;

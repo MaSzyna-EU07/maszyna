@@ -61,7 +61,6 @@ void apply_test_mode_settings()
 	Global.editor_session = false;
 	Global.local_start_vehicle = "ghostview";
 	Global.GfxRenderer = "null";
-	Global.NvRenderer = false;
 	Global.bSoundEnabled = false;
 	Global.python_enabled = false;
 	Global.bInactivePause = false;
@@ -69,7 +68,6 @@ void apply_test_mode_settings()
 	Global.fullscreen_windowed = false;
 	Global.VSync = false;
 	Global.iMultisampling = 0;
-	Global.gfx_usegles = false;
 	Global.minframetime = std::chrono::duration<float>(0.0f);
 	Global.extra_viewports.clear();
 	Global.headtrack_conf.joy.clear();
@@ -92,8 +90,10 @@ void apply_test_mode_settings()
 	Global.iMultiplayer = 0;
 	Global.exec_on_exit.clear();
 	// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
-	if (!Global.random_seed)
+	if (false == Global.random_seed_given) {
 		Global.random_seed = seed_of("test");
+		Global.random_seed_given = true;
+	}
 	// the real time limit, which the scenery may set too
 	test().watch_wall_clock(wall_clock_limit(Global.test.wall_timeout, Global.test.timeout));
 }

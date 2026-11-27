@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/scenarioloaderuilayer.h"
 
 #include "utilities/Globals.h"
+#include "rendering/renderer.h"
 #include "utilities/translation.h"
 #include <nlohmann/json.hpp>
 #include "utilities/Logs.h"
@@ -203,11 +204,8 @@ void scenarioloader_ui::render_()
 	const float font_scale_mult = 48 / ImGui::GetFontSize() * scale;
 	
 	// Gradient at the lower half of the screen
-	if (!Global.NvRenderer)
-	{
-		const ImTextureID tex = (ImTextureID)(intptr_t)m_gradient_overlay_tex; // See https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples#example-for-opengl-users
-		draw_list->AddImage(tex, ImVec2(0, Global.window_size.y / 2), ImVec2(Global.window_size.x, Global.window_size.y), ImVec2(0, 0), ImVec2(1, 1));
-	}
+	const ImTextureID tex = (ImTextureID)(intptr_t)m_gradient_overlay_tex; // See https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples#example-for-opengl-users
+	draw_list->AddImage(tex, ImVec2(0, Global.window_size.y / 2), ImVec2(Global.window_size.x, Global.window_size.y), ImVec2(0, 0), ImVec2(1, 1));
 	
 	// [O] Loading...
 	const float margin_left_icon = 35.0f * scale;
@@ -289,7 +287,9 @@ void scenarioloader_ui::render_()
 		ImVec2 text_pos = ImVec2(screen_size.x - 16 * scale - text_size.x, 16 * scale);
 		draw_list->AddText(text_pos, IM_COL32_WHITE, sceneryName.c_str());
 	}
-	
+
+	render_notice(draw_list, scale, font_scale_mult);
+
 	// Progress bar at the bottom of the screen
 	const auto p1 = ImVec2(0, Global.window_size.y - 2);
 	const auto p2 = ImVec2(Global.window_size.x * m_progress, Global.window_size.y);
@@ -298,10 +298,27 @@ void scenarioloader_ui::render_()
 	ImGui::End();
 }
 
+// the notice centred at the top of the screen on a dark plate, so it reads on any background. the bottom of the screen
+// is taken by the trivia and by the texts some backgrounds carry
+void scenarioloader_ui::render_notice( ImDrawList *Drawlist, float const Scale, float const Fontscale ) const
+{
+	if (m_notice.empty())
+		return;
+
+	ImGui::SetWindowFontScale(Fontscale * 0.6f);
+	auto const text_size{ImGui::CalcTextSize(m_notice.c_str())};
+	auto const padding{16.f * Scale};
+	auto const top{48.f * Scale};
+	ImVec2 const text_pos{(static_cast<float>(Global.window_size.x) - text_size.x) * 0.5f, top + padding};
+	Drawlist->AddRectFilled(
+		ImVec2{text_pos.x - padding, top},
+		ImVec2{text_pos.x + text_size.x + padding, text_pos.y + text_size.y + padding},
+		IM_COL32(0, 0, 0, 170), 8.f * Scale);
+	Drawlist->AddText(text_pos, IM_COL32_WHITE, m_notice.c_str());
+}
+
 void scenarioloader_ui::generate_gradient_tex()
 {
-	if (Global.NvRenderer)
-		return;
 	constexpr int image_width = 1;
 	constexpr int image_height = 1024;
 	const auto image_data = new char[image_width * image_height * 4];
@@ -314,18 +331,13 @@ void scenarioloader_ui::generate_gradient_tex()
 			image_data[(y * image_width + x) * 4 + 3] = std::clamp(static_cast<int>(pow(y / 1023.f, 0.7) * 255), 0, 255);
 		}
 
-	// Create a OpenGL texture identifier
-	GLuint image_texture;
-	glGenTextures(1, &image_texture);
-	glBindTexture(GL_TEXTURE_2D, image_texture);
-
-	// Setup filtering parameters for display
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-	// Upload pixels into texture
-	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_width, image_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_data);
+	// an image of the user interface: the values as they are (not srgb), the nearest texel
+	imgui_renderer::image_options options;
+	options.srgb = false;
+	options.nearest = true;
+	std::uint64_t image_texture{0};
+	if (auto *renderer{GfxRenderer->GetImguiRenderer()})
+		image_texture = renderer->Create_Image(reinterpret_cast<std::uint8_t const *>(image_data), image_width, image_height, options);
 
 	delete[] image_data;
 
