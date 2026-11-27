@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Button.h"
 #include "vehicle/Gauge.h"
 #include "vehicle/enginestart.h"
+#include "vehicle/linebreaker.h"
 #include "audio/sound.h"
 #include "scripting/PyInt.h"
 #include "input/command.h"
@@ -172,6 +173,11 @@ class TTrain {
     inline
     std::string GetLabel( TSubModel const *Control ) const {
         return m_controlmapper.find( Control ); }
+    // the direction the mouse drags universal control Index in to any position between its ends, none if the control
+    // is only set to its ends (MaSzyna-EU07/maszyna#62)
+    universal_drag::direction universal_drag_direction( int const Index ) const;
+    // the position universal control Index is set to, from 0 to 1
+    float universal_position( int const Index ) const;
     void UpdateCab();
     bool Update( double const Deltatime );
 	void UpdateDirectionRelays();
@@ -369,6 +375,12 @@ class TTrain {
     static void OnCommand_oilfuelpumptoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_oilpumpenable( TTrain *Train, command_data const &Command );
     static void OnCommand_oilpumpdisable( TTrain *Train, command_data const &Command );
+    static void OnCommand_tractionmodetoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_tractionmodecatenary( TTrain *Train, command_data const &Command );
+    static void OnCommand_tractionmodegenset( TTrain *Train, command_data const &Command );
+    static void OnCommand_gensettoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_gensetenable( TTrain *Train, command_data const &Command );
+    static void OnCommand_gensetdisable( TTrain *Train, command_data const &Command );
     static void OnCommand_waterheaterbreakertoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_waterheaterbreakerclose( TTrain *Train, command_data const &Command );
     static void OnCommand_waterheaterbreakeropen( TTrain *Train, command_data const &Command );
@@ -526,6 +538,7 @@ class TTrain {
     static void OnCommand_cabchangeforward( TTrain *Train, command_data const &Command );
     static void OnCommand_cabchangebackward( TTrain *Train, command_data const &Command );
     static void OnCommand_generictoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_genericset( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehiclemoveforwards( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehiclemovebackwards( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehicleboost( TTrain *Train, command_data const &Command );
@@ -555,7 +568,7 @@ class TTrain {
     TMoverParameters *mvThird { nullptr }; // trzeci człon (SN61)
     TMoverParameters *mvPantographUnit { nullptr }; // nearest pantograph equipped unit
     // helper variable, to prevent immediate switch between closing and opening line breaker circuit
-    int m_linebreakerstate { 0 }; // 0: open, 1: closed, 2: freshly closed (and yes this is awful way to go about it)
+    linebreaker::state m_linebreakerstate { linebreaker::state::open };
     static const commandhandler_map m_commandhandlers;
     control_mapper m_controlmapper;
 
@@ -600,6 +613,7 @@ public: // reszta może by?publiczna
     TGauge ggWiperSw; // przelacznik wycieraczek
 
     TGauge ggMaxCurrentCtrl;
+    TGauge ggAutoRelayButton; // przełącznik AutoRelay: rozruch automatyczny, załączenie bocznikowania spalinowozu
 
     TGauge ggMainOffButton;
     TGauge ggMainOnButton;
@@ -745,6 +759,8 @@ public: // reszta może by?publiczna
     TGauge ggFuelPumpButton; // fuel pump switch
     TGauge ggOilPumpButton; // oil pump switch
     TGauge ggOilFuelPumpButton; // joint oil and fuel pump switch
+    TGauge ggTractionModeSwitch; // traction selector of a dual-mode vehicle (catenary/genset)
+    TGauge ggGensetButton; // genset start switch of a dual-mode vehicle
     TGauge ggMotorBlowersFrontButton; // front traction motor fan switch
     TGauge ggMotorBlowersRearButton; // rear traction motor fan switch
     TGauge ggMotorBlowersAllOffButton; // motor fans shutdown switch

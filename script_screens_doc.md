@@ -137,6 +137,48 @@ used:
 - on the cpu, in the screens' worker, when the renderer can't do it on the gpu (the NVRHI renderer, OpenGL ES, a
   shader that failed to load) or `screens.gpupost` is 0. A shader that fails is logged once, and the cpu takes over.
 
+### Limits of a Lua script
+
+Besides the 200 million instructions of a call, a Lua screen is held to what runs in C, where the count doesn't reach:
+
+- memory: a screen holds at most 128 MB: its Lua heap and the pixels of its images, fonts and sprites (4 bytes a pixel
+  of an image, 1 of a font or a sprite). An object that would take the screen over is refused (`memory limit
+  exceeded`), and a screen found holding more stops with that error. Garbage doesn't count: the check collects it
+  first, every thousand instructions and before the calls below. Between the checks the screen's heap goes through a
+  counter of the game's, in front of LuaJIT's own allocator, which refuses a block that would take the screen over
+  twice the limit as it is asked for (`not enough memory`, an error the script may catch). So what one instruction
+  makes is held as well: a loop doubling a string (`for i = 1, 11 do s = s .. s end` on a 1 MB `s`) stops at the
+  concatenation that would go over 256 MB, not at LuaJIT's own heap limit of about 2 GB;
+- `string.rep` makes no string over 1 MB; `string.format`, `table.concat` and `string.gsub` (with a string or a table to
+  replace with) refuse a result that may be over the memory of a screen, counted from the lengths of what they are
+  given;
+- the pattern functions (`string.find`, `match`, `gmatch`, `gsub`) backtrack, and some patterns take hours on a long
+  subject (`("a"):rep(1e6):find(".-b")`). A call is refused (`the pattern may take too long`) when the steps it may
+  take at worst are over 100 million, about a tenth of a second at worst: the length of the subject (plus one), times the
+  length of the pattern, times the subject again for each repetition (`*`, `+`, `-`, `%b`, a back reference `%1`) but
+  one followed by what always matches (nothing, as in a repetition that ends the pattern, or `(.-)%s*$`), times 2 for
+  each `?`, and taken once rather than from every position for a pattern anchored with `^` (not in `gmatch`). A
+  repetition of a character or a `%` class right before the final `$` (`%s*$`) counts the longest run of it in the
+  subject rather than the whole subject. A plain search (`find` with `plain`, or a pattern of no special characters) is
+  the subject times the pattern. So a pattern ending in its only repetition (`"[^\n]+"`, `"%d+"`) works on any subject,
+  one more repetition (`"(%w+)=(%w+)"`) on some 3 000 to 5 000 bytes, and each further one divides that a lot. The
+  usual trim, `s:match("^%s*(.-)%s*$")`, costs the line times its longest run of spaces: a line of words, even a
+  megabyte long, is fine, but a long run of spaces inside it is refused, since the trim really takes the square of that.
+  A trim that stays linear on any string:
+
+  ```lua
+  local function trim(s)
+      local first = s:find("%S")
+      if not first then return "" end
+      return s:sub(first, #s - s:reverse():find("%S") + 1)
+  end
+  ```
+- `xpcall` is made of `pcall`: the handler gets the error once it has left the function, and a coroutine may yield
+  inside either. There is no `newproxy`, so no finalizer (`__gc`) of the script's own: LuaJIT runs those without the
+  instruction count;
+- the game reads `render` and `init` of the script's table in protected mode, so a metatable of the script's
+  (`__index`) may provide them; one that fails or runs over switches the screen off.
+
 ## WebAssembly modules
 
 A module exports:
@@ -208,3 +250,64 @@ clang --target=wasm32 -O2 -nostdlib -Wl,--no-entry -o ekran.wasm ekran.c
 
 Any language that compiles to WebAssembly works the same way (Rust `wasm32-unknown-unknown`, Zig, AssemblyScript),
 as long as the module imports nothing but the `eu07` functions above.
+
+## Scenery scripts
+
+A scenery runs a Lua script with `lua <file>` in its `.scn`, while the scenery loads. The script registers events
+and works with memcells, tracks and vehicles through the table `eu07.events` (`event_create`, `event_dispatch`,
+`memcell_update`, `writelog` and the rest, see `scripting/lua.cpp`). It shares the sandbox of the Lua screens:
+
+- the file is a path relative to the scenery folder (`scenery/`), and stays inside it: no `..`, no drive, no leading
+  `/`. `/` and `\` both separate folders, on Linux too. It is text, of at most 16 MB; precompiled code is not loaded;
+- the script gets the base library, `table`, `string`, `math` and `bit`, and of `os` only the clock: `os.time`,
+  `os.clock`, `os.difftime` and `os.date` (with the C89 conversions only, `%Y`, `%d`, `%H` and so on). It gets no
+  `io`, the rest of `os`, `ffi`, `debug`, `jit`, `package`, `require`, `dofile`, `load`, `loadfile` or `loadstring`;
+- a script that fails stops there, the error goes to the log with the file name and line, and the scenery goes on
+  loading. An event handler that fails is logged with the name of the event, and the simulation goes on;
+- the events, tracks, isolated circuits, memcells and vehicles the functions give (`event_find`, `track_find`,
+  `memcell_find`, the event and the vehicle an event handler gets...) are handles of their kind: equal for the same
+  object, usable as keys of a table, and taken only where that kind goes. Another kind, or any other value, is an
+  error (`bad argument #1 to 'memcell_update' (eu07.memcell expected, got userdata)`); `nil`, which the find
+  functions give for a missing object, is taken as no object, as before. An event run without a vehicle gives its
+  handler `nil` for the vehicle.
+
+Instead of `io`, a scenery script reads and writes files through `eu07`, as the Lua screens read theirs:
+
+| function                         | meaning                                                                                  |
+|----------------------------------|------------------------------------------------------------------------------------------|
+| `eu07.read_file(path)`           | the contents of a file of the scenery folder (`scenery/`), or `nil`: a regular file of at most 16 MB, the path as for `lua <file>` |
+| `eu07.write_file(path, text)`    | writes `text` (any bytes) to a file of the scenery's data folder, replacing what was there, and makes the folders of `path`; returns `true`, or `nil` and the reason |
+| `eu07.read_data_file(path)`      | the contents of a file of the scenery's data folder, or `nil`: what `write_file` wrote there |
+
+The data folder is the scenery's own, in the player's folder of the game: `%APPDATA%\MaSzyna\scenery_data\<scenery>\`
+on Windows, `~/.config/MaSzyna/scenery_data/<scenery>/` on Linux (`~/Library/Application Support/MaSzyna/...` on a
+Mac), `<scenery>` being the `.scn` file without `.scn` (`td.scn`: `scenery_data/td/`). The game writes nowhere else
+for a script, and never into its own folder; the log says where the folder is when the scenery loads its first
+script. What is written there stays for the next run of the scenery, and the player may delete it.
+
+A path to write to is relative, with `/` or `\` between the folders, at most 8 folders deep and 200 bytes long, and
+each name in it portable: no `..`, no `.`, no empty name, no drive, no `:` `<` `>` `"` `|` `?` `*` or control
+characters, no `.` or space at the end, and none of the names Windows keeps for its devices (`con`, `nul`, `com1`,
+`lpt1`... with or without an extension). A file is at most 1 MB (1048576 bytes), and the data folder of a scenery holds at most 256
+files and 16 MB together; a write over these limits is refused, and leaves the file as it was.
+
+```lua
+local saved = eu07.read_data_file("state.txt")
+local runs = tonumber(saved or "0") + 1
+local ok, reason = eu07.write_file("state.txt", tostring(runs))
+if not ok then eu07.events.writelog("state not saved: " .. reason) end
+```
+
+A script written for the earlier full libraries stops at the first call to one of them (`attempt to index global
+'io' (a nil value)` in the log). For a scenery you trust, `eu07.ini` can give the scripts all of LuaJIT's libraries
+again:
+
+| key                 | default | meaning                                                                                  |
+|---------------------|---------|------------------------------------------------------------------------------------------|
+| `lua.fulllibraries` | no      | yes: the scenery scripts get all of LuaJIT's libraries (`io`, `os`, `ffi`, `require`...), and with them the files and programs of the computer. The Lua screens stay sandboxed |
+
+Only `eu07.ini` turns it on: a `config` block of a scenery doesn't (the log says the key was ignored). Nor does it set
+the other keys that would take a scenery out of its sandbox or reach the computer: `execonexit`, `extcam.cmd`,
+`extcam.rec`, `screenshotsdir`, `network.server`, `network.client`, `zmq.address`, `motiontelemetry`, `uart`,
+`feedbackmode`, `feedbackport`, nor does it switch on `python.enabled`, `luascreens.enabled` or `wasm.enabled` when
+`eu07.ini` has them off. A scenery may still switch those three off, or `lua.fulllibraries` off, as it always could.

@@ -141,6 +141,10 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
         // dense enough for the waves; a switch keeps its division, the blades depend on it
         fStep = std::min( fStep, 2.0 );
     }
+    if( m_setting.buckled ) {
+        // and for the lobes of a buckle, 9 m and more
+        fStep = std::min( fStep, 1.0 );
+    }
     // NOTE: optionally replace this part with the commented version, after solving geometry issues with double switches
     if( pOwner->eType == tt_Switch
      && fStep * (3.0 * Global.SplineFidelity) > fLength ) {
@@ -433,14 +437,34 @@ Math3D::vector3 TSegment::GetPoint(double const fDistance) const
 };
 */
 
-glm::dvec3 TSegment::stray( glm::dvec3 const &Point, track_uneven::amounts const &Amount, double const Distance ) const {
-    auto const field { track_uneven::field( Point ) };
-    glm::dvec3 result {
-        field.x * Amount.side * track_uneven::stray_side_per_mm,
-        field.y * Amount.up * track_uneven::stray_up_per_mm,
-        field.z * Amount.side * track_uneven::stray_side_per_mm };
-    result.y -= pOwner->joint_dip( Distance );
+glm::dvec3 TSegment::stray( glm::dvec3 const &Point, track_uneven::amounts const &Amount, double const Distance, glm::dvec3 const &Across ) const {
+    glm::dvec3 result { 0.0 };
+    if( m_setting.uneven ) {
+        auto const field { track_uneven::field( Point ) };
+        result = glm::dvec3 {
+            field.x * Amount.side * track_uneven::stray_side_per_mm,
+            field.y * Amount.up * track_uneven::stray_up_per_mm,
+            field.z * Amount.side * track_uneven::stray_side_per_mm };
+        result.y -= pOwner->joint_dip( Distance );
+    }
+    if( m_setting.buckled && m_pieces.empty() ) {
+        result += Across * track_buckle::offset( pOwner->buckle(), Distance );
+    }
     return result;
+}
+
+double TSegment::buckle_bend( double const Distance, double const Base ) const {
+    if( false == m_setting.buckled || false == m_pieces.empty() ) {
+        return 0.0;
+    }
+    return track_buckle::mean_bend( pOwner->buckle(), Distance, Base );
+}
+
+glm::dvec3 TSegment::across_at( double const Distance ) const {
+    glm::dvec3 point;
+    glm::dvec3 across;
+    plan_frame( Distance, point, across );
+    return across;
 }
 
 glm::dvec3 TSegment::uneven_bend( double const Distance ) const {
@@ -457,12 +481,13 @@ glm::dvec3 TSegment::uneven_bend( double const Distance ) const {
         if( auto const direction { FastGetDirection( t, 0.1 / fLength ) }; on != At && glm::length( direction ) > 0.0 ) {
             point += direction * ( ( At - on ) / glm::length( direction ) );
         }
-        return stray( point, pOwner->uneven_at( At, m_setting.path ), At ); };
+        // the buckle left out: its curvature is taken on its own, see buckle_bend()
+        return stray( point, pOwner->uneven_at( At, m_setting.path ), At, glm::dvec3 { 0.0 } ); };
     return ( strayed( Distance + reach ) - 2.0 * strayed( Distance ) + strayed( Distance - reach ) ) / ( reach * reach );
 }
 
 void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origin, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const {
-    if( false == m_setting.uneven ) {
+    if( false == m_setting.uneven && false == m_setting.buckled ) {
         return;
     }
     // the rails settling apart turn about the middle of the track, what's outside them follows the rail; the foot of the ballast stays
@@ -472,9 +497,9 @@ void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origi
     if( share <= 0.0 ) {
         return;
     }
-    auto const amount { pOwner->uneven_at( Distance, m_setting.path ) };
+    auto const amount { m_setting.uneven ? pOwner->uneven_at( Distance, m_setting.path ) : track_uneven::amounts {} };
     Vertex.position.y -= static_cast<float>( share * track_uneven::stray_up_per_mm * amount.cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
-    Vertex.position += glm::vec3 { share * stray( Origin + glm::dvec3 { Vertex.position }, amount, Distance ) };
+    Vertex.position += glm::vec3 { share * stray( Origin + glm::dvec3 { Vertex.position }, amount, Distance, glm::dvec3 { Parallel } ) };
 }
 
 void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {
@@ -505,17 +530,18 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::
         rotation.y = static_cast<float>(fStoop); // pochylenie toru prostego
         rotation.z = static_cast<float>(fDirection); // kierunek toru w planie
     }
-    if( false == m_setting.uneven ) {
+    if( false == m_setting.uneven && false == m_setting.buckled ) {
         return;
     }
-    // direction and slope stay as designed: the physics takes the curve radius and the grade from them
+    // direction and slope stay as designed: the physics takes the curve radius and the grade from them, and the curvature of a buckle
+    // on its own (buckle_bend())
     auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
     glm::dvec3 const across { -std::cos( rotation.z ), 0.0, -std::sin( rotation.z ) };
-    auto const amount { pOwner->uneven_at( fDistance, m_setting.path ) };
+    auto const amount { m_setting.uneven ? pOwner->uneven_at( fDistance, m_setting.path ) : track_uneven::amounts {} };
     rotation.x += static_cast<float>( track_uneven::stray_up_per_mm * (
         amount.up * track_uneven::roll( position, across, gauge )
       + amount.cross * track_uneven::level( position, across ) / gauge ) );
-    position += track_uneven::across_only( stray( position, amount, fDistance ), across );
+    position += track_uneven::across_only( stray( position, amount, fDistance, across ), across );
 };
 
 void TSegment::plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const {

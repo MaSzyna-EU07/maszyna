@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46renderer.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/hardwareprobe.h"
 
 namespace
 {
@@ -75,6 +76,9 @@ bool after_window(GLFWwindow *Window)
 		ErrorLog("Bad init: failed to initialize glad");
 		return false;
 	}
+
+	// which of the GPUs the context runs on, and its memory
+	hardware::log_gl_context();
 
 	return true;
 }

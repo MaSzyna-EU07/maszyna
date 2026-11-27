@@ -17,4 +17,4 @@
 # on the include path, before the repository root.
 set -e
 cd "$(dirname "$0")"
-g++ -std=c++20 -O1 ../ref/glad/src/glad.c ../gl/glsl_common.cpp ../rendering/common/shadersource.cpp main.cpp -I. -I.. -I../ref/glad/include -I../ref/glm -o validateshaders
+${CXX:-g++} -std=c++20 -O1 ../ref/glad/src/glad.c ../gl/glsl_common.cpp ../rendering/common/shadersource.cpp main.cpp -I. -I.. -I../ref/glad/include -I../ref/glm -o validateshaders

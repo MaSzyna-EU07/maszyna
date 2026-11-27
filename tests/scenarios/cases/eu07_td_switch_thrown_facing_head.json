@@ -1,0 +1,57 @@
+{
+  "description": "Switch thrown under a train running facing through it (#289 review 2b): as eu07_td_switch_facing_control, but the way is set to track 2 (keyctrl01) and zwr01 is thrown to track 1 when the locomotive has run onto the switch with both its bogies (event of the switch track, set off by its rear axle). The locomotive and the train behind it have to go on to track 1 and stay on the rails, and the AI has to stop before the signal at stop on track 1.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_switch_thrown.scn",
+  "vars": {
+    "trainsets": [
+      "trainset none start 80.0 0.0",
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "route": "node -1 0 autotest_route_launcher eventlauncher 0 0 0 -1 none 1034 keyctrl01 end",
+    "throw": "zwr01_1 zwr01_V40",
+    "trigger": "",
+    "order": "Shunt -1 0"
+  },
+  "track_events": {
+    "start": "event0 autotest_wake",
+    "zwr01": [
+      "event1 autotest_throw",
+      "event2 autotest_throw"
+    ],
+    "tdo_n1725": [
+      "event2 autotest_signal1_info",
+      "event0 autotest_pass"
+    ],
+    "tdo_n1734": [
+      "eventall1 autotest_fail",
+      "eventall2 autotest_fail"
+    ]
+  },
+  "test_config": [
+    "test.timeout 400",
+    "test.standstill 120"
+  ],
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 30,
+      "within": 200
+    },
+    {
+      "type": "on_track",
+      "vehicles": "{{vehicle}}",
+      "max_offset": 0.6
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "Bad driving"
+    }
+  ],
+  "xfail": "#289 review 2b, as before the stack (TrkFoll reverted in c268673c): an axle keeps the way of the switch it ran onto but leaves by the way the switch is set to now, so the locomotive jumps 1.9 m sideways at the end of the switch, an axle at a time; and the AI keeps the route it scanned before the throw (a switch behind the head of the train is not scanned again), so on track 1 it brakes for the exit signal of track 2 and runs past the signal at stop of track 1 at 40 km/h"
+}

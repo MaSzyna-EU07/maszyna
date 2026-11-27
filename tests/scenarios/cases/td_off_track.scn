@@ -1,0 +1,14 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed (physics.derailment new, the vehicles
+// off the track moving on the ground, vehicle/derailmotion.h):
+// an EU07 with an AI driver and no timetable stands on track 1 of Stacja1, where td.scn keeps its timetable train,
+// so it stays put and logs its physics; the train of the case has no driver and runs at {{velocity}} km/h from
+// {{offset}} m past point 1 of {{track}} towards its point 2. on the line of td.scn, from tdo_n157 on, that is the
+// curve of R 600 m (tdo_n213, tdo_n222, tdo_n231), cant 65 mm
+{{track_nodes}}
+trainset none tdo_n1734 0.0 0.0
+node -1 0 {{vehicle}} dynamic pkp\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic
+endtrainset
+
+trainset none {{track}} {{offset}} {{velocity}}
+{{consist}}
+endtrainset

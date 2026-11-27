@@ -1,0 +1,25 @@
+{
+  "description": "SM42 shunter on td.scn pulls three loaded wagons back along tor1k and stops with the far end of the last one a few metres past the exit signal stacja1_j at stop, then gets Shunt 0 0 (uncouple): after the direction change the signal lies at stop over that wagon, behind the new head, and the AI has to push the buffers in all the same and let the coupler go.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_uncouple_past_signal.scn",
+  "vars": {
+    "wagons": [
+      "node -1 0 {{vehicle}}_w3 dynamic pkp\\401z_v2 82515940087-8 401zp_2 0 nobody 3 60 gravel enddynamic",
+      "node -1 0 {{vehicle}}_w2 dynamic pkp\\401z_v2 82515942691-5 401zp_1 0 nobody 3 60 gravel enddynamic",
+      "node -1 0 {{vehicle}}_w1 dynamic pkp\\401z_v2 82515993043-7 401zl_2 0 nobody 3 60 gravel enddynamic"
+    ]
+  },
+  "track_events": {
+    "tor1k": "event0 autotest_wake"
+  },
+  "test_config": [
+    "test.fail_if_stop_overran no"
+  ],
+  "duration": 180,
+  "timeout": 600,
+  "checks": [
+    { "type": "log_contains", "pattern": "Uncoupling \\[autotest_sm42_td_uncouple_past_signal\\]: uncoupled" },
+    { "type": "distance", "min": 45, "max": 49 }
+  ]
+}

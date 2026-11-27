@@ -777,7 +777,12 @@ void driver_mode::update_camera(double const Deltatime)
 	// reset window state, it'll be set again if applicable in a check below
 	Global.CabWindowOpen = false;
 
-	if (simulation::Train != nullptr && controlled != nullptr && Camera.m_owner != nullptr && false == DebugCameraFlag)
+	if (consist_view_active())
+	{
+		// the orbit, shunting, coupling and trackside views place the camera themselves
+		update_consist_view(Deltatime);
+	}
+	else if (simulation::Train != nullptr && controlled != nullptr && Camera.m_owner != nullptr && false == DebugCameraFlag)
 	{
 		// jeśli jazda w kabinie, przeliczyć trzeba parametry kamery
 		/*
@@ -1142,6 +1147,17 @@ void driver_mode::OnKeyDown(int cKey)
 		}
 		break;
 	}
+	case GLFW_KEY_LEFT_BRACKET:
+	case GLFW_KEY_RIGHT_BRACKET:
+	{
+		// in the orbit, shunting, coupling and trackside views: the vehicle (coupling) towards the front, or the rear,
+		// of the train. [Ctrl] with them moves the train in the debug mode, bound in the keyboard settings
+		if (false == Global.ctrlState && consist_view_active())
+		{
+			m_consistviews.select(cKey == GLFW_KEY_LEFT_BRACKET ? -1 : 1);
+		}
+		break;
+	}
 	default:
 	{
 		break;
@@ -1149,6 +1165,18 @@ void driver_mode::OnKeyDown(int cKey)
 	}
 
 	return; // nie są przekazywane do pojazdu wcale
+}
+
+bool driver_mode::consist_view_active() const
+{
+	return FreeFlyModeFlag && m_externalview && m_externalviewmode >= view::orbit && Camera.m_owner != nullptr && false == DebugCameraFlag;
+}
+
+void driver_mode::update_consist_view(double const Deltatime)
+{
+	auto *controlled{simulation::Train != nullptr ? simulation::Train->Dynamic() : nullptr};
+	// the camera goes with the vehicle picked, or stays where it is once the train is gone
+	Camera.m_owner = m_consistviews.update(Camera, controlled, Deltatime);
 }
 
 // places camera outside the controlled vehicle, or nearest if nothing is under control
@@ -1199,7 +1227,8 @@ void driver_mode::ExternalView()
 	if (true == m_externalview)
 	{
 		// we're already in some external view mode, so select next one on the list
-		m_externalviewmode = clamp_circular(++m_externalviewmode, static_cast<int>(view::count_));
+		// the views of the train's vehicles come after the four older ones, unless they're turned off in eu07.ini
+		m_externalviewmode = clamp_circular(++m_externalviewmode, static_cast<int>(Global.ConsistViews ? view::count_ : view::orbit));
 	}
 
 	FreeFlyModeFlag = true;
@@ -1300,6 +1329,17 @@ void driver_mode::ExternalView()
 	case view::driveby:
 	{
 		DistantView(false);
+		break;
+	}
+	case view::orbit:
+	case view::shunting:
+	case view::coupling:
+	case view::trackside:
+	{
+		// the camera goes with a vehicle of the train, placed by update_consist_view() from the next frame on
+		auto const kind{static_cast<consist_views::kind>(m_externalviewmode - view::orbit)};
+		Camera.m_owner = m_consistviews.enter(kind, vehicle);
+		Camera.m_owneroffset = {};
 		break;
 	}
 	default:

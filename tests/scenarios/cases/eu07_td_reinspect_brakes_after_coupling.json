@@ -1,0 +1,69 @@
+{
+  "description": "eu07/maszyna#350, #282: an EU07 on td.scn couples on the run (Shunt -3 3) to a cut standing on the line, 16 coaches with P alone and 8 empty wagons with G and P, 541 m of wagons, and runs it on as a train (Obey_train): a train on G (Cw-1 19.1), so the brakes of the coaches are to be cut out (19.9). The inspector looks at the train as it couples, at 4 km/h, and leaves the cut-outs for the standstill; reinspect_brakes() makes them as the train stands just after. The driver taken off at 38 km/h leaves the brake valve in the emergency position: braked by the locomotive and the 8 wagons alone the train stops at some 0.27 m/s2, over 210 m (with every brake working, 0.57 m/s2 over 99 m).",
+  "base_scenery": "td.scn",
+  "fragment": "td_reinspect_brakes.scn",
+  "vars": {
+    "locomotive": "pkp\\4e_v1 4e-004 4e",
+    "cut": [
+      "node -1 0 {{vehicle}}_c01 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c02 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c03 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c04 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c05 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c06 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c07 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c08 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c09 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c10 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c11 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c12 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c13 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c14 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c15 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c16 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w1 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w2 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w3 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w4 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w5 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w6 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w7 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w8 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 0 0 enddynamic"
+    ]
+  },
+  "track_events": {
+    "koniec": "event0 autotest_wake",
+    "tdo_n231": "event2 autotest_way",
+    "tdo_n240": "event2 autotest_crew_off"
+  },
+  "test_config": [
+    "test.timeout 1200",
+    "test.standstill 600"
+  ],
+  "expect": "pass",
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "couples",
+      "vehicle": "{{vehicle}}",
+      "other": "{{vehicle}}_w8"
+    },
+    {
+      "type": "stops_driverless",
+      "vehicle": "{{vehicle}}",
+      "min_speed": 30,
+      "within": 90,
+      "hold": 60,
+      "min_deceleration": 0.15,
+      "max_deceleration": 0.4
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "derailed"
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "collided"
+    }
+  ]
+}

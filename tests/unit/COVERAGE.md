@@ -81,7 +81,15 @@ These are run by the game, by vehicles it has or by the cab, the AI or the scene
 
 The core library (`eu07_core`) and the test binary hold more than the physics: the parser of the game's text files, the helpers of `utilities.cpp`, the PLC of a vehicle, the parts of the vehicles and of the simulation moved out of the big classes to be tested, and the hosts of the script screens. The sections above don't cover them. Their numbers are lines run, from the report of the Coverage workflow.
 
-The tables show the run before the tests of the parser, the helpers and the PLC (`test_parser.cpp`, `test_utilities.cpp`, `test_ladder_logic.cpp`) were written. What those tests add is measured by the Coverage run of the pull request which brings them, and shown in the summary of that run.
+The per-file table further down is from the run before the tests of the parser, the helpers and the PLC (`test_parser.cpp`, `test_utilities.cpp`, `test_ladder_logic.cpp`) were written. With them, in the Coverage run of master `bac9954a` (2026-11-11, after #333; GCC 13.3, unoptimised, gcov):
+
+| File | Lines run, before | Lines run, with the tests | Functions run, with the tests |
+|---|---|---|---|
+| `scripting/ladderlogic.cpp` | 4.1% (9 of 217) | 98.2% (213 of 217) | 11 of 11 |
+| `utilities/parser.cpp` | 40.0% (170 of 425) | 97.6% (415 of 425) | 41 of 41 |
+| `utilities/utilities.cpp` | 28.2% (82 of 291) | 95.5% (299 of 313) | 51 of 51 |
+
+`utilities.cpp` grew by 22 lines on master between the two runs (`user_cache_path`, `utf8_to_win1250`). All 62 files of the game in that report together: lines 83.5% (15411 of 18464), functions 85.5% (1378 of 1612), branches 59.5% (15503 of 26046). The totals aren't comparable with the run below: the report holds 13 more files, from the merges in between.
 
 **The run measured:** pull request #325 on 2026-11-11 (its commit `33cedc45` merged into master `10c7527a`), GCC 13.3, unoptimised, gcov lines. All 49 files of the game in the report together: lines 84.4% (10305 of 12204), functions 85.0% (927 of 1090), branches 62.3% (10325 of 16578).
 
@@ -114,8 +122,10 @@ The tables show the run before the tests of the parser, the helpers and the PLC 
 Notes to the table:
 
 - The small headers with the logic of a single part are all run in full: `vehicle/doorwings.h`, `gaugeduplicates.h`, `gaugepositions.h`, `holdcoillever.h`, `lightsprogrammer.h`, `mainctrlact.h`, `mirrors.h`, `scripting/scriptscreendrawing.h`, `scriptscreenkernels.h`, `scriptscreenprogram.h`, `scriptscreens.h`, `utilities/dictionary.h` and `vehicle/blackbox.h`.
-- `vehicle/brakesetting.cpp` and `vehicle/odometer.cpp` (the brake setting of the wagons, the odometer store) joined the library on master after that run. They have tests (`test_brake_setting.cpp`, `test_odometer.cpp`) and no numbers yet.
+- `vehicle/brakesetting.cpp` and `vehicle/odometer.cpp` (the brake setting of the wagons, the odometer store) joined the library on master after that run. In the run of `bac9954a` their tests (`test_brake_setting.cpp`, `test_odometer.cpp`) run 94.1% (144 of 153) and 87.9% (189 of 215) of their lines, and all 14 and 26 of 28 of their functions.
 - The script hosts (`scriptscreens.cpp`, `luaprogram.cpp`, `wasmprogram.cpp`) aren't in the library. The test binary compiles them itself, with the real runtimes.
+- `vehicle/Camera.cpp` isn't in the library either. The test binary compiles it for the order of the camera's rotations (`test_camera.cpp`, #414), with stubs for the command queue and the clock that `TCamera::Update()` reaches for.
+- The colour of the smoke of a cold diesel (#413) isn't tested: the fix is in `smoke_source::update()` (`rendering/particles.cpp`), which needs the world environment (sky, sun, precipitation, sounds) and a whole `TDynamicObject` to link.
 - `scene/scenelayers.h`, `scene/scenenode.h` and `scene/scenenodegroups.h` are in the report with a few lines each: the parser reports the files it includes to the scenery, which the tests replace with stubs (`engine_stubs.cpp`).
 
 ### The parser, the helpers and the PLC
@@ -137,9 +147,8 @@ The tests are written for the first two columns, and for what the game doesn't c
   - The messages of the log (`Failed to open file`, `Bad include`) are run, and not checked: the log of the tests is a stub.
   - A buffer type which is neither a file nor a text (the `default:` of the constructor) can't be given without an invalid value of the type.
 - **`utilities.cpp`:**
-  - `Now()`, `user_config_path()`, `user_cache_path()` and `true_random_seed()` depend on the clock, the environment and the entropy source of the system. The tests call them and check the shape of the result. The branches for a system without the variables or without an entropy source aren't run, and those of the other systems aren't compiled.
+  - `Now()`, `user_config_path()`, `user_cache_path()` and `true_random_seed()` depend on the clock, the environment and the entropy source of the system. The tests call them and check the shape of the result. The branches for a system without the variables or without an entropy source aren't run, and those of the other systems aren't compiled. The choice among the XDG variables and the home folder which Linux makes is apart from the environment (`xdg_base_directory()`) and tested on every system.
   - `FileCased()` looks through the working folder for a name given without a folder, and through the folder of the file elsewhere; on Windows it only asks whether the file is there. The search is run on Linux only.
-  - `Bezogonkow()` gives other letters with MSVC than with GCC and Clang, see the findings. The test takes either, told by the entry of the table the difference starts at, so each build checks the half it is.
 - **`ladderlogic.cpp`:** the two `return`s marked "not reachable" after the switches over the kind of an element.
 
 **Code nothing in the game runs** (checked against the whole source tree):
@@ -201,12 +210,12 @@ The tests record the behaviour as it is. The following points may deserve a look
   - `deserialize_map()` (`utilities.h`, the sound overrides) therefore reads an empty key from an empty file, and one from a file ending with a line break; in a file with Windows line ends its values keep the carriage return. The game's `sound_overrides.txt` is a single line without a line break.
   - The separators given as a null pointer are taken as none by the tokenizer, but passed on to `strcmp` for a token of 7 characters or more starting with `i`, which crashes (tried by hand, not kept as a test). No caller gives a null pointer.
 - **The helpers (`utilities.cpp`, `utilities.h`):**
-  - `Bezogonkow()`, which takes the marks off the letters for the timetable and the on-screen texts: its table has a `±` in the source, a UTF-8 file. MSVC makes one byte of it, GCC and Clang two, which moves every entry from 0xB2 on by one. With MSVC the 18 polish letters come out as `ACELNOSZZacelnoszz`; with GCC as `ALELDNSZZ,le,dnszl`: `Ć` as L, `Ń` as D, `Ó` as N, `ą` and `ł` as a comma, `ć` as l, `ń` as d, `ó` as n, `ż` as l, only `Ę` and `ę` by luck as themselves. The Linux and macOS builds of the game show the names of the stations that way. The test checks whichever table the build has (the GCC one was tried with the table alone, compiled by GCC 6.3).
+  - `Bezogonkow()`, which takes the marks off the letters for the file names, the scripts and the multiplayer texts: its table had a `±` written as the character in the source, a UTF-8 file. MSVC made one byte of it, GCC and Clang two, which moved every entry from 0xB2 on by one: with GCC the 18 polish letters came out as `ALELDNSZZ,le,dnszl`. Fixed with MaSzyna-EU07/maszyna#94: the entry is written as the byte `±`, and the test checks the one table in every build.
   - `to_minutes_str()` reads past its table of raised digits for minutes with a fraction of 0.99 or more, and before it for negative minutes, which `CompareTime()` can give it for a timetable whose times go back. Tried by hand, both ended in `std::bad_alloc`, the text read from outside of the table being no text; not kept as a test. A width under 2 throws `std::length_error`.
   - `stol_def()` gives its default only for an empty text. A text which isn't a number gives 0 (the flags of an event, the log setting).
   - `split_string_and_number()` throws for a name with a hyphen which no digit follows (`a-b`), and for a number too big. The gamepad bindings and the PLC use it on names from files.
   - `extract_value()` throws `std::out_of_range` when the key is the last thing in the text with nothing after its `=`. With a space after the `=`, the next `key=value` is taken for the value.
-  - `seed_of()` takes a word starting with digits for the number in front (`12abc` is 12), so different words can stand for the same seed.
+  - `seed_of()` took a word starting with digits for the number in front (`12abc` was 12), so different words could stand for the same seed, and a seed of 0 stood for none. Fixed: the whole text has to be the number, anything else is a word, and whether a seed was given is kept apart (`random_seed_given`).
   - `erase_extension()` cuts at the dot of a folder when the file has none (`dir.d/file` becomes `dir`).
   - `Round()` adds a half and cuts the fraction, which rounds the negative numbers up: -1.6 becomes -1.
 - **The PLC (`ladderlogic.cpp`):**

@@ -1,0 +1,18 @@
+{
+  "description": "eu07/maszyna#525, Baltyk skm1, the mission that starts on the siding of Baltyk Towarowy next to the shunter (EN90-009A, ROJ55324): the station lets the unit into the platforms once its shunter 6Dg-1244, on the track beside it, has done its first moves (4 minutes after the start), and out to Alakowice at 10:42. A shunter that gets stuck leaves the unit at the shunting signal for good: standing for 15 minutes ends the test as standstill.",
+  "base_scenery": "baltyk_skm1.scn",
+  "strip_trainsets": false,
+  "vehicle": "EN90-009A",
+  "slow": true,
+  "physicslog": false,
+  "ini": [
+    "file.binary.terrain no"
+  ],
+  "test_config": [
+    "test.standstill 900",
+    "test.fail_if_stop_overran no"
+  ],
+  "duration": 1800,
+  "expect": "timeout",
+  "timeout": 900
+}

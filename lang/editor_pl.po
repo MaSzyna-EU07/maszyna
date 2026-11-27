@@ -8123,6 +8123,18 @@ msgstr "Pas rozwidla się najwyżej na trzy: na pasy dodane ponad dwa nie da si�
 msgid "Lane width [m]"
 msgstr "Szerokość pasa (m)"
 
+msgid "paved"
+msgstr "utwardzona"
+
+msgid "dirt"
+msgstr "gruntowa"
+
+msgid "Road type"
+msgstr "Rodzaj drogi"
+
+msgid "Paved: asphalt, concrete or setts, with the bends and the junction angles of a built road.\nDirt: a track between fields or through a forest. It bends tighter (3 m radius instead of 6 m), can be shorter (1 m instead of 2 m),\nleaves other roads at sharper angles (15 degrees instead of 30) and can turn back in a hairpin.\nMade dirt, a road with the default asphalt gets the field road texture and loses the white lines"
+msgstr "Utwardzona: asfalt, beton albo kostka, z łukami i kątami skrzyżowań jak na drodze budowanej.\nGruntowa: droga polna albo leśna. Skręca ciaśniej (promień 3 m zamiast 6 m), może być krótsza (1 m zamiast 2 m),\nodchodzi od innych dróg pod ostrzejszym kątem (15 stopni zamiast 30) i może zawrócić serpentyną.\nDroga z domyślnym asfaltem zmieniona na gruntową dostaje teksturę drogi polnej i traci białe linie"
+
 msgid "Left side"
 msgstr "Lewa strona"
 
@@ -14305,8 +14317,6 @@ msgstr "Wskaźnik rysowany przez edytor w klatce zamiast systemowego: widać go 
 msgid "Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\nIt is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\ntranslucent, it doesn't catch the mouse."
 msgstr "Rysuje zdjęcia jako część sceny, więc tory, modele i teren przed nimi je zasłaniają.\nJest oświetlone jak scena. W pełni kryjące łapie mysz przy wstawianiu jak każda powierzchnia;\nprzezroczyste nie łapie myszy."
 
-msgid "Poles and gantries"
-msgstr "Słupy i bramki"
 msgid "No pole: the catalogue (data/traction_cantilevers.txt, data/traction_supports.txt) isn't loaded or has no poles"
 msgstr "Brak słupa: katalog (data/traction_cantilevers.txt, data/traction_supports.txt) nie jest wczytany albo nie ma w nim słupów"
 
@@ -14448,8 +14458,6 @@ msgstr "4 - sieć jednodrutowa, ramiona ciężkie, hk 1,30"
 msgid "5 - one contact wire, light arms, hk 1.70"
 msgstr "5 - sieć jednodrutowa, ramiona lekkie, hk 1,70"
 
-msgid "Angle the textures of the chosen material are turned by, on every chunk painted with it.\nCtrl+click to type it. To have the material turned in one place only, fill it there with an angle of its own."
-msgstr "Kąt obrotu tekstur wybranego materiału na każdym kaflu nim malowanym.\nCtrl+klik, żeby wpisać. Żeby obrócić materiał tylko w jednym miejscu, wypełnij je materiałem z własnym kątem."
 msgid "Poles with cantilevers by the track, the card chosen from the catalogue by the distance of the pole; the spans checked against the catalogue"
 msgstr "Słupy z wysięgnikami przy torze, karta z katalogu dobierana z odległości słupa; przęsła sprawdzane z tablicami katalogu"
 
@@ -14495,11 +14503,6 @@ msgstr "Łańcuch %s: słupy %zu, przęsła %zu; zmiany od razu na całym łańc
 msgid "Network type"
 msgstr "Typ sieci"
 
-msgid "Grade lines: %zu fitted, %zu track left"
-msgid_plural "Grade lines: %zu fitted, %zu tracks left"
-msgstr[0] "Niwelety: dopasowano %zu, został %zu tor"
-msgstr[1] "Niwelety: dopasowano %zu, zostały %zu tory"
-msgstr[2] "Niwelety: dopasowano %zu, zostało %zu torów"
 msgid "Wires"
 msgstr "Druty"
 
@@ -14749,8 +14752,6 @@ msgstr "wczytany"
 msgid "changed, not saved"
 msgstr "zmieniony, niezapisany"
 
-msgid "Pick a memory cell from the list to set what's in it"
-msgstr "Wybierz komórkę pamięci z listy, aby ustawić jej zawartość"
 msgid "worn"
 msgstr "przejściowe"
 

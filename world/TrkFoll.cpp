@@ -363,6 +363,27 @@ double TTrackFollower::RailPhase( double const Offset ) const {
     return pCurrentTrack != nullptr ? pCurrentTrack->rail_phase( fCurrentDistance + fDirection * Offset ) : -1.0;
 }
 
+double TTrackFollower::BuckleCurvature( double const Base ) const {
+
+    return pCurrentTrack != nullptr ? pCurrentTrack->buckle_curvature( fCurrentDistance, Base ) : 0.0;
+}
+
+glm::dvec3 TTrackFollower::PathDirection( double const Reach ) const {
+
+    if( pCurrentSegment == nullptr ) {
+        return glm::dvec3 { 0.0 };
+    }
+    auto const length { pCurrentSegment->GetLength() };
+    glm::dvec3 ahead;
+    glm::dvec3 behind;
+    glm::vec3 rotation;
+    pCurrentSegment->RaPositionGet( std::clamp( fCurrentDistance + Reach, 0.0, length ), ahead, rotation );
+    pCurrentSegment->RaPositionGet( std::clamp( fCurrentDistance - Reach, 0.0, length ), behind, rotation );
+    glm::dvec3 const direction { ( ahead.x - behind.x ) * fDirection, 0.0, ( ahead.z - behind.z ) * fDirection };
+    auto const size { glm::length( direction ) };
+    return size > 1e-6 ? direction / size : glm::dvec3 { 0.0 };
+}
+
 bool TTrackFollower::ComputatePosition()
 { // ustalenie współrzędnych XYZ
     if (pCurrentSegment) // o ile jest tor

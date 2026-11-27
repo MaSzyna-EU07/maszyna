@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/RailLayout.h"
 #include "world/TrackSleepers.h"
 #include "world/TrackBlend.h"
+#include "world/TrackBuckle.h"
 #include "world/TrackUneven.h"
 #include "model/material.h"
 #include "scene/scenenode.h"
@@ -289,6 +290,8 @@ public:
     int iAction = 0; // czy modyfikowany eventami (specjalna obsługa przy skanowaniu)
     float fOverhead = -1.0; // można normalnie pobierać prąd (0 dla jazdy bezprądowej po danym odcinku, >0-z opuszczonym i ograniczeniem prędkości)
     track_uneven::attribute m_uneven; // plain tracks and switches
+    track_buckle::declared m_buckledeclared; // the buckle entered in the scenery; plain rail tracks
+    track_buckle::cwr m_cwr; // the welded rail, for the buckling by the temperature
 private:
     double fVelocity = -1.0; // ograniczenie prędkości // prędkość dla AI (powyżej rośnie prawdopowobieństwo wykolejenia)
 public:
@@ -423,6 +426,20 @@ public:
     track_uneven::amounts uneven_at( double const Distance, int const Path = 0 );
     // how much of the displacement a point of the profile at the depth takes
     double uneven_bed_share( double const Depth ) const;
+    // the buckle the track has now (see TrackBuckle.h): none with physics.trackbuckling off
+    track_buckle::shape const &buckle() const {
+        return m_buckle; }
+    bool is_buckled() const {
+        return track_buckle::active( m_buckle ); }
+    // buckles the track during the game as the values say, or with none straightens it, and makes its geometry again. Cause goes to the log
+    bool buckle_now( track_buckle::declared const &Values, std::string const &Cause );
+    // the buckling of the tracks by the temperature of the rails, physics.trackbuckling auto; once a minute
+    static void update_buckling( double const Deltatime );
+    // the radius of the path in the plan at the distance, 0 straight, and the side away from its centre: -1 left, 1 right, 0 straight
+    double plan_radius( double const Distance, int &Outward ) const;
+    // the curvature the buckle adds at the distance, averaged over Base around it, 1/m: positive bending with the curve, on a straight
+    // track to the right of the path
+    double buckle_curvature( double const Distance, double const Base ) const;
     // closes the gaps and steps of cant between the ends of joined paths
     void share_joints();
     double joint_depth() const; // mm
@@ -484,6 +501,21 @@ private:
         int stamp { -1 };
     };
     switch_stray m_switchstray;
+    track_buckle::shape m_buckle;
+    // the buckling by the temperature: the passes of the trains over the track, and the pass which will buckle it as its head leaves
+    std::uint32_t m_buckle_passes { 0 };
+    bool m_buckle_armed { false };
+    // the buckle of the values on this track, its place and side drawn with the seed where not given
+    track_buckle::shape resolve_buckle( track_buckle::declared const &Values, std::uint32_t const Seed ) const;
+    // the draws for this track: by its name, by where it is for one with none
+    std::uint64_t buckle_key() const;
+    // whether the temperature can buckle the track, and the rise of the rails above its neutral temperature it does it at
+    bool buckles_by_heat() const;
+    track_buckle::limits buckle_limits() const;
+    // a train coming onto the track and its head leaving it, for the buckling under a train
+    void buckle_pass_enter( TDynamicObject const &Dynamic );
+    void buckle_pass_leave();
+    void buckle_under_train();
     switch_stray const &switch_uneven();
     void settle_switch_stray();
     void settle_switch_ends();
@@ -534,6 +566,9 @@ public:
     // legacy method, initializes tracks after deserialization from scenario file
     void
         InitTracks();
+    // physics.trackcheck: logs the geometry of the rail tracks the checks of world/TrackCheck.h find suspicious
+    void
+        CheckTracks() const;
     // legacy method, sends list of occupied paths over network
     void
         TrackBusyList() const;
