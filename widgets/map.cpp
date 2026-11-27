@@ -533,32 +533,19 @@ void ui::map_panel::prepare_static_view_cache(glm::mat4 const &transform)
 	m_cached_section_lines.clear();
 	m_cached_road_lines.clear();
 
-	for (int row = 0; row < scene::EU07_REGIONSIDESECTIONCOUNT; row++)
+	for (auto const &section : map::Objects.section_geometry)
 	{
-		for (int column = 0; column < scene::EU07_REGIONSIDESECTIONCOUNT; column++)
-		{
-			scene::basic_section *section = simulation::Region->get_section(row * scene::EU07_REGIONSIDESECTIONCOUNT + column);
-			if (!section)
-				continue;
-			auto const &area = section->area();
-			glm::dvec2 const center(area.center.x, area.center.z);
-			glm::dvec2 const radius(area.radius);
-			if (map_world_bounds_visible(
-				    center - radius, center + radius, transform, ImVec2(0.0f, 0.0f),
-				    glm::vec2(2.0f), 0.0f, 0.25f))
-			{
-				const gfx::geometrybank_handle handle = section->get_map_geometry();
-				if (handle != null_handle)
-					m_section_handles.push_back(handle);
-
-				map_colored_paths section_paths;
-				section->get_map_active_paths(section_paths);
-				m_colored_paths.roads.insert(
-					m_colored_paths.roads.end(),
-					section_paths.roads.begin(),
-					section_paths.roads.end());
-			}
-		}
+		if (map_world_bounds_visible(
+			    section.minimum, section.maximum, transform, ImVec2(0.0f, 0.0f),
+			    glm::vec2(2.0f), 0.0f, 0.25f))
+			m_section_handles.push_back(section.geometry);
+	}
+	for (auto const &section : map::Objects.road_geometry)
+	{
+		if (map_world_bounds_visible(
+			    section.minimum, section.maximum, transform, ImVec2(0.0f, 0.0f),
+			    glm::vec2(2.0f), 0.0f, 0.25f))
+			m_colored_paths.roads.push_back(section.geometry);
 	}
 
 	ImVec2 const origin(0.0f, 0.0f);

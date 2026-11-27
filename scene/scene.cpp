@@ -22,7 +22,6 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/regionfile.h"
 #include "scene/sceneterrain.h"
 #include "rendering/renderer.h"
-#include "widgets/map_objects.h"
 #include "vehicle/aiwire.h"
 
 #include <format>
@@ -771,21 +770,6 @@ basic_cell::create_geometry( gfx::geometrybank_handle const &Bank ) {
     m_geometrycreated = true; // helper for legacy animation code, get rid of it after refactoring
 }
 
-void basic_cell::create_map_geometry(std::vector<gfx::basic_vertex> &Bank, const gfx::geometrybank_handle Extra)
-{
-    if (!m_active)
-        return;
-
-    for (auto *path : m_paths)
-		path->create_map_geometry(Bank, Extra);
-}
-
-void basic_cell::get_map_active_paths(map_colored_paths &handles)
-{
-	for (auto *path : m_paths)
-		path->get_map_active_paths(handles);
-}
-
 glm::vec3 basic_cell::find_nearest_track_point(const glm::dvec3 &pos)
 {
 	float min = std::numeric_limits<float>::max();
@@ -1155,22 +1139,6 @@ basic_section::load_terrain() {
     for( auto const &block : blocks ) {
         terrain_file::load( *this, block );
     }
-}
-
-void basic_section::create_map_geometry(const gfx::geometrybank_handle handle)
-{
-    std::vector<gfx::basic_vertex> lines;
-	gfx::userdata_array userdata{};
-    for (auto &cell : m_cells)
-		cell.create_map_geometry(lines, handle);
-
-    m_map_geometryhandle = GfxRenderer->Insert(lines, userdata, handle, GL_LINES);
-}
-
-void basic_section::get_map_active_paths(map_colored_paths &handles)
-{
-	for (auto &cell : m_cells)
-		cell.get_map_active_paths(handles);
 }
 
 glm::vec3 basic_section::find_nearest_track_point(const glm::dvec3 &point)
@@ -1932,19 +1900,6 @@ basic_region::section( glm::dvec3 const &Location ) {
     }
 
     return *section;
-}
-
-void basic_region::create_map_geometry()
-{
-    m_map_geometrybank = GfxRenderer->Create_Bank();
-
-    for (int row = 0; row < EU07_REGIONSIDESECTIONCOUNT; row++)
-        for (int column = 0; column < EU07_REGIONSIDESECTIONCOUNT; column++)
-        {
-            basic_section *s = m_sections[row * EU07_REGIONSIDESECTIONCOUNT + column];
-            if (s)
-                s->create_map_geometry(m_map_geometrybank);
-        }
 }
 
 // loads all geometry kept in binary terrain files which wasn't needed so far

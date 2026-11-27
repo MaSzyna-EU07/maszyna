@@ -6,9 +6,11 @@
 #include "vehicle/DynObj.h"
 #include "world/EvLaunch.h"
 #include "world/Track.h"
+#include "rendering/renderer.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <ranges>
 #include <unordered_map>
 #include <unordered_set>
@@ -144,9 +146,73 @@ void collect_group_nodes(
 	}
 }
 
+std::size_t section_index(glm::dvec3 const &location)
+{
+	int const column = std::clamp(
+		static_cast<int>(std::floor(location.x / scene::EU07_SECTIONSIZE +
+		                            scene::EU07_REGIONSIDESECTIONCOUNT / 2.0)),
+		0, scene::EU07_REGIONSIDESECTIONCOUNT - 1);
+	int const row = std::clamp(
+		static_cast<int>(std::floor(location.z / scene::EU07_SECTIONSIZE +
+		                            scene::EU07_REGIONSIDESECTIONCOUNT / 2.0)),
+		0, scene::EU07_REGIONSIDESECTIONCOUNT - 1);
+	return static_cast<std::size_t>(row * scene::EU07_REGIONSIDESECTIONCOUNT + column);
+}
+
+void append_section_geometry(
+	std::vector<map::objects::prepared_section_geometry> &output,
+	scene::basic_section *section,
+	gfx::geometrybank_handle const geometry)
+{
+	if (!section || geometry == null_handle)
+		return;
+
+	auto const &area = section->area();
+	glm::dvec2 const center(area.center.x, area.center.z);
+	glm::dvec2 const radius(area.radius);
+	output.push_back({center - radius, center + radius, geometry});
+}
+
+void prepare_track_geometry()
+{
+	map::Objects.geometry_bank = GfxRenderer->Create_Bank();
+	map::Objects.section_geometry.clear();
+	map::Objects.road_geometry.clear();
+
+	std::unordered_map<std::size_t, gfx::vertex_array> section_vertices;
+	for (TTrack *track : simulation::Paths.sequence())
+	{
+		if (!track)
+			continue;
+		track->create_map_geometry(
+			section_vertices[section_index(track->location())], map::Objects.geometry_bank);
+	}
+
+	for (auto &[index, vertices] : section_vertices)
+	{
+		if (vertices.empty())
+			continue;
+
+		scene::basic_section *section = simulation::Region->get_section(index);
+		gfx::userdata_array userdata{};
+		gfx::geometrybank_handle const geometry =
+			GfxRenderer->Insert(vertices, userdata, map::Objects.geometry_bank, GL_LINES);
+		append_section_geometry(map::Objects.section_geometry, section, geometry);
+	}
+
+	for (TTrack *track : simulation::Paths.sequence())
+	{
+		if (!track || track->iCategoryFlag != 2 || track->road_map_geometry == null_handle)
+			continue;
+
+		scene::basic_section *section = simulation::Region->get_section(section_index(track->location()));
+		append_section_geometry(map::Objects.road_geometry, section, track->road_map_geometry);
+	}
+}
+
 } // namespace
 
-void map::prepare_objects()
+void map::prepare()
 {
 	Objects.entries.clear();
 
@@ -359,6 +425,8 @@ void map::prepare_objects()
 			                         : launcher::level_crossing;
 		}
 	}
+
+	prepare_track_geometry();
 }
 
 map::sorted_object_list map::objects::find_in_range(glm::vec3 from, float distance) const

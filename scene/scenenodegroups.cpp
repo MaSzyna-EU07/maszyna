@@ -21,7 +21,7 @@ namespace scene {
 node_groups Groups;
 
 void node_groups::update_map() {
-	map::prepare_objects();
+	map::prepare();
 }
 
 // requests creation of a new node group. returns: handle to the group

@@ -85,12 +85,22 @@ struct vehicle : map_object
 
 struct objects
 {
+	struct prepared_section_geometry
+	{
+		glm::dvec2 minimum;
+		glm::dvec2 maximum;
+		gfx::geometrybank_handle geometry;
+	};
+
 	object_list entries;
+	gfx::geometrybank_handle geometry_bank;
+	std::vector<prepared_section_geometry> section_geometry;
+	std::vector<prepared_section_geometry> road_geometry;
 	bool poi_dirty = true;
 	sorted_object_list find_in_range(glm::vec3 from, float distance) const;
 };
 
-void prepare_objects();
+void prepare();
 
 extern objects Objects;
 
