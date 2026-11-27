@@ -381,6 +381,22 @@ void writer::coupling(coupling_change const &Change) {
 	emit(record::coupling);
 }
 
+void writer::derailment(derailment_state const &State) {
+	auto &out{begin()};
+	out.f64(State.time);
+	out.u32(State.vehicle);
+	out.u8(State.phase);
+	out.u8(State.cause);
+	out.dvec3(State.position);
+	out.f32(State.heading);
+	out.f32(State.speed_kmh);
+	out.f32(State.offset);
+	out.f32(State.roll);
+	out.f32(State.travelled);
+	out.u8(State.lying ? 1 : 0);
+	emit(record::derailment);
+}
+
 void writer::clock(double const Time, std::uint16_t const Year, std::uint16_t const Year_day, double const Second_of_day) {
 	auto &out{begin()};
 	out.f64(Time);

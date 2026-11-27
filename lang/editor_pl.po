@@ -3309,6 +3309,57 @@ msgstr "Szacowana liczba obiektów: %.0f"
 msgid "Fill area"
 msgstr "Wypełnij obszar"
 
+msgid "LMB: add outline point   Backspace: remove last point   Enter: fill and finish   Esc: drop the outline"
+msgstr "LPM: dodaj punkt obrysu   Backspace: usuń ostatni punkt   Enter: wypełnij i zakończ   Esc: porzuć obrys"
+
+msgid "Changing: %s"
+msgstr "Zmieniasz: %s"
+
+msgid "Fill area (Enter)"
+msgstr "Wypełnij obszar (Enter)"
+
+msgid "Fill again (Enter)"
+msgstr "Wypełnij od nowa (Enter)"
+
+msgid "Undo last fill"
+msgstr "Cofnij ostatnie wypełnienie"
+
+msgid "Area %zu"
+msgstr "Obszar %zu"
+
+msgid "%s: placed %zu of %zu objects"
+msgstr "%s: postawiono %zu z %zu obiektów"
+
+msgid "%s left as it was"
+msgstr "%s zostaje bez zmian"
+
+msgid "%s picked up: change the outline or the settings, Enter fills it anew, Esc leaves it as it was"
+msgstr "%s do zmiany: popraw obrys albo ustawienia, Enter wypełnia od nowa, Esc zostawia bez zmian"
+
+msgid "%s removed with its %zu objects"
+msgstr "Usunięto %s razem z obiektami (%zu)"
+
+msgid "%s back as it was, %zu objects"
+msgstr "%s przywrócony, obiektów: %zu"
+
+msgid "Filled areas: %zu"
+msgstr "Wypełnione obszary: %zu"
+
+msgid "None yet. Enter fills the outline and puts the area here, to be changed later"
+msgstr "Jeszcze żadnego. Enter wypełnia obrys i dopisuje obszar tutaj, do późniejszej zmiany"
+
+msgid "ha"
+msgstr "ha"
+
+msgid "Change"
+msgstr "Zmień"
+
+msgid "Its outline and settings back in the tool: move the points, change the models or the density, Enter fills it anew"
+msgstr "Obrys i ustawienia wracają do narzędzia: przesuń punkty, zmień modele albo gęstość, Enter wypełnia od nowa"
+
+msgid "The area and its models removed; Undo last fill brings them back"
+msgstr "Usuwa obszar i jego modele; Cofnij ostatnie wypełnienie przywraca je"
+
 msgid "Copies of the selected model, set out in a row"
 msgstr "Kopie zaznaczonego modelu, ustawione w rzędzie"
 
@@ -5528,7 +5579,6 @@ msgstr "żaden tor nie pasuje do końca %s"
 
 msgid "joins %s"
 msgstr "łączy z %s"
-
 
 msgid "moved %.3f m"
 msgstr "przesunięto o %.3f m"
@@ -8072,6 +8122,18 @@ msgstr "Pas rozwidla się najwyżej na trzy: na pasy dodane ponad dwa nie da si�
 
 msgid "Lane width [m]"
 msgstr "Szerokość pasa (m)"
+
+msgid "paved"
+msgstr "utwardzona"
+
+msgid "dirt"
+msgstr "gruntowa"
+
+msgid "Road type"
+msgstr "Rodzaj drogi"
+
+msgid "Paved: asphalt, concrete or setts, with the bends and the junction angles of a built road.\nDirt: a track between fields or through a forest. It bends tighter (3 m radius instead of 6 m), can be shorter (1 m instead of 2 m),\nleaves other roads at sharper angles (15 degrees instead of 30) and can turn back in a hairpin.\nMade dirt, a road with the default asphalt gets the field road texture and loses the white lines"
+msgstr "Utwardzona: asfalt, beton albo kostka, z łukami i kątami skrzyżowań jak na drodze budowanej.\nGruntowa: droga polna albo leśna. Skręca ciaśniej (promień 3 m zamiast 6 m), może być krótsza (1 m zamiast 2 m),\nodchodzi od innych dróg pod ostrzejszym kątem (15 stopni zamiast 30) i może zawrócić serpentyną.\nDroga z domyślnym asfaltem zmieniona na gruntową dostaje teksturę drogi polnej i traci białe linie"
 
 msgid "Left side"
 msgstr "Lewa strona"
@@ -11513,7 +11575,6 @@ msgstr "Jak widok z góry rysuje tory"
 msgid "The colour of the rails, to stand out on the imagery and the map"
 msgstr "Kolor szyn, żeby odcinały się od ortofotomapy i mapy"
 
-
 msgid "The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain"
 msgstr "Wysokość całego układanego toru dopasowana do terenu"
 
@@ -11959,7 +12020,6 @@ msgstr "W%d  R%d %.0f m  przechyłka %.0f mm"
 msgid "W%d  R %.0f m  cant %.0f mm"
 msgstr "W%d  R %.0f m  przechyłka %.0f mm"
 
-
 msgid "The curvature of the diverging track turns from one side to the other within the switch (KZW II), which isn't allowed (9.7 pkt 12)"
 msgstr "Krzywizna toru zwrotnego zmienia znak w obrębie rozjazdu (KZW II), co jest niedozwolone (9.7 pkt 12)"
 
@@ -11969,17 +12029,14 @@ msgstr "Krzywizna toru zasadniczego zmienia znak w obrębie rozjazdu, co jest ni
 msgid "The basic switch of R %.0f m isn't in table 11.9, its limiting curvature isn't checked"
 msgstr "Rozjazdu podstawowego R %.0f m nie ma w tabeli 11.9, jego krzywizna graniczna nie jest sprawdzana"
 
-
 msgid "The curvature of the diverging track %.3f 1/km is over the limiting %.3f 1/km for the switch of R %.0f m (table 11.9)"
 msgstr "Krzywizna toru zwrotnego %.3f 1/km ponad graniczną %.3f 1/km dla rozjazdu R %.0f m (tabela 11.9)"
-
 
 msgid "The main track bent to R %.0f m, below the least %.0f m for the switch of R %.0f m (table 11.9)"
 msgstr "Tor zasadniczy wygięty do R %.0f m, poniżej najmniejszego %.0f m dla rozjazdu R %.0f m (tabela 11.9)"
 
 msgid "A switch of 1:%.3f isn't bent in the running and the main tracks: none of 1:9.403 nor steeper than 1:9 (11.4 pkt 4)"
 msgstr "Rozjazdu 1:%.3f nie łukuje się w torach szlakowych i głównych: ani 1:9,403, ani o skosie większym niż 1:9 (11.4 pkt 4)"
-
 
 msgid "A cant ramp starts or ends within the switch, %.1f m from its start: at the start or the end of the switch, or 6 m off it at least (9.6 pkt 16-17)"
 msgstr "Rampa przechyłkowa zaczyna się albo kończy w obrębie rozjazdu, %.1f m od jego początku: ma się zaczynać na początku albo końcu rozjazdu, albo co najmniej 6 m od niego (9.6 pkt 16-17)"
@@ -12070,7 +12127,6 @@ msgstr "km %s - %s, %.2f mm/m"
 
 msgid "ramp %.0f m, %.0f mm"
 msgstr "rampa %.0f m, %.0f mm"
-
 
 # scenery editor: laying and editing the track, as a beginner meets them
 
@@ -12243,7 +12299,6 @@ msgstr "Łuk %d %s"
 
 msgid "Vertex %zu: the transition curve between the curve of the adjoining track and R %.0f m is shorter than the required %.0f m"
 msgstr "Wierzchołek %zu: krzywa przejściowa między łukiem przylegającego toru a R %.0f m jest krótsza niż wymagane %.0f m"
-
 
 msgid "Download area"
 msgstr "Obszar pobierania"
@@ -13752,24 +13807,20 @@ msgstr "Sygnalizatory stacji"
 msgid "Line block"
 msgstr "Blokada liniowa"
 
-
 msgid "Signals placed by hand from the templates in the panel: LMB by a track places the one chosen, a signal dragged slides along its track, LMB on one selects it"
 msgstr "Sygnalizatory stawiane ręcznie z szablonów w panelu: LPM przy torze stawia wybrany, przeciągnięty sygnalizator przesuwa się wzdłuż swojego toru, LPM na nim go zaznacza"
 
 msgid "A station of the scenery: LMB on a switch lays it out as a schematic. Its name and code, the numbers of its switches and tracks, its track circuits"
 msgstr "Stacja scenerii: LPM na rozjeździe rozkłada ją w schemat. Jej nazwa i skrót, numery rozjazdów i torów, obwody torowe"
 
-
 msgid "The block of the lines out of a station: its block signals, warning discs and block sections"
 msgstr "Blokada linii wychodzących ze stacji: semafory SBL, tarcze ostrzegawcze i odstępy blokowe"
-
 
 msgid "The station: LMB on a switch lays it out as a schematic. Its name and code, the numbers of its switches and tracks, its track circuits"
 msgstr "Stacja: LPM na rozjeździe rozkłada ją w schemat. Jej nazwa i skrót, numery rozjazdów i torów, obwody torowe"
 
 msgid "The block of the lines out of a station, its block signals and warning discs: LMB on a switch opens the station"
 msgstr "Blokada linii wychodzących ze stacji, jej semafory SBL i tarcze ostrzegawcze: LPM na rozjeździe otwiera stację"
-
 
 msgid "not set"
 msgstr "nie ustawiono"
@@ -14118,8 +14169,6 @@ msgstr "Edytor pobiera zdjęcia lotnicze i ukształtowanie terenu tylko w tym ob
 msgid "A square around the centre"
 msgstr "Kwadrat wokół środka"
 
-
-
 msgid "My own area, drawn on the map"
 msgstr "Własny obszar, narysowany na mapie"
 
@@ -14147,10 +14196,8 @@ msgstr "Duży obszar: pobieranie potrwa długo i zajmie dużo miejsca na dysku. 
 msgid "It can be changed later in the editor: Map > Orthophoto settings... > Download area"
 msgstr "Zasięg można później zmienić w edytorze: Mapa > Ustawienia ortofotomapy... > Obszar pobierania"
 
-
 msgid "Draw the range again"
 msgstr "Narysuj zasięg od nowa"
-
 
 msgid "The range is the download area in Map > Orthophoto settings...; drawn again it can take this place in"
 msgstr "Zasięg to obszar pobierania w Mapa > Ustawienia ortofotomapy...; narysowany od nowa może objąć to miejsce"
@@ -14166,7 +14213,6 @@ msgstr "Bez zasięgu: zdjęcia wokół kamery, gdziekolwiek się znajdzie. Pobra
 
 msgid "Square around the camera:"
 msgstr "Kwadrat wokół kamery:"
-
 
 msgid "The range of the photos a square of %d x %d km, the camera in its middle"
 msgstr "Zasięg zdjęć: kwadrat %d × %d km z kamerą pośrodku"
@@ -14267,6 +14313,1955 @@ msgstr "Kursor rysowany w obrazie (stream)"
 msgid "The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\nor a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"
 msgstr "Wskaźnik rysowany przez edytor w klatce zamiast systemowego: widać go w streamie\ni w nagraniu okna (Discord, OBS, przechwytywanie systemowe), które pomijają wskaźnik systemu"
 
+
+msgid "Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\nIt is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\ntranslucent, it doesn't catch the mouse."
+msgstr "Rysuje zdjęcia jako część sceny, więc tory, modele i teren przed nimi je zasłaniają.\nJest oświetlone jak scena. W pełni kryjące łapie mysz przy wstawianiu jak każda powierzchnia;\nprzezroczyste nie łapie myszy."
+
+msgid "Poles and gantries"
+msgstr "Słupy i bramki"
+msgid "No pole: the catalogue (data/traction_cantilevers.txt, data/traction_supports.txt) isn't loaded or has no poles"
+msgstr "Brak słupa: katalog (data/traction_cantilevers.txt, data/traction_supports.txt) nie jest wczytany albo nie ma w nim słupów"
+
+msgid "No card %d0-%d9 in execution %d for A = %.2f m (cards cover A 1.45-4.45 m, not all of them are in every family)"
+msgstr "Brak karty %d0-%d9 w wykonaniu %d dla A = %.2f m (karty obejmują A 1,45-4,45 m, nie w każdej rodzinie są wszystkie)"
+
+msgid "curve R %.0f m"
+msgstr "łuk R %.0f m"
+
+msgid "towards the pole"
+msgstr "do słupa"
+
+msgid "away from the pole"
+msgstr "od słupa"
+
+msgid "Pole here, %s, wires %s: %s"
+msgstr "Słup tutaj, %s, odsuw %s: %s"
+
+msgid "Click: pole %s, card %d execution %d, A = %.2f m (%s, wires %s)"
+msgstr "Klik: słup %s, karta %d wykonanie %d, A = %.2f m (%s, odsuw %s)"
+
+msgid "The suspension isn't by any track: it can't be changed here"
+msgstr "Podwieszenie nie stoi przy żadnym torze: tutaj go nie zmienisz"
+
+msgid "Pole %s with card %d execution %d placed, A = %.2f m"
+msgstr "Postawiony słup %s z kartą %d wykonanie %d, A = %.2f m"
+
+msgid " - the cantilever didn't assemble, see the log"
+msgstr " - wysięgnik się nie złożył, szczegóły w logu"
+
+msgid "Pole removed"
+msgstr "Słup usunięty"
+
+msgid "Taken back"
+msgstr "Cofnięte"
+
+msgid "The cantilever catalogue isn't loaded: data/traction_cantilevers.txt and data/traction_supports.txt (with the poles) are needed"
+msgstr "Katalog wysięgników nie jest wczytany: potrzebne są data/traction_cantilevers.txt i data/traction_supports.txt (ze słupami)"
+
+msgid "Catenary file"
+msgstr "Plik sieci"
+
+msgid "File in the scenery directory the new poles go to; a new one is added to the scenery with the directive catenary <file> endcatenary when it's saved"
+msgstr "Plik w katalogu scenerii, do którego trafiają nowe słupy; nowy plik jest dopisywany do scenerii dyrektywą catenary <plik> endcatenary przy zapisie"
+
+msgid "Selected pole (%s): changes apply to it at once"
+msgstr "Zaznaczony słup (%s): zmiany od razu na nim"
+
+msgid "Pole"
+msgstr "Słup"
+
+msgid "Face of the pole from the track axis (m)"
+msgstr "Czoło słupa od osi toru (m)"
+
+msgid "Structure gauge 2.20 or 2.50 m by the catalogue (card 0007); drag it and the cantilever follows, the card changes with band A. Ctrl+click types a value"
+msgstr "Skrajnia 2,20 albo 2,50 m wg katalogu (karta 0007); przeciągnij, a wysięgnik idzie za tym, karta zmienia się z pasmem A. Ctrl+klik wpisuje wartość"
+
+msgid "Stagger of the wires (m)"
+msgstr "Odsuw przewodów (m)"
+
+msgid "Wires towards the pole"
+msgstr "Odsuw do słupa"
+
+msgid "On a straight the wires zigzag: towards the pole and away from it in turn. On a curve they go to its outside, which decides it"
+msgstr "Na prostej odsuw na zmianę do słupa i od słupa. Na łuku przewody idą na zewnątrz łuku i to rozstrzyga"
+
+msgid "In turn"
+msgstr "Na zmianę"
+
+msgid "After a pole on a straight is placed, the next one gets the wires the other way"
+msgstr "Po postawieniu słupa na prostej następny dostaje odsuw w drugą stronę"
+
+msgid "by the track"
+msgstr "wg toru"
+
+msgid "Cards for"
+msgstr "Karty dla"
+
+msgid "Swinging cantilever (11xx)"
+msgstr "Wysięgnik przechylny (11xx)"
+
+msgid "Off: the fixed ones (12xx)"
+msgstr "Wyłączone: nieprzechylne (12xx)"
+
+msgid "Execution"
+msgstr "Wykonanie"
+
+msgid "Contact wires over the rails (m)"
+msgstr "Przewody jezdne nad główką szyny (m)"
+
+msgid "25 kV insulators"
+msgstr "Izolatory 25 kV"
+
+msgid "Network (for the spans)"
+msgstr "Typ sieci (do przęseł)"
+
+msgid "Wind zone I"
+msgstr "Strefa wiatrowa I"
+
+msgid "Wind zone II"
+msgstr "Strefa wiatrowa II"
+
+msgid "No data/traction_layout.txt: the spans aren't checked"
+msgstr "Brak data/traction_layout.txt: rozpiętości przęseł nie są sprawdzane"
+
+msgid "Card %d execution %d, A = %.2f m, %zu parts"
+msgstr "Karta %d wykonanie %d, A = %.2f m, części: %zu"
+
+msgid "The cantilever doesn't assemble:"
+msgstr "Wysięgnik się nie składa:"
+
+msgid "Remove the pole"
+msgstr "Usuń słup"
+
+msgid "Take back"
+msgstr "Cofnij"
+
+msgid "Takes back the last change of the catenary (Ctrl+Z of the editor doesn't)"
+msgstr "Cofa ostatnią zmianę sieci (Ctrl+Z edytora jej nie cofa)"
+
+msgid "The catenary files are written when the scenery is saved"
+msgstr "Pliki sieci zapisują się razem ze scenerią"
+
+msgid "doesn't assemble"
+msgstr "nie składa się"
+
+msgid "1 - two contact wires, light arms, hk 1.70"
+msgstr "1 - sieć dwudrutowa, ramiona lekkie, hk 1,70"
+
+msgid "2 - two contact wires, heavy arms, hk 1.70"
+msgstr "2 - sieć dwudrutowa, ramiona ciężkie, hk 1,70"
+
+msgid "3 - one contact wire, heavy arms, hk 1.70"
+msgstr "3 - sieć jednodrutowa, ramiona ciężkie, hk 1,70"
+
+msgid "4 - one contact wire, heavy arms, hk 1.30"
+msgstr "4 - sieć jednodrutowa, ramiona ciężkie, hk 1,30"
+
+msgid "5 - one contact wire, light arms, hk 1.70"
+msgstr "5 - sieć jednodrutowa, ramiona lekkie, hk 1,70"
+
+msgid "Angle the textures of the chosen material are turned by, on every chunk painted with it.\nCtrl+click to type it. To have the material turned in one place only, fill it there with an angle of its own."
+msgstr "Kąt obrotu tekstur wybranego materiału na każdym kaflu nim malowanym.\nCtrl+klik, żeby wpisać. Żeby obrócić materiał tylko w jednym miejscu, wypełnij je materiałem z własnym kątem."
+msgid "Poles with cantilevers by the track, the card chosen from the catalogue by the distance of the pole; the spans checked against the catalogue"
+msgstr "Słupy z wysięgnikami przy torze, karta z katalogu dobierana z odległości słupa; przęsła sprawdzane z tablicami katalogu"
+
+msgid "Catenary: the selected pole follows the settings below"
+msgstr "Sieć trakcyjna: zaznaczony słup idzie za ustawieniami poniżej"
+
+msgid "Catenary: LMB by the track places a pole on that side, LMB on a pole selects it"
+msgstr "Sieć trakcyjna: LPM przy torze stawia słup po tej stronie, LPM na słupie go zaznacza"
+
+msgid "places a pole on that side, with the card for its distance"
+msgstr "stawia słup po tej stronie, z kartą dobraną do odległości"
+
+msgid "LMB on a pole"
+msgstr "LPM na słupie"
+
+msgid "selects it: the settings then change it at once"
+msgstr "zaznacza go: ustawienia od razu go zmieniają"
+
+msgid "removes the selected pole"
+msgstr "usuwa zaznaczony słup"
+
+msgid "Click: select the pole"
+msgstr "Klik: zaznacz słup"
+
+msgid "The catenary couldn't be saved: %s"
+msgstr "Nie udało się zapisać sieci: %s"
+
+msgid "with the span from the last pole, %.1f m"
+msgstr "z przęsłem od ostatniego słupa, %.1f m"
+
+msgid "Settings copied to %zu poles"
+msgstr "Ustawienia skopiowane na słupy: %zu"
+
+msgid "Settings copied to %zu poles, %zu couldn't take them (no card for their A or not by a track)"
+msgstr "Ustawienia skopiowane na słupy: %zu, nie dało się na: %zu (brak karty dla ich A albo nie stoją przy torze)"
+
+msgid "New chains take these settings; LMB on a span selects its chain"
+msgstr "Nowe łańcuchy dostają te ustawienia; LPM na przęśle zaznacza jego łańcuch"
+
+msgid "Chain %s: %zu poles, %zu spans; changes apply to all of them"
+msgstr "Łańcuch %s: słupy %zu, przęsła %zu; zmiany od razu na całym łańcuchu"
+
+msgid "Network type"
+msgstr "Typ sieci"
+
+msgid "Grade lines: %zu fitted, %zu track left"
+msgid_plural "Grade lines: %zu fitted, %zu tracks left"
+msgstr[0] "Niwelety: dopasowano %zu, został %zu tor"
+msgstr[1] "Niwelety: dopasowano %zu, zostały %zu tory"
+msgstr[2] "Niwelety: dopasowano %zu, zostało %zu torów"
+msgid "Wires"
+msgstr "Druty"
+
+msgid "Power source"
+msgstr "Zasilacz"
+
+msgid "Voltage (V)"
+msgstr "Napięcie (V)"
+
+msgid "Continue the chain from its end"
+msgstr "Ciągnij łańcuch od końca"
+
+msgid "from its start"
+msgstr "od początku"
+
+msgid "Chain: a span from the last pole"
+msgstr "Łańcuch: przęsło od ostatniego słupa"
+
+msgid "Each pole placed is joined with a span to the one placed before it, one chain from anchor to anchor"
+msgstr "Każdy stawiany słup łączy się przęsłem z poprzednim, jeden łańcuch od kotwy do kotwy"
+
+msgid "End the chain"
+msgstr "Zakończ łańcuch"
+
+msgid "The next pole of the chain gets the wires the other way than the last one; after three the same way in a row it keeps that way, until one goes the other way"
+msgstr "Następny słup łańcucha dostaje odsuw w drugą stronę niż ostatni; po trzech z rzędu w tę samą stronę zostaje tak, aż któryś pójdzie w drugą"
+
+msgid "Copy to:"
+msgstr "Kopiuj na:"
+
+msgid "previous"
+msgstr "poprzedni"
+
+msgid "next"
+msgstr "następny"
+
+msgid "both"
+msgstr "oba"
+
+msgid "the whole chain"
+msgstr "cały łańcuch"
+
+msgid "The pole, its face from the track, execution, height of the wires and insulators; each pole keeps its stagger"
+msgstr "Słup, czoło od toru, wykonanie, wysokość drutów i izolatory; każdy słup zachowuje swój odsuw"
+
+msgid "Click: select the chain of this span"
+msgstr "Klik: zaznacz łańcuch tego przęsła"
+
+msgid "%zu: %s, %.2f m, %.0f blades/m2"
+msgstr "%zu: %s, %.2f m, %.0f źdźbeł/m2"
+
+msgid "A chunk holds up to 4 kinds of grass. LMB grows the chosen kind, Shift+LMB takes all grass away"
+msgstr "Kawałek mieści do 4 rodzajów trawy. LPM sieje wybrany rodzaj, Shift+LPM usuwa całą trawę"
+
+msgid "Add:"
+msgstr "Dodaj:"
+
+msgid "Blade width (m)"
+msgstr "Szerokość źdźbła (m)"
+
+msgid "Blades on a square metre painted fully. The renderer draws fewer further away, and wider;\ngfx.grass.distance, gfx.grass.fadedistance and gfx.grass.density in eu07.ini set how far and how many"
+msgstr "Źdźbła na metrze kwadratowym w pełni pomalowanym. Dalej renderer rysuje ich mniej, ale szerszych;\ngfx.grass.distance, gfx.grass.fadedistance i gfx.grass.density w eu07.ini ustalają, jak daleko i ile"
+
+msgid "Clear the grass"
+msgstr "Usuń trawę"
+
+msgid "Close the hole"
+msgstr "Zamknij dziurę"
+
+msgid "Cut a hole"
+msgstr "Wytnij dziurę"
+
+msgid "Cuts the ground within the outline away, e.g. for the portal of a tunnel"
+msgstr "Wycina teren wewnątrz obrysu, np. pod portal tunelu"
+
+msgid "Density (blades/m2)"
+msgstr "Gęstość (źdźbła/m2)"
+
+msgid "Grass grown: %s"
+msgstr "Wysiano trawę: %s"
+
+msgid "Grass taken away from the outlined area"
+msgstr "Usunięto trawę z obrysowanego obszaru"
+
+msgid "Grass"
+msgstr "Trawa"
+
+msgid "Grow grass"
+msgstr "Posiej trawę"
+
+msgid "Grows the kind of grass chosen in the Grass section within the outline"
+msgstr "Sieje wewnątrz obrysu rodzaj trawy wybrany w sekcji Trawa"
+
+msgid "Height (m)##grass"
+msgstr "Wysokość (m)##grass"
+
+msgid "Height varies by"
+msgstr "Rozrzut wysokości"
+
+msgid "Hole closed in the outlined area"
+msgstr "Zamknięto dziurę w obrysowanym obszarze"
+
+msgid "Hole cut in the outlined area"
+msgstr "Wycięto dziurę w obrysowanym obszarze"
+
+msgid "Holes"
+msgstr "Dziury"
+
+msgid "How far the tips of the blades lean over, share of their height; the wind adds to it"
+msgstr "Jak bardzo czubki źdźbeł się pochylają, jako część ich wysokości; wiatr dokłada swoje"
+
+msgid "LMB cuts a hole in the terrain under the brush (portals of tunnels), Shift+LMB closes it"
+msgstr "LPM wycina dziurę w terenie pod pędzlem (portale tuneli), Shift+LPM ją zamyka"
+
+msgid "LMB grows the kind of grass chosen in the grass palette, Shift+LMB takes the grass away"
+msgstr "LPM sieje rodzaj trawy wybrany w palecie traw, Shift+LPM usuwa trawę"
+
+msgid "Lean"
+msgstr "Pochylenie"
+
+msgid "Name##grass"
+msgstr "Nazwa##grass"
+
+msgid "No grass under the outline"
+msgstr "Pod obrysem nie ma trawy"
+
+msgid "No hole under the outline"
+msgstr "Pod obrysem nie ma dziury"
+
+msgid "No kinds of grass yet. Add one of the presets below; the first stroke of the brush adds a meadow."
+msgstr "Nie ma jeszcze rodzajów trawy. Dodaj któryś z gotowych poniżej; pierwsze pociągnięcie pędzla doda łąkę."
+
+msgid "Nothing cut: no chunk under the outline"
+msgstr "Nic nie wycięto: pod obrysem nie ma kawałka terenu"
+
+msgid "Nothing grown: no chunk under the outline, or no room for another kind of grass"
+msgstr "Nic nie wysiano: pod obrysem nie ma kawałka terenu albo nie ma miejsca na kolejny rodzaj trawy"
+
+msgid "Openings in the ground for the portals of tunnels, cuttings under bridges and the like. With the Holes tool LMB cuts the ground under the brush and Shift+LMB closes it; the brush stays on the ground also over an opening. An area outlined with the Fill tool can be cut or closed in the Fill section."
+msgstr "Otwory w terenie pod portale tuneli, przejścia pod mostami i podobne. Narzędziem Dziury LPM wycina teren pod pędzlem, a Shift+LPM go zamyka; pędzel trzyma się terenu także nad otworem. Obszar obrysowany narzędziem Wypełnienie można wyciąć albo zamknąć w sekcji Wypełnienie."
+
+msgid "Root colour"
+msgstr "Kolor u nasady"
+
+msgid "Share of the height the blades differ by, either way"
+msgstr "O jaką część wysokości źdźbła różnią się w górę i w dół"
+
+msgid "The grass isn't drawn: gfx.grass is off"
+msgstr "Trawa nie jest rysowana: gfx.grass jest wyłączone"
+
+msgid "The holes follow the ground every metre (every grid point of finer chunks), whatever the drawn grid"
+msgstr "Dziury idą za terenem co metr (co punkt siatki w gęstszych kawałkach), niezależnie od rysowanej siatki"
+
+msgid "Tip colour"
+msgstr "Kolor czubka"
+
+msgid "meadow"
+msgstr "łąka"
+
+msgid "lawn"
+msgstr "trawnik"
+
+msgid "dry grass"
+msgstr "sucha trawa"
+
+msgid "tall grass"
+msgstr "wysoka trawa"
+
+msgid "weeds"
+msgstr "chwasty"
+
+msgid "Dried out"
+msgstr "Wyschnięta"
+
+msgid "Colour the tips take as the grass dries out, in late summer, autumn and winter"
+msgstr "Kolor, jaki przybierają czubki, gdy trawa wysycha: późnym latem, jesienią i zimą"
+
+msgid "Follows the seasons"
+msgstr "Zmienia się z porami roku"
+
+msgid "How much the colour and the height change through the year with the date of the scenario:\ndry and low in winter, greening up in spring, fresh in May, drying out from August.\n0: the same all year (e.g. a watered lawn), 1: fully"
+msgstr "Jak bardzo kolor i wysokość zmieniają się w ciągu roku z datą scenariusza:\nzimą sucha i niska, wiosną zielenieje, w maju świeża, od sierpnia wysycha.\n0: taka sama przez cały rok (np. podlewany trawnik), 1: w pełni"
+
+msgid "List of the chunks..."
+msgstr "Lista kafli..."
+
+msgid "All the chunks of the terrain with the files they're kept in and their triangles;\na double click on a chunk takes the camera to it"
+msgstr "Wszystkie kafle terenu z plikami, w których są zapisane, i ich trójkątami;\ndwuklik na kaflu przenosi do niego kamerę"
+
+msgid "Terrain chunks"
+msgstr "Kafle terenu"
+
+msgid "The scenery has no heightmap terrain yet"
+msgstr "Sceneria nie ma jeszcze terenu z map wysokości"
+
+msgid "Chunks: %zu in %zu files, %.2f km2"
+msgstr "Kafle: %zu w plikach: %zu, %.2f km²"
+
+msgid "In memory: %zu, changed and not saved: %zu"
+msgstr "W pamięci: %zu, zmienione i niezapisane: %zu"
+
+msgid "Terrain triangles: %s"
+msgstr "Trójkąty terenu: %s"
+
+msgid "Of the full grids of all the chunks, as their point spacing makes them; the holes not taken off"
+msgstr "Pełnych siatek wszystkich kafli, jakie daje ich odstęp punktów; dziury nie są odejmowane"
+
+msgid "Drawn now: %s"
+msgstr "Rysowane teraz: %s"
+
+msgid "Triangles of the chunks drawn around the camera, with the grids made coarser with the distance"
+msgstr "Trójkąty kafli rysowanych wokół kamery, z siatkami rzadszymi wraz z odległością"
+
+msgid "Filter: file or x,z"
+msgstr "Filtr: plik lub x,z"
+
+msgid "Read the files again"
+msgstr "Wczytaj pliki ponownie"
+
+msgid "The files are read when the list opens and after the terrain is saved"
+msgstr "Pliki są czytane przy otwarciu listy i po zapisaniu terenu"
+
+msgid "Under the camera"
+msgstr "Pod kamerą"
+
+msgid "Shows the chunk the camera is over in the list"
+msgstr "Pokazuje na liście kafel, nad którym jest kamera"
+
+msgid "Double click: the camera goes to the chunk"
+msgstr "Dwuklik: kamera przenosi się do kafla"
+
+msgid "Chunk"
+msgstr "Kafel"
+
+msgid "Triangles"
+msgstr "Trójkąty"
+
+msgid "Drawn"
+msgstr "Rysowane"
+
+msgid "in the file"
+msgstr "w pliku"
+
+msgid "loaded"
+msgstr "wczytany"
+
+msgid "changed, not saved"
+msgstr "zmieniony, niezapisany"
+
+msgid "Pick a memory cell from the list to set what's in it"
+msgstr "Wybierz komórkę pamięci z listy, aby ustawić jej zawartość"
+msgid "worn"
+msgstr "przejściowe"
+
+msgid "tarnished"
+msgstr "zaśniedziałe"
+
+msgid "No drops in the catalogue for this beam"
+msgstr "Brak w katalogu zwisów do tego dźwigara"
+
+msgid "The track runs along the beam of the gantry"
+msgstr "Tor biegnie wzdłuż dźwigara bramki"
+
+msgid "The drop would be off the beam of the gantry"
+msgstr "Zwis wypadłby poza dźwigarem bramki"
+
+msgid "The cantilevers now go on drops on this gantry: LMB over a track"
+msgstr "Wysięgniki idą teraz na zwisy tej bramki: LPM nad torem"
+
+msgid "Gantry %s with beam %s placed; LMB over a track puts a drop with a cantilever on it"
+msgstr "Postawiona bramka %s z dźwigarem %s; LPM nad torem wiesza na niej zwis z wysięgnikiem"
+
+msgid "First mast"
+msgstr "Pierwszy słup"
+
+msgid "Second mast"
+msgstr "Drugi słup"
+
+msgid "Beam:"
+msgstr "Dźwigar:"
+
+msgid "lower mount"
+msgstr "dolne mocowanie"
+
+msgid "upper mount"
+msgstr "górne mocowanie"
+
+msgid "Beam on side +"
+msgstr "Dźwigar po stronie +"
+
+msgid "Beam on side -"
+msgstr "Dźwigar po stronie -"
+
+msgid "On which side of the masts, along the track, the beam is fixed"
+msgstr "Po której stronie słupów (wzdłuż toru) mocowany jest dźwigar"
+
+msgid "Cancel the gantry"
+msgstr "Anuluj bramkę"
+
+msgid "Place a gantry"
+msgstr "Postaw bramkę"
+
+msgid "LMB the first mast, LMB the second: the beam is the one of the catalogue nearest to that distance"
+msgstr "LPM pierwszy słup, LPM drugi: dźwigar z katalogu najbliższy tej odległości"
+
+msgid "Gantry %s, beam %s: the cantilevers go on drops on it"
+msgstr "Bramka %s, dźwigar %s: wysięgniki idą na zwisy na niej"
+
+msgid "Remove the gantry"
+msgstr "Usuń bramkę"
+
+msgid "Back to the poles"
+msgstr "Wróć do słupów"
+
+msgid "Click: the second mast, as far as the nearest beam spans"
+msgstr "Klik: drugi słup, w odległości najbliższego dźwigara"
+
+msgid "Click: the first mast of the gantry"
+msgstr "Klik: pierwszy słup bramki"
+
+msgid "Click: put the cantilevers on drops on this gantry"
+msgstr "Klik: wysięgniki na zwisach tej bramki"
+
+msgid "The cantilevers now go on drops on this gantry: LMB over a track; drag the beam to move the gantry"
+msgstr "Wysięgniki idą teraz na zwisy tej bramki: LPM nad torem; przeciągnij dźwigar, żeby przesunąć bramkę"
+
+msgid "Square to the track"
+msgstr "Prostopadle do toru"
+
+msgid "The beam goes square to the track the first mast is put by"
+msgstr "Dźwigar prostopadle do toru, przy którym stoi pierwszy słup"
+
+msgid "Texture"
+msgstr "Tekstura"
+
+msgid "Replaceable texture of the masts, the beam and the drops of the new gantry (the models have none of their own)"
+msgstr "Tekstura wymienna słupów, dźwigara i zwisów nowej bramki (modele nie mają własnej)"
+
+msgid "Mast %d at the height (m)"
+msgstr "Słup %d na wysokości (m)"
+
+msgid "The zero of the mast is at the rail heads (the clearance of the beam is counted from it); the ground is taken by the foundation head of the variant -1...-4. Drag or Ctrl+click to type"
+msgstr "Zero słupa jest w główce szyny (od niej liczony jest prześwit dźwigara); teren bierze głowica fundamentu wykonania -1…-4. Przeciągnij albo Ctrl+klik, żeby wpisać"
+
+msgid "Give it the texture"
+msgstr "Nadaj teksturę"
+
+msgid "Drag: move the gantry"
+msgstr "Przeciągnij: przesuń bramkę"
+
+msgid "Click: put the cantilevers on drops on this gantry, drag: move it"
+msgstr "Klik: wysięgniki na zwisach tej bramki, przeciągnij: przesuń ją"
+
+msgid "Beam"
+msgstr "Dźwigar"
+
+msgid "Take the masts"
+msgstr "Weź słupy"
+
+msgid "The masts chosen above go to this gantry; the first mast stays, the second goes as far as the beam needs"
+msgstr "Słupy wybrane wyżej idą do tej bramki; pierwszy zostaje, drugi odsuwa się tyle, ile trzeba dźwigarowi"
+
+msgid "Turn (degrees)"
+msgstr "Obrót (stopnie)"
+
+msgid "Drag sideways: turns the gantry around its middle"
+msgstr "Przeciągnij w bok: obraca bramkę wokół jej środka"
+
+msgid "No track near the gantry"
+msgstr "Brak toru przy bramce"
+
+msgid "Gantry %s: beam %s, masts %.3f m apart"
+msgstr "Bramka %s: dźwigar %s, słupy %.3f m od siebie"
+
+msgid "Takes back the last change of the catenary (also Ctrl+Z while this tool is open)"
+msgstr "Cofa ostatnią zmianę sieci (także Ctrl+Z przy otwartym tym narzędziu)"
+
+msgid "the shortest which fits"
+msgstr "najkrótszy, który pasuje"
+
+msgid "Drop"
+msgstr "Zwis"
+
+msgid "Drop of the pole"
+msgstr "Zwis wysięgnika"
+
+msgid "Gantry at the height (m)"
+msgstr "Bramka na wysokości (m)"
+
+msgid "On drops"
+msgstr "Na zwisach"
+
+msgid "On the masts"
+msgstr "Na słupach bramki"
+
+msgid "LMB over a track hangs the cantilever on a drop moved along the beam to the track"
+msgstr "LPM nad torem wiesza wysięgnik na zwisie przesuniętym po dźwigarze nad tor"
+
+msgid "LMB by a track puts the cantilever straight on the mast of the gantry on that side; the card from the distance of the mast"
+msgstr "LPM przy torze stawia wysięgnik wprost na słupie bramki po tej stronie; karta z odległości słupa"
+
+msgid "No mast of this gantry on that side of the track"
+msgstr "Po tej stronie toru nie ma słupa tej bramki"
+
+msgid "Mast %s has no mounts for a cantilever (strut/stay in its entry in traction_supports.txt)"
+msgstr "Słup %s nie ma mocowań wysięgnika (strut/stay w jego wpisie w traction_supports.txt)"
+
+msgid "Click: pole %s, card %04d execution %d, A = %.2f m (%s, wires %s)"
+msgstr "Klik: słup %s, karta %04d wykonanie %d, A = %.2f m (%s, odsuw %s)"
+
+msgid "No card of the group for A = %.2f m"
+msgstr "W tej grupie nie ma karty dla A = %.2f m"
+
+msgid "execution %d has no card for this A, execution %d taken"
+msgstr "wykonanie %d nie ma karty dla tego A, wzięte wykonanie %d"
+
+msgid "Kind"
+msgstr "Rodzaj"
+
+msgid "Family"
+msgstr "Rodzina"
+
+msgid "Card"
+msgstr "Karta"
+
+msgid "by the track and the stagger"
+msgstr "z toru i odsuwu"
+
+msgid "by the distance A"
+msgstr "z odległości A"
+
+msgid "Automatic: the family for a straight or a curve and for the wires towards or away from the pole, as the place by the track has it"
+msgstr "Automatycznie: rodzina na prostą albo łuk i do odsuwu do słupa albo od słupa, tak jak wypada w tym miejscu toru"
+
+msgid "execution %d"
+msgstr "wykonanie %d"
+
+msgid "Execution: from the distance A (the band of the card)"
+msgstr "Wykonanie: z odległości A (pasmo karty)"
+
+msgid ", on piles"
+msgstr ", na palach"
+
+msgid ", on a cast foundation"
+msgstr ", na fundamencie wylewanym"
+
+msgid ", on the line"
+msgstr ", na szlaku"
+
+msgid ", in a station"
+msgstr ", na stacji"
+
+msgid ", on a platform"
+msgstr ", na peronie"
+
+msgid "Other (not described in traction_catalog.txt)"
+msgstr "Inne (bez opisu w traction_catalog.txt)"
+
+msgid "Next span from mast %d"
+msgstr "Następne przęsło od słupa %d"
+
+msgid "LMB: the next mast of the gantry, as far as the nearest beam spans (the mast type: the second one above)"
+msgstr "LPM: następny słup bramki, tak daleko, jak sięga najbliższy dźwigar (typ słupa: drugi z wybranych wyżej)"
+
+msgid "An end mast: a beam can go on one side of it only; a through mast is needed"
+msgstr "Słup końcowy: dźwigar może być tylko z jednej strony; potrzebny słup przelotowy"
+
+msgid "This mast has beams on both sides already"
+msgstr "Ten słup ma już dźwigary z obu stron"
+
+msgid "The beam of the next span on the other side of this through mast, in line with this span"
+msgstr "Dźwigar następnego przęsła po drugiej stronie tego słupa przelotowego, w linii z tym przęsłem"
+
+msgid "(through)"
+msgstr " (przelotowy)"
+
+msgid " (end)"
+msgstr " (końcowy)"
+
+msgid "Place a single beam element"
+msgstr "Postaw pojedynczy element dźwigara"
+
+msgid "LMB the through mast (the first mast above), LMB where the element points: the element of the catalogue nearest to that length"
+msgstr "LPM: słup przelotowy (pierwszy słup wybrany wyżej), LPM: dokąd sięga element - element z katalogu najbliższy tej długości"
+
+msgid "A single beam element (3017-3025, 1910) on one through mast: on one side fixed to the mast, on the other end to a console"
+msgstr "Pojedynczy element dźwigara (3017-3025, 1910) na jednym słupie przelotowym: z jednej strony mocowany do słupa, z drugiej do konsoli"
+
+msgid "Single element from mast %d"
+msgstr "Pojedynczy element od słupa %d"
+
+msgid "LMB: as far as the single element should reach, in line with this span"
+msgstr "LPM: dokąd ma sięgać pojedynczy element, w linii z tym przęsłem"
+
+msgid "A single beam element (3017-3025, 1910) on the other side of this through mast, in line with this span"
+msgstr "Pojedynczy element dźwigara (3017-3025, 1910) po drugiej stronie tego słupa przelotowego, w linii z tym przęsłem"
+
+msgid "Own system height"
+msgstr "Własna wysokość konstrukcyjna"
+
+msgid "Off: the system height of the card (1.70 / 1.30 ...). On: the messenger at the height set here over the contact wires; the stay mount goes with it, the solver warns when the cantilever can't take it"
+msgstr "Wyłączone: wysokość konstrukcyjna z karty (1,70 / 1,30 ...). Włączone: lina nośna na podanej wysokości nad przewodami jezdnymi; mocowanie odciągu idzie za nią, solver ostrzega, gdy wysięgnik się nie złoży"
+
+msgid "hk (m)"
+msgstr "hk (m)"
+
+msgid "Beam of this gantry:"
+msgstr "Dźwigar tej bramki:"
+
+msgid "Gantry %s: the beam on the upper mount"
+msgstr "Bramka %s: dźwigar na górnym mocowaniu"
+
+msgid "Gantry %s: the beam on the lower mount"
+msgstr "Bramka %s: dźwigar na dolnym mocowaniu"
+
+msgid "Stop hanging the wires"
+msgstr "Zakończ rozwieszanie"
+
+msgid "Hang the wires to another pole"
+msgstr "Rozwieś druty do innego słupa"
+
+msgid "LMB the next pole: the span from this one is hung to it; then the next one, and so on"
+msgstr "LPM na następny słup: rozwiesza się do niego przęsło od tego; potem kolejny i tak dalej"
+
+msgid "Joins this pole with the poles clicked after it: it goes on the chain at its end, a new chain of the two, or two chains become one"
+msgstr "Łączy ten słup z klikniętymi po nim: dołącza do końca łańcucha, tworzy nowy łańcuch z dwóch słupów albo skleja dwa łańcuchy w jeden"
+
+msgid "The poles are in different files: a chain can't join them"
+msgstr "Słupy są w różnych plikach: łańcuch ich nie połączy"
+
+msgid "Both poles are in this chain already"
+msgstr "Oba słupy są już w tym łańcuchu"
+
+msgid "The pole is in the middle of a chain: the spans go on from the ends of a chain only"
+msgstr "Słup jest w środku łańcucha: przęsła dokłada się tylko od końców łańcucha"
+
+msgid "Span %s - %s hung; LMB the next pole, or stop with the button"
+msgstr "Przęsło %s - %s rozwieszone; LPM na następny słup albo zakończ przyciskiem"
+
+msgid "Click: hang the span to this pole"
+msgstr "Klik: rozwieś przęsło do tego słupa"
+
+msgid " (second mast %.2f m from the track axis)"
+msgstr " (drugi słup %.2f m od osi toru)"
+
+msgid "Cantilevers"
+msgstr "Wysięgniki"
+
+msgid "Face from the track axis (m)##placing"
+msgstr "Lico od osi toru (m)##placing"
+
+msgid "First mast from the track"
+msgstr "Pierwszy słup od toru"
+
+msgid "From the axis of the nearest track to the face of the mast; drag or Ctrl+click and type: the whole gantry moves square to that track"
+msgstr "Od osi najbliższego toru do lica słupa; przeciągnij albo Ctrl+klik i wpisz: cała bramka przesuwa się prostopadle do tego toru"
+
+msgid "Gantries"
+msgstr "Bramki"
+
+msgid "Gantries: LMB by a track puts a cantilever on the selected gantry, drag the beam to move it"
+msgstr "Bramki: LPM przy torze wstawia wysięgnik na zaznaczonej bramce, przeciągnij dźwigar, żeby ją przesunąć"
+
+msgid "Gantries: LMB on a gantry selects it, or place a new one below"
+msgstr "Bramki: LPM na bramce ją zaznacza, albo postaw nową niżej"
+
+msgid "Gantries: LMB the masts"
+msgstr "Bramki: LPM – słupy"
+
+msgid "Gantries: masts and beams, the cantilevers on their drops and masts"
+msgstr "Bramki: słupy i dźwigary, wysięgniki na zwisach i na słupach"
+
+msgid "Gantry %s: mast %d %.2f m from the track axis"
+msgstr "Bramka %s: słup %d %.2f m od osi toru"
+
+msgid "LMB on a pole selects it: the wires can then be hung from it to the next poles; LMB on a span selects its chain"
+msgstr "LPM na słupie go zaznacza: potem można od niego rozwiesić druty do kolejnych słupów; LPM na przęśle zaznacza jego łańcuch"
+
+msgid "Mast %d: face from the track axis (m)"
+msgstr "Słup %d: lico od osi toru (m)"
+
+msgid "Pole %s"
+msgstr "Słup %s"
+
+msgid "Poles"
+msgstr "Słupy"
+
+msgid "Poles with cantilevers: LMB by a track places one, LMB on a pole selects it"
+msgstr "Słupy z wysięgnikami: LPM przy torze stawia słup, LPM na słupie go zaznacza"
+
+msgid "The chains: the type of the network, the wires, the spans between the poles"
+msgstr "Łańcuchy: typ sieci, druty, przęsła między słupami"
+
+msgid "The first mast goes with its face at this distance from the axis of the track under the cursor, on the side of the cursor; the second one as far as the beam spans"
+msgstr "Pierwszy słup staje licem w tej odległości od osi toru pod kursorem, po stronie kursora; drugi tak daleko, jak sięga dźwigar"
+
+msgid "The overhead catenary: poles with cantilevers, gantries, the wires of the chains"
+msgstr "Sieć trakcyjna: słupy z wysięgnikami, bramki, druty łańcuchów"
+
+msgid "Wires: LMB on a span selects its chain, LMB on a pole selects it"
+msgstr "Druty: LPM na przęśle zaznacza łańcuch, LPM na słupie zaznacza słup"
+
+msgid "Wires: LMB on the next pole hangs the span to it"
+msgstr "Druty: LPM na następnym słupie rozwiesza do niego przęsło"
+
+msgid "From the axis of the track to the face of the first mast. Placing: the first mast goes there. A gantry selected: drag or Ctrl+click and type, the gantry moves square to the track; dragged with the mouse it goes only along the track, at this distance"
+msgstr "Od osi toru do lica pierwszego słupa. Przy wstawianiu: tam staje pierwszy słup. Przy zaznaczonej bramce: przeciągnij albo Ctrl+klik i wpisz – bramka przesuwa się prostopadle do toru; przeciągana myszą jedzie tylko wzdłuż toru, w tej odległości"
+
+msgid "Drag sideways: turns the gantry around its first mast"
+msgstr "Przeciągnij w bok: obraca bramkę wokół pierwszego słupa"
+
+msgid "ERROR: pole %s doesn't stand by a switch, take a steel one"
+msgstr "BŁĄD: słup %s nie może stać przy rozjeździe, daj stalowy"
+
+msgid "%s by a switch"
+msgstr "%s przy rozjeździe!"
+
+msgid "Anchors (weight tensioning, card 23-0461)"
+msgstr "Kotwienia (ciężarowe, karta 23-0461)"
+
+msgid "Anchor the start of the chain"
+msgstr "Zakotwij początek łańcucha"
+
+msgid "Anchor the end of the chain"
+msgstr "Zakotwij koniec łańcucha"
+
+msgid "Anchored: the last span goes without droppers to the tensioning device"
+msgstr "Zakotwiono: ostatnie przęsło bez wieszaków do urządzenia naprężającego"
+
+msgid "An anchor pole 24 m past the last pole, in line with it, with the weight tensioning device; the last span hangs without droppers"
+msgstr "Słup kotwowy 24 m za ostatnim słupem, w jego linii, z urządzeniem naprężającym; ostatnie przęsło wisi bez wieszaków"
+
+msgid "Start: anchor %s"
+msgstr "Początek: kotwienie %s"
+
+msgid "End: anchor %s"
+msgstr "Koniec: kotwienie %s"
+
+msgid "Anchor pole from the last pole (m)"
+msgstr "Słup kotwowy od ostatniego słupa (m)"
+
+msgid "Anchor pole"
+msgstr "Słup kotwowy"
+
+msgid "From the middle anchor (m)"
+msgstr "Od kotwienia środkowego (m)"
+
+msgid "Half-section length (from the middle or fixed anchor): the weights and the pulley move with the air temperature this much more"
+msgstr "Długość półodcinka (od kotwienia środkowego albo stałego): o tyle więcej ciężary i rolka chodzą z temperaturą powietrza"
+
+msgid "Weights"
+msgstr "Ciężary"
+
+msgid "Top weight"
+msgstr "Najwyższy ciężar"
+
+msgid "Weights missing"
+msgstr "Brakujące ciężary"
+
+msgid "Stolen from the top of the stack: about 100 daN less tension each"
+msgstr "Zdjęte z góry stosu: każdy to ok. 100 daN naciągu mniej"
+
+msgid "Wires stretched since regulated (cm)"
+msgstr "Wydłużenie sieci od regulacji (cm)"
+
+msgid "Creep and wear of an old network: the weights hang 4 times this much lower; on the ground the network loses its tension"
+msgstr "Pełzanie i zużycie starej sieci: ciężary wiszą 4 razy tyle niżej; oparte o grunt - sieć traci naciąg"
+
+msgid "%.1f deg C: pulley %.2f m from the pole, weights %.2f m over the rails; %d weights, messenger %.0f daN, contact wires %.0f daN"
+msgstr "%.1f °C: rolka %.2f m od słupa, ciężary %.2f m nad szynami; ciężarów %d, lina %.0f daN, przewody %.0f daN"
+
+msgid "Remove the anchor"
+msgstr "Usuń kotwienie"
+
+msgid "yellow"
+msgstr "żółte"
+
+msgid "grey"
+msgstr "szare"
+
+msgid "yellow, brushed"
+msgstr "żółte, pędzlowane"
+
+msgid "grey, shabby"
+msgstr "szare, brzydkie"
+
+msgid "Stop picking the pole"
+msgstr "Przerwij wybieranie słupa"
+
+msgid "to an existing pole"
+msgstr "do istniejącego słupa"
+
+msgid "LMB on the pole the tensioning device goes on"
+msgstr "LPM na słup, na którym ma stanąć urządzenie naprężające"
+
+msgid "The tensioning device goes on a pole already standing (with its cantilever); the pole stays as it is"
+msgstr "Urządzenie naprężające na słupie, który już stoi (z wysięgnikiem); słup zostaje jak jest"
+
+msgid "On the pole of %s"
+msgstr "Na słupie %s"
+
+msgid "This pole can't carry the anchor: it has to be a pole (not a drop or a point) from the file of the chain"
+msgstr "Na tym słupie nie da się zakotwić: musi to być słup (nie zwis ani punkt) z pliku łańcucha"
+
+msgid "The anchor goes on another pole than the last one of the chain"
+msgstr "Kotwienie musi być na innym słupie niż ostatni słup łańcucha"
+
+msgid "Click: the tensioning device on this pole"
+msgstr "Klik: urządzenie naprężające na tym słupie"
+
+msgid "Wires: LMB on the pole the tensioning device goes on"
+msgstr "Druty: LPM na słup, na którym ma stanąć urządzenie naprężające"
+
+msgid "Pulleys above the rail heads (m)"
+msgstr "Rolki nad główką szyny (m)"
+
+msgid "Height of the pulley axles on the mast; the weights move up or down with them. The mounting table gives 6.70 m. Drag or Ctrl+click to type"
+msgstr "Wysokość osi rolek na słupie; ciężary przesuwają się razem z nimi. Tablica montażowa podaje 6,70 m. Przeciągnij albo Ctrl+klik, żeby wpisać"
+
+msgid ", superelevation %.0f mm"
+msgstr ", przechyłka %.0f mm"
+
+msgid "Click: select the anchor"
+msgstr "Klik: zaznacz kotwienie"
+
+msgid "Anchor %s selected: its settings are below, Del removes it"
+msgstr "Zaznaczone kotwienie %s: ustawienia poniżej, Del je usuwa"
+
+msgid "Anchor %s isn't at the end of any chain"
+msgstr "Kotwienie %s nie kończy żadnego łańcucha"
+
+msgid "Anchor removed"
+msgstr "Kotwienie usunięte"
+
+msgid "(selected in the view)"
+msgstr "(zaznaczone w oknie)"
+
+msgid "LMB on a tensioning device"
+msgstr "LPM na urządzeniu naprężającym"
+
+msgid "selects the anchor and its chain"
+msgstr "zaznacza kotwienie i jego łańcuch"
+
+msgid "removes the selected anchor"
+msgstr "usuwa zaznaczone kotwienie"
+
+msgid "The chain is ended: the next pole starts a new one"
+msgstr "Łańcuch zakończony: następny słup zaczyna nowy"
+
+msgid "The pole is in the middle of a chain: the chain goes on from its ends only"
+msgstr "Słup jest w środku łańcucha: łańcuch można ciągnąć tylko od jego końców"
+
+msgid "The next poles go on from %s: LMB by the track; Esc ends the chain"
+msgstr "Następne słupy idą od %s: LPM przy torze; Esc kończy łańcuch"
+
+msgid "; put into chain %s between %s and %s"
+msgstr "; wstawiony do łańcucha %s między %s a %s"
+
+msgid "into the span %s - %s"
+msgstr "w przęsło %s - %s"
+
+msgid "In the middle of chain %s (pole %zu of %zu)"
+msgstr "W środku łańcucha %s (słup %zu z %zu)"
+
+msgid "Go on with the chain from this pole (C)"
+msgstr "Ciągnij łańcuch od tego słupa (C)"
+
+msgid "Start a chain from this pole (C)"
+msgstr "Zacznij łańcuch od tego słupa (C)"
+
+msgid "The poles placed next by the track are joined to this one with spans, one after another; Esc ends the chain"
+msgstr "Kolejne słupy stawiane przy torze łączą się z tym przęsłami, jeden za drugim; Esc kończy łańcuch"
+
+msgid "start of chain %s"
+msgstr "początek łańcucha %s"
+
+msgid "end of chain %s"
+msgstr "koniec łańcucha %s"
+
+msgid "Into spans"
+msgstr "W przęsła"
+
+msgid "A pole placed under the span of a chain (its wire point within 1.5 m of the span, not at its ends) goes into that chain between the two poles"
+msgstr "Słup postawiony pod przęsłem łańcucha (punkt drutu do 1,5 m od przęsła, nie przy jego końcach) wchodzi do łańcucha między te dwa słupy"
+
+msgid "The next pole starts a new chain; LMB on a pole and C goes on from it"
+msgstr "Następny słup zaczyna nowy łańcuch; LPM na słupie i C – ciągnięcie od niego"
+
+msgid "Next pole: a span from %s, at the end of chain %s (%zu poles)"
+msgstr "Następny słup: przęsło od %s, na końcu łańcucha %s (%zu słupów)"
+
+msgid "Next pole: a span from %s, at the start of chain %s (%zu poles)"
+msgstr "Następny słup: przęsło od %s, na początku łańcucha %s (%zu słupów)"
+
+msgid "Next pole: a new chain from %s"
+msgstr "Następny słup: nowy łańcuch od %s"
+
+msgid "End the chain (Esc)"
+msgstr "Zakończ łańcuch (Esc)"
+
+msgid "Anchor here and end"
+msgstr "Zakotwij tu i zakończ"
+
+msgid "Anchored and ended: the anchor pole is 24 m past the last pole; its settings are on the Wires page"
+msgstr "Zakotwiono i zakończono: słup kotwowy 24 m za ostatnim słupem; ustawienia na stronie Druty"
+
+msgid "An anchor pole 24 m past the last pole, in line with it, with the weight tensioning device; the chain is ended"
+msgstr "Słup kotwowy 24 m za ostatnim słupem, w jego linii, z urządzeniem naprężającym; łańcuch zostaje zakończony"
+
+msgid "Catenary: the selected pole follows the settings below; C goes on with the chain from it"
+msgstr "Sieć trakcyjna: zaznaczony słup idzie za ustawieniami poniżej; C ciągnie od niego łańcuch"
+
+msgid "Catenary: LMB by the track places the next pole of the chain; Esc ends the chain"
+msgstr "Sieć trakcyjna: LPM przy torze stawia następny słup łańcucha; Esc kończy łańcuch"
+
+msgid "LMB under a span"
+msgstr "LPM pod przęsłem"
+
+msgid "puts the pole into the chain between the two poles"
+msgstr "wstawia słup do łańcucha między te dwa słupy"
+
+msgid "ends the chain: the next pole starts a new one"
+msgstr "kończy łańcuch: następny słup zaczyna nowy"
+
+msgid "the chain goes on from the selected pole"
+msgstr "łańcuch idzie dalej od zaznaczonego słupa"
+
+msgid "by the wires (roller ones when tarnished)"
+msgstr "wg drutów (rolkowe przy zaśniedziałych)"
+
+msgid "resin 7150"
+msgstr "żywiczne 7150"
+
+msgid "roller ESN-2025 on both"
+msgstr "rolkowe ESN-2025 na obu"
+
+msgid "roller on the messenger only"
+msgstr "rolkowy tylko na linie nośnej"
+
+msgid "roller on the contact wires only"
+msgstr "rolkowe tylko na przewodach"
+
+msgid "Insulators"
+msgstr "Izolatory"
+
+msgid "Old assemblies have the roller insulator ESN-2025 straight in the lever hole, then the turnbuckle and the clamp; by default the roller ones come with tarnished wires, as the 5110 clamps do"
+msgstr "Stare złożenia mają izolator rolkowy ESN-2025 wprost w otworze dźwigni, za nim śrubę rzymską i uchwyt; domyślnie rolkowe są przy drutach zaśniedziałych, tak jak uchwyty 5110"
+
+msgid "Anchors"
+msgstr "Kotwienia"
+
+msgid "fixed (card %s)"
+msgstr "stałe (karta %s)"
+
+msgid "weight tensioning (card %s)"
+msgstr "ciężarowe (karta %s)"
+
+msgid "Weight tensioning keeps the tension with the air temperature; a fixed anchor holds the wires straight on the pole (the other end of the half-section has the weights)"
+msgstr "Ciężarowe trzyma naciąg przy każdej temperaturze; stałe trzyma druty wprost na słupie (ciężary są na drugim końcu połówki odcinka)"
+
+msgid "Contact wire anchor above the rail heads (m)"
+msgstr "Kotwienie przewodów nad główką szyny (m)"
+
+msgid "Height of the anchor of the contact wires on the mast (the messenger one goes as much higher as at the last pole); by default at the height of the wires at the last pole. Drag or Ctrl+click to type"
+msgstr "Wysokość zakotwienia przewodów jezdnych na słupie (lina nośna o tyle wyżej, co przy ostatnim słupie); domyślnie na wysokości drutów przy ostatnim słupie. Przeciągnij albo Ctrl+klik, żeby wpisać"
+
+msgid "Fixed anchor: messenger %.2f m, contact wires %.2f m over the rails"
+msgstr "Kotwienie stałe: lina %.2f m, przewody %.2f m nad główką szyny"
+
+msgid "weights, pulleys in series (card %s)"
+msgstr "ciężarowe, rolki szeregowe (karta %s)"
+
+msgid "weights, messenger and contact wires separately (card %s)"
+msgstr "ciężarowe rozdzielone, lina i przewody osobno (karta %s)"
+
+msgid "Messenger anchor above the rail heads (m)"
+msgstr "Kotwienie liny nośnej nad główką szyny (m)"
+
+msgid "Height of the anchor of the messenger on the mast; by default as at the last pole. Drag or Ctrl+click to type"
+msgstr "Wysokość zakotwienia liny nośnej na słupie; domyślnie jak przy ostatnim słupie. Przeciągnij albo Ctrl+klik, żeby wpisać"
+
+msgid "Heights as at the last pole"
+msgstr "Wysokości jak przy ostatnim słupie"
+
+msgid "pole %d (%s)"
+msgstr "słup %d (%s)"
+
+msgid "Middle anchor"
+msgstr "Kotwienie środkowe"
+
+msgid "The anchor rope is clamped on the messenger 1 m on each side of this pole and goes to the poles next to it; in the middle of both spans a V ties it to the contact wire. The weight anchors measure their distance from it"
+msgstr "Lina kotwienia jest zaciśnięta na linie nośnej 1 m po obu stronach tego słupa i idzie do słupów obok; w połowie obu przęseł V wiąże ją z przewodem jezdnym. Kotwienia ciężarowe liczą odległość od niego"
+
+msgid "Middle anchor kind"
+msgstr "Rodzaj kotwienia środkowego"
+
+msgid "with insulation (card 0406)"
+msgstr "z izolacją (karta 0406)"
+
+msgid "without insulation (card 0408)"
+msgstr "bez izolacji (karta 0408)"
+
+msgid "Distance from the middle anchor: along the chain"
+msgstr "Odległość od kotwienia środkowego: wzdłuż łańcucha"
+
+msgid "Anchor rope on the pole before (m)"
+msgstr "Lina kotwienia na słupie przed (m)"
+
+msgid "Anchor rope on the pole after (m)"
+msgstr "Lina kotwienia na słupie za (m)"
+
+msgid "Height of the anchor of the middle anchor rope on that pole above the rail heads; by default at the messenger. Move it when it hits the cantilever"
+msgstr "Wysokość zakotwienia liny kotwienia środkowego na tym słupie nad główką szyny; domyślnie przy linie nośnej. Przesuń, gdy wchodzi w wysięgnik"
+
+msgid "Anchor rope at the messenger"
+msgstr "Lina kotwienia przy linie nośnej"
+
+msgid "This track is on the same side of the pole as its cantilever: the second cantilever of an umbrella goes to a track on the other side"
+msgstr "Ten tor jest po tej samej stronie słupa co jego wysięgnik: drugi wysięgnik parasola idzie do toru po drugiej stronie"
+
+msgid "Umbrella %s: the second cantilever (card %d execution %d, A = %.2f m) on pole %s of %s; hang its wires with the button below or C"
+msgstr "Parasol %s: drugi wysięgnik (karta %d wykonanie %d, A = %.2f m) na słupie %s podwieszenia %s; druty rozwieś przyciskiem niżej albo C"
+
+msgid "Umbrella %s separated: two cantilevers on their own mounts"
+msgstr "Parasol %s rozdzielony: dwa wysięgniki na własnych mocowaniach"
+
+msgid "Umbrella: %s"
+msgstr "Parasol: %s"
+
+msgid "Click: the second cantilever of the umbrella, card %04d execution %d, A = %.2f m"
+msgstr "Kliknij: drugi wysięgnik parasola, karta %04d wykonanie %d, A = %.2f m"
+
+msgid "Umbrella: LMB by the track on the other side of the pole puts the second cantilever on it; Esc stops"
+msgstr "Parasol: LPM przy torze po drugiej stronie słupa stawia na nim drugi wysięgnik; Esc przerywa"
+
+msgid "Stop the umbrella"
+msgstr "Przerwij parasol"
+
+msgid "Umbrella: a cantilever to the other track"
+msgstr "Parasol: wysięgnik do drugiego toru"
+
+msgid "LMB by the track on the other side of the pole: the second cantilever goes on this pole, with the settings of the panel"
+msgstr "LPM przy torze po drugiej stronie słupa: drugi wysięgnik staje na tym słupie, z ustawieniami panelu"
+
+msgid "Two cantilevers on one pole or drop, to the tracks on both sides of it; on adjustable mounts (band round the pole) they share the double mounts 4640-4670 at one height"
+msgstr "Dwa wysięgniki na jednym słupie albo zwisie, do torów po obu jego stronach; przy mocowaniach regulowanych (opaska wokół słupa) mają wspólne mocowania dwustronne 4640–4670 na jednej wysokości"
+
+msgid "Umbrella %s with %s"
+msgstr "Parasol %s z %s"
+
+msgid "Separate"
+msgstr "Rozdziel"
+
+msgid "The two cantilevers stay where they are, each on its own single mounts"
+msgstr "Oba wysięgniki zostają na miejscu, każdy na własnych mocowaniach jednostronnych"
+
+msgid "LMB by the other track"
+msgstr "LPM przy drugim torze"
+
+msgid "the second cantilever of the umbrella on this pole"
+msgstr "drugi wysięgnik parasola na tym słupie"
+
+msgid "%s (this one)"
+msgstr "%s (ten)"
+
+msgid "Messenger held by"
+msgstr "Linę nośną trzyma"
+
+msgid "The messenger goes through this cantilever again"
+msgstr "Lina nośna znowu idzie przez ten wysięgnik"
+
+msgid "The wires of the chain go through %s, its messenger through %s"
+msgstr "Przewody jezdne łańcucha idą przez %s, lina nośna przez %s"
+
+msgid "Another cantilever up to 3 m from this pole holds the messenger of this chain here, this one only its wires: spread cantilevers on a console, a cantilever of the messenger only, chains crossing over in a tension span"
+msgstr "Linę nośną łańcucha trzyma tu inny wysięgnik do 3 m od tego słupa, ten tylko przewody jezdne: wysięgniki rozstawione na konsoli, wysięgnik samej liny, łańcuchy krzyżujące się w przęśle naprężenia"
+
+msgid "Two cantilevers share this pole (umbrella or spread cantilevers): separate them to move it"
+msgstr "Na tym słupie są dwa wysięgniki (parasol albo rozstawione): rozdziel je, żeby go przesunąć"
+
+msgid "Pole %s carries no console for spread cantilevers (\"console\" in its entry in traction_supports.txt)"
+msgstr "Słup %s nie ma konsoli wysięgników rozstawionych (\"console\" w jego wpisie w traction_supports.txt)"
+
+msgid "Spread cantilevers %s on console %s: %s and %s, %.2f m apart; give each its chain, \"Messenger held by\" splits the messenger and the wires between them"
+msgstr "Wysięgniki rozstawione %s na konsoli %s: %s i %s, %.2f m od siebie; każdemu daj jego łańcuch, „Linę nośną trzyma” dzieli linę i przewody między nie"
+
+msgid "Spread cantilevers"
+msgstr "Wysięgniki rozstawione"
+
+msgid "Two cantilevers to this track on consoles 4890 (cards 0517/0518), 1.19 m apart along it: this one goes onto the first mount, the second onto the other; each can then hold any chain or only its messenger or its wires"
+msgstr "Dwa wysięgniki do tego toru na konsolach 4890 (karty 0517/0518), 1,19 m od siebie wzdłuż toru: ten idzie na pierwsze mocowanie, drugi na drugie; potem każdy może trzymać dowolny łańcuch albo samą jego linę nośną lub same przewody"
+
+msgid "Spread cantilevers %s with %s"
+msgstr "Wysięgniki rozstawione %s z %s"
+
+msgid "Cantilever %s in the axis of pole %s (card %d execution %d): set its card (a messenger only one: 1002-1015, 1290-1297), hang it in a chain, an umbrella to the other track can go on it too"
+msgstr "Wysięgnik %s w osi słupa %s (karta %d wykonanie %d): ustaw mu kartę (samej liny: 1002–1015, 1290–1297), rozwieś w łańcuchu; może też dostać parasol do drugiego toru"
+
+msgid "A cantilever in the axis of the pole"
+msgstr "Wysięgnik w osi słupa"
+
+msgid "A third cantilever to this track on the same pole, in its axis on the usual mounts (move them apart from the consoles by hand if they meet); the pole stays one"
+msgstr "Trzeci wysięgnik do tego toru na tym samym słupie, w jego osi na zwykłych mocowaniach (jeśli wejdą w konsole, rozsuń ręcznie); słup zostaje jeden"
+
+msgid "insulated on one side (card 0418)"
+msgstr "z jednostronną izolacją (karta 0418)"
+
+msgid "to the beam of a gantry (card 0416)"
+msgstr "do dźwigara bramki (karta 0416)"
+
+msgid "0416: the middle pole is a drop of a gantry; the anchor ropes go from the beam above the messenger to clamps on it about 3 m on both sides, the poles next to it carry nothing"
+msgstr "0416: podwieszenie środkowe jest na zwisie bramki; liny kotwienia idą od dźwigara nad liną nośną do zacisków na niej ok. 3 m z obu stron, słupy sąsiednie nic nie niosą"
+
+msgid "Contact wires anchored apart: on another pole"
+msgstr "Przewody jezdne zakotwione osobno: na innym słupie"
+
+msgid "LMB on the pole the anchor of the contact wires goes on"
+msgstr "LPM na słupie, na którym ma być kotwienie przewodów jezdnych"
+
+msgid "The messenger stays on the anchor above (it becomes one of the messenger only: 0405 or the messenger of a split one), the contact wires go to an anchor of their own on the pole picked (0404 or the wires of a split one)"
+msgstr "Lina nośna zostaje na kotwieniu wyżej (staje się kotwieniem samej liny: 0405 albo liną rozdzielonego), przewody jezdne idą na własne kotwienie na wskazanym słupie (0404 albo przewody rozdzielonego)"
+
+msgid "The contact wires are anchored on their own; the other anchor holds the messenger only"
+msgstr "Przewody jezdne zakotwione osobno; drugie kotwienie trzyma samą linę nośną"
+
+msgid "contact wires"
+msgstr "przewody jezdne"
+
+msgid "messenger"
+msgstr "lina nośna"
+
+msgid "Messenger only: the wires straight past it"
+msgstr "Sama lina: przewody prosto obok"
+
+msgid "The wires of the chain go straight from %s to %s, the messenger through %s"
+msgstr "Przewody łańcucha idą prosto od %s do %s, lina nośna przez %s"
+
+msgid "This cantilever holds only the messenger: it leaves the chain, the contact wires go straight between the two cantilevers of the pole next to it in the chain, the messenger goes through this one and their cords hang from it"
+msgstr "Ten wysięgnik trzyma tylko linę nośną: wypada z listy łańcucha, przewody jezdne idą prosto między dwoma wysięgnikami tego słupa obok niego w łańcuchu, lina nośna przez niego, a ich linki wiszą na niej"
+
+msgid "Zigzag by Iet-107 (PKP PLK)"
+msgstr "Zygzak wg Iet-107 (PKP PLK)"
+
+msgid "The staggers of the next poles by the guidelines Iet-107: on a straight the wires on the other side of the track axis than at the pole before, the full cycle in two spans (4.6.4.3), on a curve to its outside so that in the middle of the span they're tangent to the track axis (3.4.4.4). The chains and their spans are checked by it too"
+msgstr "Odsuwy kolejnych słupów wg wytycznych Iet-107: na prostej przewody po drugiej stronie osi toru niż przy poprzednim słupie, pełny cykl w dwóch przęsłach (4.6.4.3), na łuku na zewnątrz łuku tak, żeby w środku przęsła przebiegały po stycznej do osi toru (3.4.4.4). Według nich sprawdzane są też łańcuchy i ich przęsła"
+
+msgid "up to 160 km/h"
+msgstr "do 160 km/h"
+
+msgid "over 160 km/h"
+msgstr "ponad 160 km/h"
+
+msgid "Over 160 km/h: the stagger on a straight up to 0.20 m, the normal span 62 +-4 m, the tension section up to 1400 m (Iet-107 7.4)"
+msgstr "Ponad 160 km/h: odsuw na prostej do 0,20 m, przęsło normalne 62 ±4 m, odcinek naprężenia do 1400 m (Iet-107 7.4)"
+
+msgid "Stagger on a straight, either side (m)"
+msgstr "Odsuw na prostej, na przemian (m)"
+
+msgid "From the track axis, in turn to its two sides: up to 0.30 m, over 160 km/h up to 0.20 m (Iet-107 3.4.4.3, 7.4.2.1)"
+msgstr "Od osi toru, na przemian w obie strony: do 0,30 m, ponad 160 km/h do 0,20 m (Iet-107 3.4.4.3, 7.4.2.1)"
+
+msgid "Stagger on a curve, outwards (m)"
+msgstr "Odsuw na łuku, na zewnątrz (m)"
+
+msgid "To the outside of the curve at every pole, up to 0.30 m (Iet-107 7.4.2.1); the span on the curve no longer than lets the wires be tangent to the track axis in its middle: 2 sqrt(2 R z)"
+msgstr "Na zewnątrz łuku przy każdym słupie, do 0,30 m (Iet-107 7.4.2.1); przęsło na łuku nie dłuższe, niż pozwala na przebieg przewodów po stycznej do osi toru w jego środku: 2 √(2 R z)"
+
+msgid "Next pole: the wires on the other side of the track than at %s"
+msgstr "Następny słup: przewody po drugiej stronie toru niż przy %s"
+
+msgid "Next pole: the wires on the same side of the track as at %s (a swap)"
+msgstr "Następny słup: przewody po tej samej stronie toru co przy %s (przekładka)"
+
+msgid "The first pole: wires towards it (short cantilever)"
+msgstr "Pierwszy słup: odsuw do słupa (wysięgnik krótki)"
+
+msgid "The first pole of a zigzag; the next ones go in turn. Off: away from the pole (a long cantilever)"
+msgstr "Pierwszy słup zygzaka; następne idą na przemian. Wyłączone: odsuw od słupa (wysięgnik długi)"
+
+msgid "Swap (X)"
+msgstr "Przełóż (X)"
+
+msgid "The next pole the other way than the zigzag proposes: a short cantilever instead of a long one or the other way round. On a curve the wires stay at its outside"
+msgstr "Następny słup odwrotnie, niż proponuje zygzak: wysięgnik krótki zamiast długiego albo odwrotnie. Na łuku przewody zostają na zewnątrz łuku"
+
+msgid "Next span (M):"
+msgstr "Następne przęsło (M):"
+
+msgid "at the cursor"
+msgstr "pod kursorem"
+
+msgid "recommended"
+msgstr "zalecane"
+
+msgid "The pole goes along the track where its span from the last pole is the nominal one of the network (traction_layout.txt; 62 m over 160 km/h), on a curve no longer than allowed there, no more than 10 % over the span before (Iet-107 4.6.1.2)"
+msgstr "Słup staje wzdłuż toru tam, gdzie jego przęsło od ostatniego słupa ma rozpiętość nominalną sieci (traction_layout.txt; ponad 160 km/h 62 m), na łuku nie dłuższą niż tam dopuszczalna, najwyżej o 10 % dłuższą od przęsła poprzedniego (Iet-107 4.6.1.2)"
+
+msgid "own"
+msgstr "własne"
+
+msgid "recommended from the last pole %.1f m"
+msgstr "zalecane od ostatniego słupa %.1f m"
+
+msgid "at most %.1f m"
+msgstr "najwyżej %.1f m"
+
+msgid "the span before %.1f m"
+msgstr "przęsło poprzednie %.1f m"
+
+msgid "Digits typed: the span of the next pole (e.g. 62, then LMB by the track)"
+msgstr "Wpisane cyfry: przęsło następnego słupa (np. 62, potem LPM przy torze)"
+
+msgid "type the span from the last pole, LMB by the track places the pole there"
+msgstr "wpisz przęsło od ostatniego słupa, LPM przy torze stawia tam słup"
+
+msgid "Iet-107 allows up to %.2f m here"
+msgstr "Iet-107 dopuszcza tu najwyżej %.2f m"
+
+msgid "Towards the pole: a short cantilever; away from it: a long one. On a straight the wires zigzag, on a curve they go to its outside"
+msgstr "Do słupa: wysięgnik krótki; od słupa: długi. Na prostej przewody idą zygzakiem, na łuku na zewnątrz łuku"
+
+msgid "Swap short / long (X)"
+msgstr "Przełóż krótki / długi (X)"
+
+msgid "The wires of this pole to the other side of the track axis: the short cantilever becomes a long one or the other way round; the pole stays where it stands"
+msgstr "Przewody tego słupa na drugą stronę osi toru: wysięgnik krótki staje się długim albo odwrotnie; słup zostaje na miejscu"
+
+msgid "Zigzag:"
+msgstr "Zygzak:"
+
+msgid "from this pole on"
+msgstr "od tego słupa"
+
+msgid "This pole keeps its side of the track, the next ones of the chain get the wires in turn on the other side of the track axis (on a curve to its outside), with the staggers set for the zigzag"
+msgstr "Ten słup zostaje po swojej stronie toru, kolejne słupy łańcucha dostają przewody na przemian po drugiej stronie osi toru (na łuku na zewnątrz łuku), z odsuwami ustawionymi dla zygzaka"
+
+msgid "swap from this pole on"
+msgstr "przekładka od tego słupa"
+
+msgid "This pole goes to the other side of the track (short <-> long cantilever) and the next ones of the chain follow it in turn: the zigzag moved by one pole"
+msgstr "Ten słup przechodzi na drugą stronę toru (wysięgnik krótki <-> długi), a kolejne słupy łańcucha idą za nim na przemian: zygzak przesunięty o jeden słup"
+
+msgid "The first pole of the chain keeps its side, all the others get the zigzag of Iet-107 from it"
+msgstr "Pierwszy słup łańcucha zostaje po swojej stronie, wszystkie pozostałe dostają od niego zygzak wg Iet-107"
+
+msgid "Iet-107: no remarks to the chain"
+msgstr "Iet-107: brak uwag do łańcucha"
+
+msgid "Iet-107: %zu remarks to the chain, %d at this pole (the list on the Wires page)"
+msgstr "Iet-107: uwag do łańcucha: %zu, przy tym słupie: %d (lista na stronie Druty)"
+
+msgid "%.0f m of the chain, no remarks of Iet-107"
+msgstr "%.0f m łańcucha, bez uwag wg Iet-107"
+
+msgid "%.0f m of the chain, %zu remarks of Iet-107 (the list on the Wires page)"
+msgstr "%.0f m łańcucha, uwag wg Iet-107: %zu (lista na stronie Druty)"
+
+msgid "Iet-107: %zu spans, %.0f m (spans %.1f - %.1f m)"
+msgstr "Iet-107: przęseł %zu, %.0f m (przęsła %.1f - %.1f m)"
+
+msgid "Zigzag the chain by Iet-107"
+msgstr "Zygzakuj łańcuch wg Iet-107"
+
+msgid "The first pole keeps its side of the track, the next ones get the wires in turn on the other side of the track axis, on a curve to its outside; the staggers as set for the zigzag on the Poles page. The poles stay where they stand, the cards follow the distance A"
+msgstr "Pierwszy słup zostaje po swojej stronie toru, kolejne dostają przewody na przemian po drugiej stronie osi toru, na łuku na zewnątrz łuku; odsuwy jak ustawione dla zygzaka na stronie Słupy. Słupy zostają na miejscu, karty idą za odległością A"
+
+msgid "Staggers in the view"
+msgstr "Odsuwy w widoku"
+
+msgid "No remarks"
+msgstr "Bez uwag"
+
+msgid "Click: select the pole and fly to it"
+msgstr "Kliknij: zaznacz słup i przeleć do niego"
+
+msgid "%s: stagger %.2f m, more than the %.2f m allowed (Iet-107 %s)"
+msgstr "%s: odsuw %.2f m, więcej niż dopuszczalne %.2f m (Iet-107 %s)"
+
+msgid "%s: on a curve the wires go to its outside (Iet-107 3.4.4.4)"
+msgstr "%s: na łuku przewody idą na zewnątrz łuku (Iet-107 3.4.4.4)"
+
+msgid "Span %s - %s: %.1f m, longer than the %.1f m allowed there"
+msgstr "Przęsło %s - %s: %.1f m, dłuższe niż dopuszczalne tam %.1f m"
+
+msgid "Span %s - %s: %.1f m, outside 62 +-4 m (Iet-107 7.4.3.1)"
+msgstr "Przęsło %s - %s: %.1f m, poza 62 ±4 m (Iet-107 7.4.3.1)"
+
+msgid "Span %s - %s: no zigzag, the wires on the same side of the track axis at both poles (Iet-107 4.6.4.3)"
+msgstr "Przęsło %s - %s: brak zygzaka, przewody przy obu słupach po tej samej stronie osi toru (Iet-107 4.6.4.3)"
+
+msgid "Span %s - %s: in its middle the wires are %.2f m inside the track axis of the curve, the span is too long for the stagger (Iet-107 3.4.4.4)"
+msgstr "Przęsło %s - %s: w jego środku przewody są %.2f m po wewnętrznej stronie osi toru na łuku, przęsło za długie na ten odsuw (Iet-107 3.4.4.4)"
+
+msgid "%s: the spans %.1f and %.1f m on both sides differ by %.0f %% (Iet-107 4.6.1.2: up to 10 %%)"
+msgstr "%s: przęsła %.1f i %.1f m po obu stronach różnią się o %.0f %% (Iet-107 4.6.1.2: najwyżej 10 %%)"
+
+msgid "Middle anchor at %s: the spans %.1f and %.1f m on both sides of it, up to 2 m apart (Iet-107 4.6.3.3)"
+msgstr "Kotwienie środkowe przy %s: przęsła po obu stronach %.1f i %.1f m, różnica do 2 m (Iet-107 4.6.3.3)"
+
+msgid "Tension section %.0f m, longer than %.0f m (Iet-107 %s)"
+msgstr "Odcinek naprężenia %.0f m, dłuższy niż %.0f m (Iet-107 %s)"
+
+msgid "Weight anchors at both ends and no middle anchor (Iet-107 3.4.6.1, 4.6.3.2)"
+msgstr "Kotwienia ciężarowe na obu końcach bez kotwienia środkowego (Iet-107 3.4.6.1, 4.6.3.2)"
+
+msgid "Zigzag of Iet-107: %zu poles changed, the others had it already"
+msgstr "Zygzak wg Iet-107: zmienione słupy: %zu, pozostałe już go miały"
+
+msgid "Zigzag of Iet-107: %zu poles changed, %zu couldn't take it (no card for their A or not by a track)"
+msgstr "Zygzak wg Iet-107: zmienione słupy: %zu, nie dało się zmienić: %zu (brak karty dla ich A albo nie stoją przy torze)"
+
+msgid "Swapped: stagger %.2f m towards the pole (short cantilever)"
+msgstr "Przełożone: odsuw %.2f m do słupa (wysięgnik krótki)"
+
+msgid "Swapped: stagger %.2f m away from the pole (long cantilever)"
+msgstr "Przełożone: odsuw %.2f m od słupa (wysięgnik długi)"
+
+msgid "- on a curve the wires go to its outside (Iet-107 3.4.4.4)"
+msgstr "- na łuku przewody idą na zewnątrz łuku (Iet-107 3.4.4.4)"
+
+msgid "No card of the catalogue for the cantilever swapped: it stays as it was"
+msgstr "Brak w katalogu karty dla przełożonego wysięgnika: zostaje tak jak był"
+
+msgid "The next pole: the wires on the same side of the track as at the last pole (a swap)"
+msgstr "Następny słup: przewody po tej samej stronie toru co przy ostatnim słupie (przekładka)"
+
+msgid "The next pole: the wires on the other side of the track than at the last pole (zigzag)"
+msgstr "Następny słup: przewody po drugiej stronie toru niż przy ostatnim słupie (zygzak)"
+
+msgid "The next pole: the wires towards the pole (short cantilever)"
+msgstr "Następny słup: odsuw do słupa (wysięgnik krótki)"
+
+msgid "The next pole: the wires away from the pole (long cantilever)"
+msgstr "Następny słup: odsuw od słupa (wysięgnik długi)"
+
+msgid "The next pole where the cursor is"
+msgstr "Następny słup tam, gdzie kursor"
+
+msgid "The next pole at the recommended span from the last one"
+msgstr "Następny słup w zalecanej rozpiętości przęsła od ostatniego"
+
+msgid "The next pole at the span set in the panel"
+msgstr "Następny słup w rozpiętości przęsła ustawionej w panelu"
+
+msgid "stagger %.2f m towards the pole (short cantilever)"
+msgstr "odsuw %.2f m do słupa (wysięgnik krótki)"
+
+msgid "stagger %.2f m away from the pole (long cantilever)"
+msgstr "odsuw %.2f m od słupa (wysięgnik długi)"
+
+msgid "span %.1f m from the last pole"
+msgstr "przęsło %.1f m od ostatniego słupa"
+
+msgid "towards the pole, short cantilever"
+msgstr "do słupa, wysięgnik krótki"
+
+msgid "away from the pole, long cantilever"
+msgstr "od słupa, wysięgnik długi"
+
+msgid "stagger %.2f m"
+msgstr "odsuw %.2f m"
+
+msgid "to the outside of the curve"
+msgstr "na zewnątrz łuku"
+
+msgid "the same side of the track as the last pole (swap, X)"
+msgstr "po tej samej stronie toru co ostatni słup (przekładka, X)"
+
+msgid "the other side of the track than the last pole (X swaps)"
+msgstr "po drugiej stronie toru niż ostatni słup (X przekłada)"
+
+msgid "%.1f m from the last pole"
+msgstr "%.1f m od ostatniego słupa"
+
+msgid "(typed %.1f m)"
+msgstr "(wpisane %.1f m)"
+
+msgid "%.2f to the pole"
+msgstr "%.2f do słupa"
+
+msgid "%.2f from the pole"
+msgstr "%.2f od słupa"
+
+msgid "recommended %.1f"
+msgstr "zalecane %.1f"
+
+msgid "max %.1f"
+msgstr "maks. %.1f"
+
+msgid "before %.1f (%+.0f %%)"
+msgstr "poprz. %.1f (%+.0f %%)"
+
+msgid "swaps the next pole: short <-> long cantilever"
+msgstr "przekłada następny słup: wysięgnik krótki <-> długi"
+
+msgid "the next span: at the cursor / recommended / own"
+msgstr "następne przęsło: pod kursorem / zalecane / własne"
+
+msgid "swaps the selected pole: short <-> long cantilever"
+msgstr "przekłada zaznaczony słup: wysięgnik krótki <-> długi"
+
+msgid "lets go of the selected pole"
+msgstr "odznacza zaznaczony słup"
+
+msgid "Anchor %s selected: its settings are below, drag moves it along the track, Del removes it"
+msgstr "Zaznaczone kotwienie %s: ustawienia poniżej, przeciągnięcie przesuwa je wzdłuż toru, Del je usuwa"
+
+msgid "Anchor %s: its pole %.1f m from the last pole of the chain"
+msgstr "Kotwienie %s: słup kotwowy %.1f m od ostatniego słupa łańcucha"
+
+msgid "Drag a tensioning device"
+msgstr "Przeciągnij urządzenie naprężające"
+
+msgid "moves the anchor pole along the track"
+msgstr "przesuwa słup kotwowy wzdłuż toru"
+
+msgid "Anchor pole from the track axis (m)"
+msgstr "Słup kotwowy od osi toru (m)"
+
+msgid "From the axis of the nearest track to the axis of the anchor pole: it moves square to the track, away from it or towards it; the tensioning device turns after the wires. Drag or Ctrl+click to type"
+msgstr "Od osi najbliższego toru do osi słupa kotwowego: słup przesuwa się prostopadle do toru, od niego albo do niego; urządzenie naprężające obraca się za drutami. Przeciągnij albo Ctrl+klik, żeby wpisać"
+
+msgid "Stop placing the cantilever"
+msgstr "Przerwij stawianie wysięgnika"
+
+msgid "A cantilever on the anchor pole"
+msgstr "Wysięgnik na słupie kotwowym"
+
+msgid "LMB by the track the cantilever reaches to: it goes on the anchor pole, with the settings of the Poles page"
+msgstr "LPM przy torze, do którego sięga wysięgnik: staje na słupie kotwowym, z ustawieniami ze strony Słupy"
+
+msgid "The anchor pole gets a cantilever to a track by it (the same or the neighbouring one); the pole is then stood by that cantilever and the anchor stays on it. The cantilever can start or go on with a chain like any other pole"
+msgstr "Słup kotwowy dostaje wysięgnik do toru obok (tego samego albo sąsiedniego); słup stawia wtedy ten wysięgnik, a kotwienie zostaje na nim. Od wysięgnika można zacząć albo dalej prowadzić łańcuch jak od każdego słupa"
+
+msgid "Pole %s of the anchor takes no cantilever from the catalogue"
+msgstr "Słup kotwowy %s nie przyjmuje wysięgnika z katalogu"
+
+msgid "Cantilever %s (card %d execution %d, A = %.2f m) on the pole of anchor %s; C starts or goes on with a chain from it"
+msgstr "Wysięgnik %s (karta %d, wykonanie %d, A = %.2f m) na słupie kotwienia %s; C zaczyna od niego albo prowadzi dalej łańcuch"
+
+msgid "Click: the cantilever on the anchor pole, card %04d execution %d, A = %.2f m (X: towards / away from the pole)"
+msgstr "Kliknij: wysięgnik na słupie kotwowym, karta %04d, wykonanie %d, A = %.2f m (X: do / od słupa)"
+
+msgid "Anchor: LMB by the track the cantilever on the anchor pole reaches to; Esc stops"
+msgstr "Kotwienie: LPM przy torze, do którego sięga wysięgnik na słupie kotwowym; Esc przerywa"
+
+msgid "File in the scenery directory the new poles go to; a new one is added to the scenery with the directive catenary <file> endcatenary when it's saved, in the file of the active layer. By default the catenary file of the active layer, or a new one named after it"
+msgstr "Plik w katalogu scenerii, do którego trafiają nowe słupy; nowy plik jest przy zapisie dopisywany do scenerii dyrektywą catenary <plik> endcatenary, w pliku aktywnej warstwy. Domyślnie plik sieci aktywnej warstwy albo nowy, nazwany od niej"
+
+msgid "by the layer"
+msgstr "wg warstwy"
+
+msgid "The catenary file follows the active layer again"
+msgstr "Plik sieci znowu idzie za aktywną warstwą"
+
+msgid "included by %s"
+msgstr "dołączony przez %s"
+
+msgid "new: the save writes it and its directive into %s"
+msgstr "nowy: zapis utworzy go i dopisze dyrektywę do %s"
+
+msgid "The catenary couldn't be saved: its file \"%s\" is a file of the scenery; give the catenary another file"
+msgstr "Nie udało się zapisać sieci trakcyjnej: jej plik \"%s\" jest plikiem scenerii; podaj sieci inny plik"
+
+msgid "it's a part of the catenary, which is changed with the Catenary tool (F6)"
+msgstr "to część sieci trakcyjnej, którą zmienia się narzędziem Sieć trakcyjna (F6)"
+
+msgid "A part of the catenary: it's changed with the Catenary tool (F6)"
+msgstr "Część sieci trakcyjnej: zmienia się ją narzędziem Sieć trakcyjna (F6)"
+
+msgid "A part of the catenary: its pole is selected in the Catenary tool, it moves along the track by a drag"
+msgstr "Część sieci trakcyjnej: jej słup jest zaznaczony w narzędziu Sieć trakcyjna, przeciągnięcie przesuwa go wzdłuż toru"
+
+msgid "A part of the catenary: its gantry is selected in the Catenary tool"
+msgstr "Część sieci trakcyjnej: jej bramka jest zaznaczona w narzędziu Sieć trakcyjna"
+
+msgid "A part of the catenary: its anchor is selected in the Catenary tool; a drag of its pole or tensioning device moves it along the track"
+msgstr "Część sieci trakcyjnej: jej kotwienie jest zaznaczone w narzędziu Sieć trakcyjna; przeciągnięcie słupa kotwowego albo urządzenia naprężającego przesuwa je wzdłuż toru"
+
+msgid "A part of the catenary: its chain is selected in the Catenary tool"
+msgstr "Część sieci trakcyjnej: jej łańcuch jest zaznaczony w narzędziu Sieć trakcyjna"
+
+msgid "node entries in this scenery file (layer), saved with the scenery"
+msgstr "wpisy node w tym pliku scenerii (warstwie), zapisywane razem ze scenerią"
+
+msgid "catenary file included by %s"
+msgstr "osobny plik sieci, dołączany przez %s"
+
+msgid "catenary file of its own: the save writes it and its directive into %s"
+msgstr "osobny plik sieci: zapis utworzy go i dopisze dyrektywę do %s"
+
+msgid "Where the new poles go: by default the file of the active layer, as its node entries (node ... suspension / chain / gantry / anchor), saved with the scenery. Another file name makes a catenary file of its own, included with catenary <file> endcatenary from the file of the active layer"
+msgstr "Gdzie trafiają nowe słupy: domyślnie do pliku aktywnej warstwy, jako jej wpisy node (node ... suspension / chain / gantry / anchor), zapisywane razem ze scenerią. Inna nazwa pliku tworzy osobny plik sieci, dołączany dyrektywą catenary <plik> endcatenary z pliku aktywnej warstwy"
+
+msgid "it isn't in a scenery file the editor can rewrite (an include template)"
+msgstr "nie jest w pliku scenerii, który edytor może przepisać (szablon include)"
+
+msgid "The catenary in \"%s\" couldn't be saved: %s"
+msgstr "Nie udało się zapisać sieci trakcyjnej w \"%s\": %s"
+
+msgid "Edge"
+msgstr "Krawędź"
+
+msgid "How far the edge wanders in and out of the outline, so it isn't drawn with a ruler"
+msgstr "Na ile krawędź wchodzi w obrys i z niego wychodzi, żeby nie była od linijki"
+
+msgid "About how long the waves of the edge are: small - frayed, large - gently wavy"
+msgstr "Mniej więcej długość fal krawędzi: małe - poszarpana, duże - łagodnie falista"
+
+msgid "Natural slopes"
+msgstr "Naturalne skarpy"
+
+msgid "Foot wanders by (m)"
+msgstr "Falowanie podnóża (m)"
+
+msgid "Waves along the line (m)"
+msgstr "Fale wzdłuż linii (m)"
+
+msgid "About how long the waves of the foot are along the line"
+msgstr "Mniej więcej długość fal podnóża wzdłuż linii"
+
+msgid "Gentler by up to"
+msgstr "Łagodniejsze o najwyżej"
+
+msgid "0.2: the slope 1:1.5 gets as gentle as 1:1.8 here and there, never steeper than designed"
+msgstr "0,2: skarpa 1:1,5 miejscami łagodnieje do 1:1,8, nigdy nie jest bardziej stroma niż w projekcie"
+
+msgid "Soft foot (m/m)"
+msgstr "Miękkie podnóże (m/m)"
+
+msgid "Metres the foot is rounded off over, for a metre of the height of the slope: high embankments meet the ground softer"
+msgstr "Na ilu metrach podnóże się zaokrągla, na metr wysokości skarpy: wysokie nasypy łagodniej wchodzą w teren"
+
+msgid "Bumps on the face (m)"
+msgstr "Nierówności skarpy (m)"
+
+msgid "Metres the face of the slope is uneven by, as earth settled for years"
+msgstr "O ile metrów powierzchnia skarpy jest nierówna, jak ziemia ułożona przez lata"
+
+msgid "Make the slopes natural"
+msgstr "Zrób naturalne skarpy"
+
+msgid "Back to the slopes as designed"
+msgstr "Z powrotem skarpy według projektu"
+
+msgid "Cut out as %s with %s, Ctrl+Z puts it back"
+msgstr "Wycięto jako %s z %s, Ctrl+Z przywraca"
+
+msgid "Waves of the ground"
+msgstr "Falowanie terenu"
+
+msgid "Make the ground under the surface wavy"
+msgstr "Pofałduj teren pod powierzchnią"
+
+msgid "The heights of the terrain within the outline get the waves chosen below, fading in from the edge: a field ploughed into furrows, a meadow of gentle hills, a hollow. Ctrl+Z takes them back with the surface"
+msgstr "Wysokości terenu w obrysie dostają wybrane niżej fale, narastające od krawędzi: pole zaorane w bruzdy, łąka z łagodnymi pagórkami, niecka. Ctrl+Z cofa je razem z powierzchnią"
+
+msgid "Rolling hills"
+msgstr "Łagodne pagórki"
+
+msgid "Furrows of a field"
+msgstr "Bruzdy na polu"
+
+msgid "Bumps and molehills"
+msgstr "Garby i kretowiska"
+
+msgid "Long waves"
+msgstr "Długie fale"
+
+msgid "A hollow or a mound"
+msgstr "Niecka albo kopiec"
+
+msgid "A grid of hummocks"
+msgstr "Kratka garbów"
+
+msgid "Strips of fields"
+msgstr "Pasy pól"
+
+msgid "Gentle hills of all sizes, as a meadow or a pasture has them"
+msgstr "Łagodne pagórki różnej wielkości, jak na łące albo pastwisku"
+
+msgid "Ridges and furrows side by side, along the angle below, as a ploughed field or the beds of a garden"
+msgstr "Grzbiety i bruzdy obok siebie, w kierunku podanym niżej, jak na zaoranym polu albo grządkach"
+
+msgid "Small mounds scattered about, as molehills or tussocks"
+msgstr "Rozrzucone małe garby, jak kretowiska albo kępy"
+
+msgid "Long even waves across the angle below, as a field rolling over a hill or dunes"
+msgstr "Długie równe fale w poprzek kierunku podanego niżej, jak pole na zboczu albo wydmy"
+
+msgid "The middle lowered (a negative height raises it): a hollow by a pond, a dip in a field, or a mound"
+msgstr "Obniżony środek (ujemna wysokość go podnosi): niecka przy stawie, zagłębienie w polu albo kopiec"
+
+msgid "Waves along the angle and across it at once: hummocks in rows, as a drained meadow or an orchard on ridges"
+msgstr "Fale wzdłuż kąta i w poprzek naraz: garby w rzędach, jak meliorowana łąka albo sad na zagonach"
+
+msgid "Long strips along the angle, each a little higher or lower than the next, with banks between them: the fields of a village cut up between farms"
+msgstr "Długie pasy wzdłuż kąta, każdy trochę wyżej lub niżej od sąsiada, z miedzami między nimi: wiejskie pola podzielone między gospodarstwa"
+
+msgid "Kind##waves"
+msgstr "Rodzaj##waves"
+
+msgid "Height (m)##waves"
+msgstr "Wysokość (m)##waves"
+
+msgid "From the bottom of a wave to its top; for the hollow how deep its middle goes, negative: a mound"
+msgstr "Od dołu fali do jej szczytu; dla niecki głębokość środka, ujemna: kopiec"
+
+msgid "Length of a wave (m)##waves"
+msgstr "Długość fali (m)##waves"
+
+msgid "From one top to the next: furrows 0.7-2 m, the beds of a garden 1.5-3 m, hills 20-100 m"
+msgstr "Od jednego szczytu do następnego: bruzdy 0,7-2 m, grządki 1,5-3 m, pagórki 20-100 m"
+
+msgid "Direction (deg)##waves"
+msgstr "Kierunek (°)##waves"
+
+msgid "Which way the furrows or the ridges of the waves run, counterclockwise from the x axis of the scenery; the texture turned by the same angle lies along them"
+msgstr "Kierunek bruzd albo grzbietów fal, przeciwnie do zegara od osi x scenerii; tekstura obrócona o ten sam kąt leży wzdłuż nich"
+
+msgid "as the texture"
+msgstr "jak tekstura"
+
+msgid "Rounded"
+msgstr "Zaokrąglony"
+
+msgid "Sharp ridges"
+msgstr "Ostre grzbiety"
+
+msgid "Sharp valleys"
+msgstr "Ostre doliny"
+
+msgid "Terraces"
+msgstr "Tarasy"
+
+msgid "Flat tops"
+msgstr "Płaskie wierzchy"
+
+msgid "Every wave a gentle curve, as before"
+msgstr "Każda fala łagodnym łukiem, jak dotąd"
+
+msgid "Tops pointed, sides straight: ploughed ridges, a dune crest, a bank between fields"
+msgstr "Szczyty ostre, zbocza proste: zagony po orce, grzbiet wydmy, miedza"
+
+msgid "Bottoms pointed: drainage ditches, gullies cut by water, the furrow left by a plough"
+msgstr "Dna ostre: rowy melioracyjne, żleby wymyte przez wodę, bruzda po pługu"
+
+msgid "The slopes broken into flat steps: terraced fields on a hillside, a quarry, the shelves of a vineyard"
+msgstr "Zbocza połamane na płaskie stopnie: pola tarasowe na stoku, kamieniołom, półki winnicy"
+
+msgid "Tops and bottoms cut flat with steep sides between: beds of a garden, fields on raised strips, plateaus"
+msgstr "Wierzchy i dna ścięte płasko, strome boki między nimi: grządki, pola na wyniesionych pasach, płaskowyże"
+
+msgid "Profile##waves"
+msgstr "Profil##waves"
+
+msgid "The cross-section of a wave; the rounded one makes the fields look soft, the others give them edges"
+msgstr "Przekrój fali; zaokrąglony daje miękkie, obłe pola, pozostałe nadają im krawędzie"
+
+msgid "Sharpness##waves"
+msgstr "Ostrość##waves"
+
+msgid "0: the profile barely changed from the rounded one; 1: its edges and corners as sharp as they get"
+msgstr "0: profil prawie jak zaokrąglony; 1: krawędzie i narożniki najostrzejsze, jak się da"
+
+msgid "Steps##waves"
+msgstr "Stopnie##waves"
+
+msgid "How many flat steps a slope is broken into, from the bottom of a wave to its top"
+msgstr "Na ile płaskich stopni dzieli się zbocze, od dna fali do jej szczytu"
+
+msgid "Roughness##waves"
+msgstr "Chropowatość##waves"
+
+msgid "Clods and hummocks of about 3 m over the whole surface, up to 20 cm high: a ploughed field, a trodden pasture.\nThe terrain under the surface gets a point every metre for them (and for waves shorter than 15 m), the files grow"
+msgstr "Grudy i kępy wielkości około 3 m na całej powierzchni, do 20 cm wysokości: zaorane pole, wydeptane pastwisko.\nTeren pod powierzchnią dostaje dla nich punkt co metr (także dla fal krótszych niż 15 m), pliki rosną"
+
+msgid "Differences between them##waves"
+msgstr "Zróżnicowanie##waves"
+
+msgid "0: every wave alike, as drawn; 1: waves of quite different heights and places, as nature has them"
+msgstr "0: wszystkie fale jednakowe, jak od linijki; 1: fale o bardzo różnej wysokości i położeniu, jak w naturze"
+
+msgid "Fading in from the edge (m)##waves"
+msgstr "Narastanie od krawędzi (m)##waves"
+
+msgid "Metres inside the outline over which the waves grow from nothing, so the ground around meets the surface without a step"
+msgstr "Ile metrów w głąb obrysu fale narastają od zera, żeby teren dookoła łączył się z powierzchnią bez progu"
+
+msgid "left as it grows"
+msgstr "zostaje, jak rośnie"
+
+msgid "taken away"
+msgstr "usunięta"
+
+msgid "grown: %s"
+msgstr "posadzona: %s"
+
+msgid "The 3D grass under the surface: left as it grows, taken away (gravel, a yard), or another kind of the grass palette grown there instead"
+msgstr "Trawa 3D pod powierzchnią: zostaje, jak rośnie, jest usuwana (żwir, plac) albo w jej miejsce sadzony jest inny rodzaj z palety trawy"
+
+msgid "Filter by name, words apart by spaces..."
+msgstr "Filtr po nazwie, słowa oddzielone spacjami..."
+
+msgid "%zu shown"
+msgstr "pokazanych: %zu"
+
+msgid "Material of the palette to all shown"
+msgstr "Materiał z palety dla wszystkich pokazanych"
+
+msgid "%s given to %zu surfaces, Ctrl+Z takes it back"
+msgstr "%s nadany %zu powierzchniom, Ctrl+Z cofa"
+
+msgid "The material chosen in the palette, with its repeat and rotation, to all the surfaces the filter shows"
+msgstr "Materiał wybrany w palecie, z jego powtarzaniem i obrotem, dla wszystkich powierzchni pokazanych przez filtr"
+
+msgid "%s, %zu points, %s"
+msgstr "%s, %zu punktów, %s"
+
+msgid "Material##patch"
+msgstr "Materiał##patch"
+
+msgid "From the palette##patch"
+msgstr "Z palety##patch"
+
+msgid "Repeat (m)##patch"
+msgstr "Powtarzanie (m)##patch"
+
+msgid "of the material"
+msgstr "wg materiału"
+
+msgid "Turned by (deg)##patch"
+msgstr "Obrót (st.)##patch"
+
+msgid "Transition (m)##patch"
+msgstr "Szerokość przejścia (m)##patch"
+
+msgid "Noise of the edge (m)##patch"
+msgstr "Szum krawędzi (m)##patch"
+
+msgid "Waves of the noise (m)##patch"
+msgstr "Fale szumu (m)##patch"
+
+msgid "3D grass under it##patch"
+msgstr "Trawa 3D pod spodem##patch"
+
+msgid "Lift (m)##patch"
+msgstr "Uniesienie (m)##patch"
+
+msgid "Metres the surface lies over the heights taken from the terrain"
+msgstr "Ile metrów powierzchnia leży nad wysokościami wziętymi z terenu"
+
+msgid "Outline it again##patch"
+msgstr "Obrysuj ponownie##patch"
+
+msgid "Give back to the terrain##patch"
+msgstr "Oddaj terenowi##patch"
+
+msgid "Surface removed, the ground under it has the first material of the palette again"
+msgstr "Powierzchnia usunięta, teren pod nią ma z powrotem pierwszy materiał palety"
+
+msgid "Surface removed, the hole under it closed"
+msgstr "Powierzchnię usunięto, dziura pod nią zamknięta"
+
+msgid "No formation modifier there"
+msgstr "Brak tam modyfikatora torowiska"
+
+msgid "The slopes of %zu modifiers made natural, the terrain shaped anew. Ctrl+Z takes it back"
+msgstr "Naturalne skarpy dla %zu modyfikatorów, teren ukształtowany od nowa. Ctrl+Z cofa"
+
+msgid "The slopes of %zu modifiers as designed again. Ctrl+Z takes it back"
+msgstr "Skarpy %zu modyfikatorów znów według projektu. Ctrl+Z cofa"
+
+msgid "LMB adds a point of the outline, Shift+LMB takes the last one back. The field gets the material chosen in the palette and is kept in the list below, where its material can be changed later"
+msgstr "LPM dodaje punkt obrysu, Shift+LPM cofa ostatni. Pole dostaje materiał wybrany w palecie i trafia na listę poniżej, gdzie jego materiał można później zmienić"
+
+msgid "Painted into the terrain##fields"
+msgstr "Wmalowane w teren##fields"
+
+msgid "The material goes into the paint of the chunks: no seam, the edge blends into the ground around; a chunk holds up to 8 materials"
+msgstr "Materiał trafia do malowania chunków: bez szwu, krawędź przechodzi w otoczenie; chunk mieści do 8 materiałów"
+
+msgid "A surface of its own##fields"
+msgstr "Osobna powierzchnia##fields"
+
+msgid "The ground is cut away within the outline and the field drawn over the hole as a mesh of its own, following the heights of the terrain:\nit doesn't take one of the 8 materials of a chunk, but its edge is sharp and the seam can show"
+msgstr "Grunt w obrysie zostaje wycięty, a pole rysowane nad dziurą jako osobna siatka po wysokościach terenu:\nnie zajmuje żadnego z 8 materiałów chunka, ale krawędź jest ostra i może być widać szew"
+
+msgid "Transition (m)##fields"
+msgstr "Przejście (m)##fields"
+
+msgid "Metres across the edge the material passes into the one around over, half of them inside the field.\nThe paint of the terrain is kept every metre (every 0.5 m in the chunks converted to 0.5 m), narrower comes out in steps"
+msgstr "Na ilu metrach w poprzek krawędzi materiał przechodzi w otoczenie, połowa z nich w środku pola.\nMalowanie terenu jest zapisywane co metr (co 0,5 m w chunkach przerobionych na 0,5 m), węższe wychodzi schodkami"
+
+msgid "Noise of the edge (m)##fields"
+msgstr "Szum krawędzi (m)##fields"
+
+msgid "Waves of the noise (m)##fields"
+msgstr "Fale szumu (m)##fields"
+
+msgid "3D grass under it##fields"
+msgstr "Trawa 3D pod spodem##fields"
+
+msgid "Texture turned by (deg)##fields"
+msgstr "Obrót tekstury (st.)##fields"
+
+msgid "Cut out the field"
+msgstr "Wytnij pole"
+
+msgid "Clear the outline##fields"
+msgstr "Wyczyść obrys##fields"
+
+msgid "The embankments and the cuttings of the formation modifiers not drawn with a ruler: the formation and the edges of the track bed stay as designed, the slopes and their foot wander, get gentler here and there and meet the ground softly"
+msgstr "Nasypy i przekopy modyfikatorów torowiska nie jak spod linijki: korona i krawędzie torowiska zostają według projektu, a skarpy i ich podnóże falują, miejscami łagodnieją i miękko schodzą w teren"
+
+msgid "How far the foot of the slope goes in and out of the line of the slope"
+msgstr "Jak daleko podnóże skarpy wychodzi przed linię skarpy i cofa się za nią"
+
+msgid "Around the camera##natural"
+msgstr "Wokół kamery##natural"
+
+msgid "The whole scenery##natural"
+msgstr "Cała sceneria##natural"
+
+msgid "m##natural"
+msgstr "m##natural"
+
+msgid "The terrain under the modifiers is shaped anew; Ctrl+Z takes it back"
+msgstr "Teren pod modyfikatorami zostaje ukształtowany od nowa; Ctrl+Z cofa"
+
+msgid "field %d"
+msgstr "pole %d"
+
+msgid "Fields: %zu"
+msgstr "Pola: %zu"
+
+msgid "Puts the outline of the field back as the outline being drawn"
+msgstr "Przywraca obrys pola jako rysowany obrys"
+
+msgid "Fields"
+msgstr "Pola"
+
+msgid "LMB adds a point of the outline of a field: a surface cut out of the terrain with a material of its own, the ground under it made wavy if wanted; Shift+LMB takes the last one back"
+msgstr "LPM dodaje punkt obrysu pola: powierzchni wyciętej z terenu z własnym materiałem, z pofalowanym gruntem, jeśli chcesz; Shift+LPM cofa ostatni"
+
+msgid "%s outlined again, Ctrl+Z puts it back"
+msgstr "%s obrysowane na nowo, Ctrl+Z cofa"
+
+msgid "Puts the outline of the field back as the outline being drawn; cut out again, it changes this field"
+msgstr "Wstawia obrys pola z powrotem jako rysowany obrys; wycięcie go zmienia to pole"
 msgid "Camera speed"
 msgstr "Prędkość kamery"
 
@@ -14302,3 +16297,6 @@ msgstr "Ortofoto: %zu kafli widoku pobieranych w pierwszej kolejności (Ctrl+~)"
 
 msgid "Orthophoto: the view is all shown already (Ctrl+~)"
 msgstr "Ortofoto: cały widok jest już pokazany (Ctrl+~)"
+
+msgid "Preparing the graphics (takes longer at the first start of a new version)"
+msgstr "Przygotowanie grafiki (przy pierwszym uruchomieniu nowej wersji trwa dłużej)"
