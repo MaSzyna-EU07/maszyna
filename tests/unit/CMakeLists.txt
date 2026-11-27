@@ -32,6 +32,10 @@ add_executable(${UNIT_TESTS_NAME}
 	# and the fouling points of the switches, widened in the curves as the gauge is
 	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
+	# which textures the shadow maps draw without the alpha test
+	"${CMAKE_SOURCE_DIR}/rendering/common/texturealpha.cpp"
+	# and the movement of the free camera the motion blur takes
+	"${CMAKE_SOURCE_DIR}/rendering/common/freecameramotion.cpp"
 	# and the http client the editor fetches its aids with
 	"${CMAKE_SOURCE_DIR}/editor/editorHttp.cpp"
 	# and what the switch tool tells of the drives of the switches

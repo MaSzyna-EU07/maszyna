@@ -4233,10 +4233,9 @@ void road_table::create_geometry(scene::scratch_data &Scratchpad)
 		{
 			continue;
 		}
-		if (Global.editor_session && false == Global.NvRenderer)
+		if (Global.editor_session)
 		{
 			// scenery opened for editing: the road keeps its geometry apart, so it can be changed later.
-			// NOTE: the experimental renderer draws only what the scenery had when it was loaded
 			road->show();
 			continue;
 		}
@@ -4287,7 +4286,7 @@ void junction_table::create_geometry(scene::scratch_data &Scratchpad)
 		{
 			continue;
 		}
-		if (Global.editor_session && false == Global.NvRenderer)
+		if (Global.editor_session)
 		{
 			junction->show();
 			continue;

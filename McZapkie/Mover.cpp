@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "Oerlikon_ESt.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/Timer.h"
 #include "utilities/parser.h"
 #include "simulation/simulation.h"
 #include "vehicle/fieldshunting.h"
@@ -2131,6 +2132,10 @@ void TMoverParameters::rerail()
 		OffsetTrackH = 0.0;
 		OffsetTrackV = 0.0;
 	}
+	// a derailed vehicle which stopped sleeps (Global.physics_sleepheld) with the friction of the derailment in FStand and
+	// where the derailment put it, until something wakes it: the physics on, for the friction of the rails and its place on
+	// them. it is put back by a command (resetconsist, SetDamage) or by the road spawner, which sets it going anyway
+	switch_physics(true, wake_cause::command);
 }
 
 void TMoverParameters::repair_damage()
@@ -4741,6 +4746,7 @@ void TMoverParameters::MainSwitch_(bool const State)
 		if (Mains != initialstate)
 		{
 			LastSwitchingTime = 0;
+			Timer::subsystem.switching.note(Timer::switching_counter::mains, this, &TypeName, &Name);
 		}
 	}
 }
@@ -5608,6 +5614,10 @@ void TMoverParameters::CompressorCheck(double dt)
 		// jeśli została załączona to trzeba ograniczyć ponowne włączenie
 		LastSwitchingTime = 0;
 	}
+	if (CompressorFlag != compressorflag)
+	{
+		Timer::subsystem.switching.note(CompressorFlag ? Timer::switching_counter::compressor_on : Timer::switching_counter::compressor_off, this, &TypeName, &Name);
+	}
 
 	if (false == CompressorFlag)
 	{
@@ -6006,6 +6016,20 @@ void TMoverParameters::UpdateEPBrake()
 // Q: 20160713
 // Aktualizacja ciśnienia w przewodzie zasilającym
 // *************************************************************************************************
+namespace
+{
+// whether the air flowing to a coupled vehicle along a pipe wakes its physics: any flow did, but a vehicle standing next to one
+// whose physics is on gets a trickle of it all the time, as their pressures settle, and each wake kept it on for 5 s. with
+// Global.physics_pipewake only a flow which brings its pressure, with what has flown in while it slept, that much away from the
+// pressure of the vehicle the air comes from
+bool pipe_wakes(double const Flow, double const Pressure, TReservoir const &Pipe)
+{
+	if (Flow * Flow <= 0.00000000000001)
+		return false;
+	return (Global.physics_pipewake <= 0.f) || (std::abs(Pressure - Pipe.P_pending()) > Global.physics_pipewake);
+}
+} // namespace
+
 void TMoverParameters::UpdateScndPipePressure(double dt)
 {
 	if (ScndPipePress > 1.0)
@@ -6087,18 +6111,18 @@ double TMoverParameters::GetDVc(double dt)
 	{ //*0.85
 		c = Couplers[0].Connected; // skrot           //0.08           //e/D * L/D = e/D^2 * L
 		dv1 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
-		if (dv1 * dv1 > 0.00000000000001)
-			c->switch_physics(true);
 		c->Pipe->Flow(-dv1);
+		if (pipe_wakes(dv1, PipePress, *c->Pipe))
+			c->switch_physics(true, wake_cause::mainpipe);
 	}
 	// sprzeg 2
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
 		dv2 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
-		if (dv2 * dv2 > 0.00000000000001)
-			c->switch_physics(true);
 		c->Pipe->Flow(-dv2);
+		if (pipe_wakes(dv2, PipePress, *c->Pipe))
+			c->switch_physics(true, wake_cause::mainpipe);
 	}
 	// if ((Couplers[1].Connected != NULL) && (Couplers[0].Connected != NULL))
 	//     if ((TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic)) &&
@@ -6130,18 +6154,18 @@ double TMoverParameters::GetScndDVc(double dt)
 	{
 		c = Couplers[0].Connected; // skrot
 		dv1 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
-		if (dv1 * dv1 > 0.00000000000001)
-			c->switch_physics(true);
 		c->Pipe2->Flow(-dv1);
+		if (pipe_wakes(dv1, ScndPipePress, *c->Pipe2))
+			c->switch_physics(true, wake_cause::scndpipe);
 	}
 	// sprzeg 2
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
 		dv2 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
-		if (dv2 * dv2 > 0.00000000000001)
-			c->switch_physics(true);
 		c->Pipe2->Flow(-dv2);
+		if (pipe_wakes(dv2, ScndPipePress, *c->Pipe2))
+			c->switch_physics(true, wake_cause::scndpipe);
 	}
 	if (Couplers[1].Connected != nullptr && Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic) && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 	{
@@ -6380,17 +6404,26 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	// McZapkie-031103: sprawdzanie czy warto liczyc fizyke i inne updaty
 	// ABu 300105: cos tu mieszalem , dziala teraz troche lepiej, wiec zostawiam
 	{
-		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || std::abs(AccS) > 0.0001 || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU};
+		// asleep, the brake force is the one of the step it fell asleep in: a vehicle whose brakes have changed since, released
+		// or applied, wakes for the 5 s of LastSwitchingTime, which take the new force into FStand, and sleeps again if it's
+		// still held. none of the causes of the test below, so as "other"
+		if (brakes_changed_asleep())
+			switch_physics(true, wake_cause::other);
+
+		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || accelerating() || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU};
 
 		auto const movingvehicleahead{Neighbours[end::front].vehicle != nullptr &&
-		                              (Neighbours[end::front].vehicle->MoverParameters->Vel > 0.0001 || std::abs(Neighbours[end::front].vehicle->MoverParameters->AccS) > 0.0001)};
+		                              (Neighbours[end::front].vehicle->MoverParameters->Vel > 0.0001 || Neighbours[end::front].vehicle->MoverParameters->accelerating())};
 
 		auto const movingvehiclebehind{Neighbours[end::rear].vehicle != nullptr &&
-		                               (Neighbours[end::rear].vehicle->MoverParameters->Vel > 0.0001 || std::abs(Neighbours[end::rear].vehicle->MoverParameters->AccS) > 0.0001)};
+		                               (Neighbours[end::rear].vehicle->MoverParameters->Vel > 0.0001 || Neighbours[end::rear].vehicle->MoverParameters->accelerating())};
 
 		auto const calculatephysics{vehicleisactive || movingvehicleahead || movingvehiclebehind};
 
-		switch_physics(calculatephysics);
+		switch_physics(calculatephysics, Vel > 0.0001                     ? wake_cause::speed :
+		                                 accelerating()                   ? wake_cause::acceleration :
+		                                 vehicleisactive                  ? wake_cause::rest :
+		                                                                    wake_cause::neighbour);
 	}
 
 	if (false == PhysicActivation)
@@ -10024,6 +10057,7 @@ bool TMoverParameters::dizel_Update(double dt)
 		dizel_ignition = false;
 		// TODO: split engine and main circuit state indicator in two separate flags
 		LastSwitchingTime = 0;
+		Timer::subsystem.switching.note(Timer::switching_counter::diesel, this, &TypeName, &Name);
 		Mains = true;
 		dizel_spinup = true;
 		dizel_FiringCountdown = dizel_SmokeDelay;
@@ -11289,9 +11323,40 @@ double TMoverParameters::GetTrainsetHighVoltage() const
 }
 
 // *************************************************************************************************
+// whether the vehicle accelerates, for the test which turns the physics off in vehicles standing still
+// *************************************************************************************************
+bool TMoverParameters::accelerating() const
+{
+	if (std::abs(AccS) <= 0.0001)
+		return false;
+	// standing still and held by the brakes and the resistance, against the slope and the couplers: the test ComputeMovement()
+	// sets the speed to zero by. the forces are of the last ComputeTotalForce(), the ones the movement went by
+	auto const held{Global.physics_sleepheld && Vel <= 0.0001 && std::abs(FStand) > std::abs(FTrain)};
+	return false == held;
+}
+
+// *************************************************************************************************
+// whether the brakes of a vehicle whose physics sleeps have changed since it fell asleep: the pressure in the brake cylinders
+// or in the one of the spring brake by more than 0.05 bar, the hand brake by a notch, or the local brake by 1 percent. the brake system
+// itself steps on while asleep in the vehicle the user is in (TDynamicObject::Update(), MechInside); the settings change by
+// hand or by a command in any vehicle. 0.05 bar is less than what a distributor applying or releasing moves the cylinder by in
+// a second, and much less than the pressure the cylinder's return spring takes (BrakeCylSpring, some tenths of a bar), below
+// which the cylinder gives no force: a release ends with the vehicle asleep and no force left. a cylinder holding its
+// pressure, or settling within that, leaves the vehicle asleep
+// *************************************************************************************************
+bool TMoverParameters::brakes_changed_asleep() const
+{
+	if (PhysicActivation)
+		return false;
+	constexpr double pressure_change{0.05}; // [bar]
+	return std::abs(BrakePress - sleep_brakes.cylinder) > pressure_change || std::abs(SpringBrake.SBP - sleep_brakes.spring) > pressure_change ||
+	       ManualBrakePos != sleep_brakes.manual || std::abs(LocalBrakePosA - sleep_brakes.local) > 0.01;
+}
+
+// *************************************************************************************************
 // Kasowanie zmiennych pracy fizyki
 // *************************************************************************************************
-bool TMoverParameters::switch_physics(bool const State) // DO PRZETLUMACZENIA NA KONCU
+bool TMoverParameters::switch_physics(bool const State, wake_cause const Cause) // DO PRZETLUMACZENIA NA KONCU
 {
 	if (PhysicActivation == State)
 	{
@@ -11302,6 +11367,12 @@ bool TMoverParameters::switch_physics(bool const State) // DO PRZETLUMACZENIA NA
 	if (true == State)
 	{
 		LastSwitchingTime = 0;
+		Timer::subsystem.switching.note(static_cast<Timer::switching_counter::source>(Timer::switching_counter::wake + static_cast<std::size_t>(Cause)), this, &TypeName, &Name);
+	}
+	else
+	{
+		// what the brake force of the last step came from, which it keeps while asleep (brakes_changed_asleep())
+		sleep_brakes = {BrakePress, SpringBrake.SBP, ManualBrakePos, LocalBrakePosA};
 	}
 
 	return true;
@@ -15660,7 +15731,7 @@ bool TMoverParameters::RunInternalCommand()
 			CommandIn.Location.X = 0;
 			CommandIn.Location.Y = 0;
 			CommandIn.Location.Z = 0;
-			switch_physics(true);
+			switch_physics(true, wake_cause::command);
 		}
 	}
 	else

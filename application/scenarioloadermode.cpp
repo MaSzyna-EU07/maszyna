@@ -40,6 +40,20 @@ bool scenarioloader_mode::update() {
 		// waiting for network connection
 		return true;
 
+	if (m_closing > 0) {
+		// the programs of the materials made ready a few at a frame, the loading screen with its bar kept on the screen and the
+		// window answering meanwhile; then on to the simulation
+		auto const [done, total] { GfxRenderer->Prewarm_Shaders( 50.0 ) };
+		if( done < total ) {
+			m_userinterface->set_progress( static_cast<float>( done ) * 100.f / static_cast<float>( total ), 0.f );
+			return true;
+		}
+		m_closing = 0;
+		Application.pop_mode();
+		Application.push_mode( eu07_application::mode::driver );
+		return true;
+	}
+
 	if (!state) {
 		WriteLog("using simulation seed: " + std::to_string(Global.random_seed), logtype::generic);
         WriteLog("using simulation starting timestamp: " + std::to_string(Global.starting_timestamp), logtype::generic);
@@ -98,8 +112,12 @@ bool scenarioloader_mode::update() {
 	WriteLog( "Scenario loading time: " + std::to_string( std::chrono::duration_cast<std::chrono::seconds>( std::chrono::system_clock::now() - timestart ).count() ) + " seconds" );
 	// TODO: implement and use next mode cue
 
-	Application.pop_mode();
-	Application.push_mode( eu07_application::mode::driver );
+	// the loading screen stays, saying the graphics are being prepared, until the programs are ready (above).
+	// at the top of the screen: the bottom is taken by the trivia and by the texts some backgrounds carry. the interface
+	// of this mode is always the loader's, made in the constructor
+	m_userinterface->set_progress(std::string{});
+	static_cast<scenarioloader_ui &>(*m_userinterface).set_notice(STR("Preparing the graphics (takes longer at the first start of a new version)"));
+	m_closing = 1;
 
     return true;
 }
@@ -117,6 +135,8 @@ void scenarioloader_mode::enter() {
 
     Application.set_title( Global.AppName + " (" + Global.SceneryFile + ")" );
 	m_userinterface->set_progress(STR("Loading scenery"));
+	// the notice of a load before is gone
+	static_cast<scenarioloader_ui &>(*m_userinterface).set_notice({});
 }
 
 // maintenance method, called when the mode is deactivated
