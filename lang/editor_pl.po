@@ -14302,3 +14302,194 @@ msgstr "Ortofoto: %zu kafli widoku pobieranych w pierwszej kolejności (Ctrl+~)"
 
 msgid "Orthophoto: the view is all shown already (Ctrl+~)"
 msgstr "Ortofoto: cały widok jest już pokazany (Ctrl+~)"
+
+# scenery editor: switch rules and the norms of the track geometry
+
+msgid "The crossover there can't be taken out"
+msgstr "Tego połączenia nie da się tam wyjąć"
+
+msgid "The crossover is taken out whole, its switches replaced by their main tracks"
+msgstr "Połączenie jest wyjmowane w całości, a jego rozjazdy zastępują tory zasadnicze"
+
+msgid "Other switches of a connection##connectionsecond"
+msgstr "Pozostałe rozjazdy połączenia##connectionsecond"
+
+msgid "The switch isn't laid: %s"
+msgstr "Rozjazd nie został wstawiony: %s"
+
+msgid "The switch stays as it is: %s"
+msgstr "Rozjazd zostaje bez zmian: %s"
+
+msgid "Speed on the diverging track %.0f km/h"
+msgstr "Prędkość na kierunek zwrotny %.0f km/h"
+
+msgid ": R %.0f m, cant %+.0f mm into its turn, I up to %.0f mm (formula 9.9, table 9.7)"
+msgstr ": R %.0f m, przechyłka %+.0f mm w stronę jego łuku, niedomiar I do %.0f mm (wzór 9.9, tabela 9.7)"
+
+msgid ", no more than %.0f km/h of the basic switch (table 11.2)"
+msgstr ", nie więcej niż %.0f km/h rozjazdu podstawowego (tabela 11.2)"
+
+msgid "Bent into R %.0f m: no double switch, slip nor crossing is bent (11.4 pkt 4)"
+msgstr "Łukowany do R %.0f m: rozjazdów podwójnych, krzyżowych ani skrzyżowań się nie łukuje (11.4 pkt 4)"
+
+msgid "The curvature of the diverging track turns from one side to the other within the switch (KZW II), R %.0f m one way and R %.0f m the other, which isn't allowed (9.7 pkt 12)"
+msgstr "Krzywizna toru zwrotnego zmienia znak w obrębie rozjazdu (KZW II), R %.0f m w jedną stronę i R %.0f m w drugą, co jest niedozwolone (9.7 pkt 12)"
+
+msgid "The curvature of the main track turns from one side to the other within the switch, R %.0f m one way and R %.0f m the other, which isn't allowed (9.7 pkt 12)"
+msgstr "Krzywizna toru zasadniczego zmienia znak w obrębie rozjazdu, R %.0f m w jedną stronę i R %.0f m w drugą, co jest niedozwolone (9.7 pkt 12)"
+
+msgid "A switch of 1:%.3f isn't bent in the running and the main tracks: none of 1:9.403 nor steeper than 1:9 (11.4 pkt 4). The editor doesn't tell a main track from a side one, so it only warns"
+msgstr "Rozjazdu 1:%.3f nie łukuje się w torach szlakowych i głównych: ani 1:9,403, ani o skosie większym niż 1:9 (11.4 pkt 4). Edytor nie odróżnia toru głównego od bocznego, więc tylko ostrzega"
+
+msgid "passenger traffic"
+msgstr "ruch pasażerski"
+
+msgid "mixed traffic"
+msgstr "ruch mieszany"
+
+msgid "freight traffic"
+msgstr "ruch towarowy"
+
+msgid "main track"
+msgstr "tor główny"
+
+msgid "siding"
+msgstr "tor boczny"
+
+msgid "arc R %s"
+msgstr "łuk R %s"
+
+msgid "transition R %s -> %s"
+msgstr "krzywa przejściowa R %s -> %s"
+
+msgid "note"
+msgstr "uwaga"
+
+msgid "warning"
+msgstr "ostrzeżenie"
+
+msgid "hard limit"
+msgstr "granica twarda"
+
+msgid "cant deficiency"
+msgstr "niedomiar przechyłki"
+
+msgid "cant excess"
+msgstr "nadmiar przechyłki"
+
+msgid "abrupt change of the cant deficiency"
+msgstr "nagła zmiana niedomiaru przechyłki"
+
+msgid "cant deficiency change rate"
+msgstr "zmiana niedomiaru przechyłki w czasie"
+
+msgid "shift of the arc by its transition"
+msgstr "przesunięcie łuku przez krzywą przejściową"
+
+msgid "vertical curve"
+msgstr "łuk pionowy"
+
+msgid "profile boundary"
+msgstr "granica profili"
+
+msgid "%.1f per mille"
+msgstr "%.1f ‰"
+
+msgid "arc across the boundary of %s and %s, to be settled"
+msgstr "łuk na granicy %s i %s, do rozstrzygnięcia"
+
+msgid "break of the grade with no vertical curve, %s asks for a radius of at least %s (%s)"
+msgstr "załom niwelety bez łuku pionowego, %s wymaga promienia co najmniej %s (%s)"
+
+msgid "%s %s, %s allows at most %s (%s)"
+msgstr "%s %s, %s pozwala na najwyżej %s (%s)"
+
+msgid "%s %s, %s asks for at least %s (%s)"
+msgstr "%s %s, %s wymaga co najmniej %s (%s)"
+
+msgid "%s %s, %s recommends at most %s (%s)"
+msgstr "%s %s, %s zaleca najwyżej %s (%s)"
+
+msgid "%s %s, %s recommends at least %s (%s)"
+msgstr "%s %s, %s zaleca co najmniej %s (%s)"
+
+msgid ", the limit not confirmed"
+msgstr ", wartość graniczna niepotwierdzona"
+
+msgid "Norms: %s, line %.0f km/h, slow trains %.0f km/h, %s, %s, %.0f Tg a year"
+msgstr "Normy: %s, linia %.0f km/h, pociągi wolne %.0f km/h, %s, %s, %.0f Tg/rok"
+
+msgid ", the speed of the tracks where they have one"
+msgstr ", prędkość torów tam, gdzie ją mają"
+
+msgid "The speed of the tracks where they have one"
+msgstr "Prędkość torów tam, gdzie ją mają"
+
+msgid "Line %s: %.1f m, %zu elements, %zu findings"
+msgstr "Linia %s: %.1f m, elementów: %zu, uwag: %zu"
+
+msgid "  cant (m: mm):"
+msgstr "  przechyłka (m: mm):"
+
+msgid "  grade (m: per mille):"
+msgstr "  pochylenie (m: ‰):"
+
+msgid "Line class: %.0f km/h, slow trains %.0f km/h, %s, %s"
+msgstr "Klasa linii: %.0f km/h, pociągi wolne %.0f km/h, %s, %s"
+
+msgid "Tracks at a platform"
+msgstr "Tory przy peronach"
+
+msgid "Change the class, then Check again"
+msgstr "Zmień klasę, potem sprawdź ponownie"
+
+msgid "Checks the geometry of the tracks against the norms of a profile: what is beyond them is listed, nothing is changed"
+msgstr "Sprawdza geometrię torów według norm profilu: wypisuje, co je przekracza, niczego nie zmienia"
+
+msgid "Above the recommended values too"
+msgstr "Także ponad wartościami zalecanymi"
+
+msgid "PLK: P0 recommended, beyond P1 a warning, beyond P2 the hard limit. The limits of the TSI hold in every profile"
+msgstr "PLK: P0 zalecane, ponad P1 ostrzeżenie, ponad P2 granica twarda. Granice TSI obowiązują w każdym profilu"
+
+msgid "Line speed (km/h)"
+msgstr "Prędkość linii (km/h)"
+
+msgid "For the tracks with no speed of their own, or for all of them"
+msgstr "Dla torów bez własnej prędkości albo dla wszystkich"
+
+msgid "Slow trains (km/h)"
+msgstr "Pociągi wolne (km/h)"
+
+msgid "The cant excess is checked at this speed. 0: by the type of the line, ST-T1-A6 tab. 8.1"
+msgstr "Przy tej prędkości sprawdzany jest nadmiar przechyłki. 0: według typu linii, ST-T1-A6 tab. 8.1"
+
+msgid "Load (Tg a year)"
+msgstr "Obciążenie (Tg/rok)"
+
+msgid "The tonnage over the track a year, for the cant excess of ST-T1-A6 tab. 9.8"
+msgstr "Natężenie przewozów po torze w roku, do nadmiaru przechyłki wg ST-T1-A6 tab. 9.8"
+
+msgid "The radius, the cant and its deficiency and excess, their changes along the ramps and the transitions and at the joints, the lengths of the straights, arcs and transitions, the vertical curves and the grades"
+msgstr "Promień, przechyłka, jej niedomiar i nadmiar, ich zmiany na rampach, krzywych przejściowych i złączach, długości prostych, łuków i krzywych przejściowych, łuki pionowe i pochylenia"
+
+msgid "Tier"
+msgstr "Próg"
+
+msgid "Parameter"
+msgstr "Parametr"
+
+msgid "Value"
+msgstr "Wartość"
+
+msgid "Source"
+msgstr "Źródło"
+
+msgid "The geometry of the tracks against the norms of a profile (PLK, TSI, EN 13803, AB-EBV): what is beyond them, read only"
+msgstr "Geometria torów według norm profilu (PLK, TSI, EN 13803, AB-EBV): co je przekracza, tylko odczyt"
+
+msgid "%zu line checked against %s: %d beyond the hard limits, %d warnings, %d above the recommended values"
+msgid_plural "%zu lines checked against %s: %d beyond the hard limits, %d warnings, %d above the recommended values"
+msgstr[0] "Sprawdzono %zu linię wg %s: %d ponad granicami twardymi, %d ostrzeżeń, %d ponad wartościami zalecanymi"
+msgstr[1] "Sprawdzono %zu linie wg %s: %d ponad granicami twardymi, %d ostrzeżeń, %d ponad wartościami zalecanymi"
+msgstr[2] "Sprawdzono %zu linii wg %s: %d ponad granicami twardymi, %d ostrzeżeń, %d ponad wartościami zalecanymi"
