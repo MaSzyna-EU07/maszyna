@@ -47,14 +47,19 @@ jobs:
       # the same packages as the Build workflow: the game is configured as a whole,
       # though only the unit tests and the core library they link are built
       - name: Install build dependencies
+        timeout-minutes: 15
+        uses: ./.github/actions/apt-install
+        with:
+          packages: >-
+            build-essential pkg-config
+            libgl1-mesa-dev libglew-dev libglfw3-dev
+            libpng-dev libopenal-dev libluajit-5.1-dev
+            libserialport-dev libsndfile1-dev
+            libx11-dev libxcursor-dev libxext-dev libxi-dev libxinerama-dev libxrandr-dev
+            libxkbcommon-dev libwayland-dev wayland-protocols
+
+      - name: Install gcovr
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            build-essential \
-            libgl1-mesa-dev libglew-dev libglfw3-dev \
-            libpng-dev libopenal-dev libluajit-5.1-dev \
-            libserialport-dev libsndfile1-dev \
-            xorg-dev libxkbcommon-dev libwayland-dev wayland-protocols
           python3 -m pip install --no-cache-dir --only-binary :all: gcovr==8.3
 
       - name: Build current OpenAL Soft

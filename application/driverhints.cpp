@@ -762,6 +762,14 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                     return mvPantographUnit->PantPress >= (is_emu() ? (mvPantographUnit->PantPressLockActive ? 4.6 : 2.6) : 4.2); } );
             break;
         }
+        case driver_hint::waitbrakecharge: {
+            // NOTE: this action doesn't have AI component: the ai waits through Ready and DecBrake()
+            hint(
+                Action,
+                [this](float const /*Parameter*/) {
+                    return IsConsistCharged; } );
+            break;
+        }
         case driver_hint::waitloadexchange: {
             // NOTE: this action doesn't have AI component
             hint(
@@ -1148,6 +1156,29 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const /*Parameter*/) {
                     return IsAnyDoorPermitActive[side::left] == false; } );
+            break;
+        }
+        // doorsteps, as the timetable asks (eu07/maszyna#95)
+        case driver_hint::doorstepon: {
+            if( AIControllFlag ) {
+                mvOccupied->PermitDoorStep( true );
+            }
+            remove_hint( driver_hint::doorstepoff );
+            hint(
+                Action,
+                [this](float const /*Parameter*/) {
+                    return mvOccupied->Doors.step_enabled == true; } );
+            break;
+        }
+        case driver_hint::doorstepoff: {
+            if( AIControllFlag ) {
+                mvOccupied->PermitDoorStep( false );
+            }
+            remove_hint( driver_hint::doorstepon );
+            hint(
+                Action,
+                [this](float const /*Parameter*/) {
+                    return mvOccupied->Doors.step_enabled == false; } );
             break;
         }
         // consist lights

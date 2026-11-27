@@ -69,6 +69,8 @@ private:
 		bool listed{false};
 		std::array<coupler_entry, 2> couplers; // as seen last
 		bool couplers_known{false};
+		// off the track: 0 not, 1 written as leaving it, 2 written as at rest
+		int derailment{0};
 	};
 	struct switch_entry {
 		TTrack *track{nullptr};
@@ -99,6 +101,8 @@ private:
 	void look_at_signals();
 	// the couplers of every vehicle against the last look: those coupled at the first look, then the changes
 	void look_at_couplers();
+	// the vehicles leaving the track and coming to rest off it (physics.derailment new)
+	void look_at_derailments();
 	void write_camera();
 	// the timetable of the train the user is in, written again when it is another one; none isn't written
 	void look_at_timetable(TDynamicObject const &Vehicle, std::uint32_t Id);
@@ -106,7 +110,8 @@ private:
 	std::uint32_t vehicle_id(TDynamicObject const *Vehicle);
 	// the number of a vehicle still on the scenery, no_vehicle for none or one taken off it
 	std::uint32_t known_id(TDynamicObject const *Vehicle);
-	std::uint32_t signal_at(glm::dvec3 const &Location) const;
+	// the number of the signal whose aspect the memory cell tells, no_signal for one which isn't on the map
+	std::uint32_t signal_of(TMemCell const *Cell) const;
 
 	std::mutex m_mutex;
 	std::array<char, 256 * 1024> m_filebuffer{};

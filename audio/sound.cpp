@@ -1010,6 +1010,8 @@ sound_source::update_soundproofing() {
                     occupiedcab );
         }
     }
+    // the walls muffle the sound, the trim below only lowers its volume
+    m_properties.soundproofing_hf = m_properties.soundproofing;
     // for ambient sounds reduce their volume to account for their placement right on top of the listener
     if( m_range < -1 ) {
         m_properties.soundproofing *= 0.4f;

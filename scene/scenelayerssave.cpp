@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "editor/editorFormat.hpp"
 
+#include <format>
 #include <map>
 #include <optional>
 #include <set>
@@ -1768,8 +1769,8 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 	// without the copy nothing is replaced
 	{
 		auto const now{std::time(nullptr)};
-		char stamp[32];
-		std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", std::localtime(&now));
+		std::tm const local{local_tm(now)};
+		auto const stamp{std::format("{:04}{:02}{:02}-{:02}{:02}{:02}", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec)};
 		for (auto const output : written)
 		{
 			auto const filepath{path(output)};

@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/horn.h"
 #include "vehicle/linebreaker.h"
 #include "vehicle/holdcoillever.h"
+#include "vehicle/compartmentlightsswitch.h"
 #include "vehicle/odometer.h"
 #include "vehicle/mainctrlact.h"
 
@@ -361,6 +362,12 @@ TTrain::commandhandler_map const TTrain::m_commandhandlers = {
     {user_command::oilfuelpumptoggle, &TTrain::OnCommand_oilfuelpumptoggle},
     {user_command::oilpumpenable, &TTrain::OnCommand_oilpumpenable},
     {user_command::oilpumpdisable, &TTrain::OnCommand_oilpumpdisable},
+    {user_command::tractionmodetoggle, &TTrain::OnCommand_tractionmodetoggle},
+    {user_command::tractionmodecatenary, &TTrain::OnCommand_tractionmodecatenary},
+    {user_command::tractionmodegenset, &TTrain::OnCommand_tractionmodegenset},
+    {user_command::gensettoggle, &TTrain::OnCommand_gensettoggle},
+    {user_command::gensetenable, &TTrain::OnCommand_gensetenable},
+    {user_command::gensetdisable, &TTrain::OnCommand_gensetdisable},
     {user_command::waterheaterbreakertoggle, &TTrain::OnCommand_waterheaterbreakertoggle},
     {user_command::waterheaterbreakerclose, &TTrain::OnCommand_waterheaterbreakerclose},
     {user_command::waterheaterbreakeropen, &TTrain::OnCommand_waterheaterbreakeropen},
@@ -544,6 +551,36 @@ TTrain::commandhandler_map const TTrain::m_commandhandlers = {
     {user_command::generictoggle27, &TTrain::OnCommand_generictoggle},
     {user_command::generictoggle28, &TTrain::OnCommand_generictoggle},
     {user_command::generictoggle29, &TTrain::OnCommand_generictoggle},
+    {user_command::genericset0, &TTrain::OnCommand_genericset},
+    {user_command::genericset1, &TTrain::OnCommand_genericset},
+    {user_command::genericset2, &TTrain::OnCommand_genericset},
+    {user_command::genericset3, &TTrain::OnCommand_genericset},
+    {user_command::genericset4, &TTrain::OnCommand_genericset},
+    {user_command::genericset5, &TTrain::OnCommand_genericset},
+    {user_command::genericset6, &TTrain::OnCommand_genericset},
+    {user_command::genericset7, &TTrain::OnCommand_genericset},
+    {user_command::genericset8, &TTrain::OnCommand_genericset},
+    {user_command::genericset9, &TTrain::OnCommand_genericset},
+    {user_command::genericset10, &TTrain::OnCommand_genericset},
+    {user_command::genericset11, &TTrain::OnCommand_genericset},
+    {user_command::genericset12, &TTrain::OnCommand_genericset},
+    {user_command::genericset13, &TTrain::OnCommand_genericset},
+    {user_command::genericset14, &TTrain::OnCommand_genericset},
+    {user_command::genericset15, &TTrain::OnCommand_genericset},
+    {user_command::genericset16, &TTrain::OnCommand_genericset},
+    {user_command::genericset17, &TTrain::OnCommand_genericset},
+    {user_command::genericset18, &TTrain::OnCommand_genericset},
+    {user_command::genericset19, &TTrain::OnCommand_genericset},
+    {user_command::genericset20, &TTrain::OnCommand_genericset},
+    {user_command::genericset21, &TTrain::OnCommand_genericset},
+    {user_command::genericset22, &TTrain::OnCommand_genericset},
+    {user_command::genericset23, &TTrain::OnCommand_genericset},
+    {user_command::genericset24, &TTrain::OnCommand_genericset},
+    {user_command::genericset25, &TTrain::OnCommand_genericset},
+    {user_command::genericset26, &TTrain::OnCommand_genericset},
+    {user_command::genericset27, &TTrain::OnCommand_genericset},
+    {user_command::genericset28, &TTrain::OnCommand_genericset},
+    {user_command::genericset29, &TTrain::OnCommand_genericset},
     {user_command::vehiclemoveforwards, &TTrain::OnCommand_vehiclemoveforwards},
     {user_command::vehiclemovebackwards, &TTrain::OnCommand_vehiclemovebackwards},
     {user_command::vehicleboost, &TTrain::OnCommand_vehicleboost},
@@ -1454,8 +1491,8 @@ void TTrain::OnCommand_secondcontrollerincrease(TTrain *Train, command_data cons
 			auto const neutralposition{Train->ggScndCtrl.is_toggle() ? 0.5f : 0.f};
 			Train->ggScndCtrl.UpdateValue(Command.action == GLFW_RELEASE ? neutralposition : activeposition, Train->dsbSwitch);
 		}
-		// potentially animate tempomat button
-		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1)
+		// potentially animate tempomat button, unless the cruise control has its own
+		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1 && false == Train->mvControlled->IsSpeedCtrlSeparate())
 		{
 			Train->ggScndCtrlButton.UpdateValue(Command.action == GLFW_RELEASE ? 0.f : 1.f, Train->dsbSwitch);
 		}
@@ -1495,6 +1532,8 @@ void TTrain::OnCommand_notchingrelaytoggle(TTrain *Train, command_data const &Co
 			// turn off
 			Train->mvOccupied->AutoRelaySwitch(false);
 		}
+		// visual feedback
+		Train->ggAutoRelayButton.UpdateValue(Train->mvOccupied->AutoRelayFlag ? 1.f : 0.f, Train->dsbSwitch);
 	}
 }
 
@@ -1518,17 +1557,17 @@ void TTrain::OnCommand_tempomattoggle(TTrain *Train, command_data const &Command
 			return;
 		}
 		// glfw_press
-		if (Train->mvControlled->ScndCtrlPos == 0)
+		if (false == Train->mvControlled->IsSpeedCtrlEngaged())
 		{
 			// turn on if it's not active
-			Train->mvControlled->IncScndCtrl(1);
+			Train->mvControlled->SpeedCtrlSwitch(true);
 			// visual feedback
 			Train->ggScndCtrlButton.UpdateValue(1.0, Train->dsbSwitch);
 		}
 		else
 		{
 			// otherwise turn off
-			Train->mvControlled->DecScndCtrl(2);
+			Train->mvControlled->SpeedCtrlSwitch(false);
 			// visual feedback
 			if (Train->m_controlmapper.contains("tempomatoff_sw:"))
 			{
@@ -1548,17 +1587,17 @@ void TTrain::OnCommand_tempomattoggle(TTrain *Train, command_data const &Command
 			return;
 		}
 
-		if (Train->mvControlled->ScndCtrlPos == 0)
+		if (false == Train->mvControlled->IsSpeedCtrlEngaged())
 		{
 			// turn on
-			Train->mvControlled->IncScndCtrl(1);
+			Train->mvControlled->SpeedCtrlSwitch(true);
 			// visual feedback
 			Train->ggScndCtrlButton.UpdateValue(1.0, Train->dsbSwitch);
 		}
 		else
 		{
 			// turn off
-			Train->mvControlled->DecScndCtrl(2);
+			Train->mvControlled->SpeedCtrlSwitch(false);
 			// visual feedback
 			Train->ggScndCtrlButton.UpdateValue(0.0, Train->dsbSwitch);
 		}
@@ -1660,8 +1699,8 @@ void TTrain::OnCommand_secondcontrollerdecrease(TTrain *Train, command_data cons
 			auto const neutralposition{Train->ggScndCtrl.is_toggle() ? 0.5f : 0.f};
 			Train->ggScndCtrl.UpdateValue(Command.action == GLFW_RELEASE ? neutralposition : activeposition, Train->dsbSwitch);
 		}
-		// potentially animate tempomat button
-		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1)
+		// potentially animate tempomat button, unless the cruise control has its own
+		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1 && false == Train->mvControlled->IsSpeedCtrlSeparate())
 		{
 			if (Train->m_controlmapper.contains("tempomatoff_sw:"))
 			{
@@ -3724,7 +3763,7 @@ void TTrain::OnCommand_linebreakertoggle(TTrain *Train, command_data const &Comm
 		{
 			// only impulse switches react to release events
 			// NOTE: we presume dedicated state switch is of impulse type
-			if (Train->m_linebreakerstate == 0)
+			if (Train->m_linebreakerstate == linebreaker::state::open)
 			{
 				// ...after opening circuit, or holding for too short time to close it
 				OnCommand_linebreakeropen(Train, Command);
@@ -3777,14 +3816,14 @@ void TTrain::OnCommand_linebreakeropen(TTrain *Train, command_data const &Comman
 		// play sound immediately when the switch is hit, not after release
 		Train->fMainRelayTimer = 0.0f;
 
-		if (Train->m_linebreakerstate == 0)
+		if (Train->m_linebreakerstate == linebreaker::state::open)
 		{
 			return;
 		} // already in the desired state
 
 		if (true == Train->mvControlled->MainSwitch(false, Train->mvControlled->MainSwitchRange()))
 		{
-			Train->m_linebreakerstate = 0;
+			Train->m_linebreakerstate = linebreaker::state::open;
 			if (Train->mvControlled->MainSwitchRange() != range_t::local)
 			{
 				// the engines of the vehicles in multiple stopped along: their two-state switches go off too, left on
@@ -3859,7 +3898,7 @@ void TTrain::OnCommand_linebreakerclose(TTrain *Train, command_data const &Comma
 			Train->ggMainButton.UpdateValue(0.5, Train->dsbSwitch);
 		}
 
-		if (Train->m_linebreakerstate == 1)
+		if (Train->m_linebreakerstate == linebreaker::state::closed)
 		{
 			return;
 		} // already in the desired state
@@ -3867,10 +3906,10 @@ void TTrain::OnCommand_linebreakerclose(TTrain *Train, command_data const &Comma
 		// we don't need to start the diesel twice, but the other types (with impulse switch setup) still need to be launched
 		// NOTE: this behaviour should depend on MainOnButton presence and type_delayed
 		// TODO: change it when/if vehicle definition files get their proper switch types
-		if (Train->m_linebreakerstate == 2 && Train->mvControlled->EngineType == TEngineType::ElectricSeriesMotor)
+		if (Train->m_linebreakerstate == linebreaker::state::closing && Train->mvControlled->EngineType == TEngineType::ElectricSeriesMotor)
 		{
 			// try to finalize state change of the line breaker, set the state based on the outcome
-			Train->m_linebreakerstate = Train->mvControlled->MainSwitch(true, Train->mvControlled->MainSwitchRange()) ? 1 : 0;
+			Train->m_linebreakerstate = Train->mvControlled->MainSwitch(true, Train->mvControlled->MainSwitchRange()) ? linebreaker::state::closed : linebreaker::state::open;
 		}
 		// on button release reset the closing timer
 		Train->fMainRelayTimer = 0.0f;
@@ -4248,6 +4287,95 @@ void TTrain::OnCommand_oilfuelpumptoggle(TTrain *Train, command_data const &Comm
 	vehicle->FuelPumpSwitchOff(false == enable);
 	vehicle->OilPumpSwitch(enable);
 	vehicle->OilPumpSwitchOff(false == enable);
+}
+
+// the traction selector of a dual-mode vehicle (eu07/maszyna#536), a two-state switch
+void TTrain::OnCommand_tractionmodetoggle(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	if (Train->mvControlled->GensetSelected())
+	{
+		OnCommand_tractionmodecatenary(Train, Command);
+	}
+	else
+	{
+		OnCommand_tractionmodegenset(Train, Command);
+	}
+}
+
+void TTrain::OnCommand_tractionmodecatenary(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	// refused with the line breaker closed: then the switch doesn't move
+	Train->mvControlled->TractionModeSwitch(TMoverParameters::traction_mode::catenary, range_t::consist);
+	if (false == Train->mvControlled->GensetSelected())
+	{
+		Train->ggTractionModeSwitch.UpdateValue(0.0, Train->dsbSwitch);
+	}
+}
+
+void TTrain::OnCommand_tractionmodegenset(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	// refused with the line breaker closed, or without a genset: then the switch doesn't move
+	Train->mvControlled->TractionModeSwitch(TMoverParameters::traction_mode::genset, range_t::consist);
+	if (Train->mvControlled->GensetSelected())
+	{
+		Train->ggTractionModeSwitch.UpdateValue(1.0, Train->dsbSwitch);
+	}
+}
+
+// the start request of the genset of a dual-mode vehicle, a two-state switch
+void TTrain::OnCommand_gensettoggle(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	if (false == Train->mvControlled->Genset.is_enabled)
+	{
+		OnCommand_gensetenable(Train, Command);
+	}
+	else
+	{
+		OnCommand_gensetdisable(Train, Command);
+	}
+}
+
+void TTrain::OnCommand_gensetenable(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	// ignored by a genset which starts on its own: then the switch doesn't move
+	Train->mvControlled->GensetSwitch(true, range_t::consist);
+	if (Train->mvControlled->Genset.is_enabled)
+	{
+		Train->ggGensetButton.UpdateValue(1.0, Train->dsbSwitch);
+	}
+}
+
+void TTrain::OnCommand_gensetdisable(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	Train->mvControlled->GensetSwitch(false, range_t::consist);
+	if (false == Train->mvControlled->Genset.is_enabled)
+	{
+		Train->ggGensetButton.UpdateValue(0.0, Train->dsbSwitch);
+	}
 }
 
 void TTrain::OnCommand_waterheaterbreakertoggle(TTrain *Train, command_data const &Command)
@@ -5432,14 +5560,15 @@ void TTrain::OnCommand_lightspresetactivatenext(TTrain *Train, command_data cons
 		// visual feedback
 		if (Train->ggLightsButton.SubModel != nullptr)
 		{
-			// HACK: skip submodel animation when restarting cycle, since it plays in the 'wrong' direction
 			if (false == restartcycle)
 			{
 				Train->ggLightsButton.UpdateValue(static_cast<float>(Train->mvOccupied->LightsPos - 1), Train->dsbSwitch);
 			}
 			else
 			{
-				Train->ggLightsButton.PutValue(static_cast<float>(Train->mvOccupied->LightsPos - 1));
+				// past the last position to the first one: a knob turning all the way round turns on rather than
+				// back across all the positions, and the position reached sounds (eu07/maszyna#464)
+				Train->ggLightsButton.UpdateValueWrapped(static_cast<float>(Train->mvOccupied->LightsPos - 1), true, Train->mvOccupied->LightsPosNo, Train->dsbSwitch);
 			}
 		}
 	}
@@ -5470,14 +5599,14 @@ void TTrain::OnCommand_lightspresetactivateprevious(TTrain *Train, command_data 
 		// visual feedback
 		if (Train->ggLightsButton.SubModel != nullptr)
 		{
-			// HACK: skip submodel animation when restarting cycle, since it plays in the 'wrong' direction
 			if (false == restartcycle)
 			{
 				Train->ggLightsButton.UpdateValue(static_cast<float>(Train->mvOccupied->LightsPos - 1), Train->dsbSwitch);
 			}
 			else
 			{
-				Train->ggLightsButton.PutValue(static_cast<float>(Train->mvOccupied->LightsPos - 1));
+				// back past the first position to the last one, the same way (eu07/maszyna#464)
+				Train->ggLightsButton.UpdateValueWrapped(static_cast<float>(Train->mvOccupied->LightsPos - 1), false, Train->mvOccupied->LightsPosNo, Train->dsbSwitch);
 			}
 		}
 	}
@@ -6612,6 +6741,16 @@ void TTrain::OnCommand_compartmentlightstoggle(TTrain *Train, command_data const
 		return;
 	}
 
+	if (Command.action == GLFW_RELEASE)
+	{
+		// the press changed the state the command is picked from below, so a release picked from it went to the other
+		// command and the push button that was pressed never withdrew its request. The release goes to both commands:
+		// each returns its own push type control to the neutral position and withdraws its request
+		OnCommand_compartmentlightsenable(Train, Command);
+		OnCommand_compartmentlightsdisable(Train, Command);
+		return;
+	}
+
 	// keep the switch from flipping back and forth if key is held down
 	if (false == Train->mvOccupied->CompartmentLights.is_active && false == Train->mvOccupied->CompartmentLights.is_enabled)
 	{
@@ -6631,13 +6770,11 @@ void TTrain::OnCommand_compartmentlightsenable(TTrain *Train, command_data const
 	if (Command.action == GLFW_PRESS)
 	{
 		Train->mvOccupied->CompartmentLightsSwitch(true);
-		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
+		// withdraw the off request, unless a push type control in the cab withdraws it when released
+		if (compartment_lights_switch::withdraws_other_request(Train->m_controlmapper.contains("compartmentlights_sw:"), Train->ggCompartmentLightsButton.is_toggle(),
+		                                                       Train->m_controlmapper.contains("compartmentlightsoff_sw:")))
 		{
-			auto const istoggle{(static_cast<int>(Train->ggCompartmentLightsButton.type()) & static_cast<int>(TGaugeType::toggle)) != 0};
-			if (istoggle)
-			{
-				Train->mvOccupied->CompartmentLightsSwitchOff(false);
-			}
+			Train->mvOccupied->CompartmentLightsSwitchOff(false);
 		}
 		// visual feedback
 		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
@@ -6672,13 +6809,11 @@ void TTrain::OnCommand_compartmentlightsdisable(TTrain *Train, command_data cons
 	if (Command.action == GLFW_PRESS)
 	{
 		Train->mvOccupied->CompartmentLightsSwitchOff(true);
-		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
+		// withdraw the on request, unless a push type control in the cab withdraws it when released
+		if (compartment_lights_switch::withdraws_other_request(Train->m_controlmapper.contains("compartmentlights_sw:"), Train->ggCompartmentLightsButton.is_toggle(),
+		                                                       Train->m_controlmapper.contains("compartmentlightson_sw:")))
 		{
-			auto const istoggle{(static_cast<int>(Train->ggCompartmentLightsButton.type()) & static_cast<int>(TGaugeType::toggle)) != 0};
-			if (istoggle)
-			{
-				Train->mvOccupied->CompartmentLightsSwitch(false);
-			}
+			Train->mvOccupied->CompartmentLightsSwitch(false);
 		}
 		// visual feedback
 		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
@@ -7001,19 +7136,9 @@ void TTrain::OnCommand_generictoggle(TTrain *Train, command_data const &Command)
 		}
 		else
 		{
-			// two-state switch
-			if (item.GetDesiredValue() < 0.5)
-			{
-				// turn on
-				// visual feedback
-				item.UpdateValue(1.0);
-			}
-			else
-			{
-				// turn off
-				// visual feedback
-				item.UpdateValue(0.0);
-			}
+			// two-state switch, or one dragged in between its ends with the mouse: to the end farther from it
+			// visual feedback
+			item.UpdateValue(universal_drag::toggled(item.GetDesiredValue()));
 		}
 	}
 	else if (Command.action == GLFW_RELEASE && item.type() == TGaugeType::push)
@@ -7023,6 +7148,46 @@ void TTrain::OnCommand_generictoggle(TTrain *Train, command_data const &Command)
 		// visual feedback
 		item.UpdateValue(0.0);
 	}
+}
+
+// sets a universal control to the position given in param1, from 0 to 1 (MaSzyna-EU07/maszyna#62): the mouse drags
+// the ones with drag: in their definition, and it can be bound to an axis of a gamepad. it stays where it is set
+void TTrain::OnCommand_genericset(TTrain *Train, command_data const &Command)
+{
+
+	if (Command.action == GLFW_RELEASE)
+	{
+		return;
+	}
+	auto const itemindex = static_cast<int>(Command.command) - static_cast<int>(user_command::genericset0);
+	auto &item = Train->ggUniversals[itemindex];
+	if (item.is_push())
+	{
+		// an impulse switch springs back, it has no position to be left in
+		return;
+	}
+	// visual feedback
+	item.UpdateValue(universal_drag::clamp(Command.param1));
+}
+
+universal_drag::direction TTrain::universal_drag_direction(int const Index) const
+{
+
+	if (Index < 0 || Index >= static_cast<int>(ggUniversals.size()) || ggUniversals[Index].SubModel == nullptr)
+	{
+		return universal_drag::direction::none;
+	}
+	return ggUniversals[Index].drag();
+}
+
+float TTrain::universal_position(int const Index) const
+{
+
+	if (Index < 0 || Index >= static_cast<int>(ggUniversals.size()))
+	{
+		return 0.f;
+	}
+	return ggUniversals[Index].GetDesiredValue();
 }
 
 void TTrain::OnCommand_springbraketoggle(TTrain *Train, command_data const &Command)
@@ -8753,16 +8918,16 @@ bool TTrain::Update(double const Deltatime)
 {
 	// train state update
 	// line breaker:
-	if (m_linebreakerstate == 0 && true == mvControlled->Mains)
+	if (m_linebreakerstate == linebreaker::state::open && true == mvControlled->Mains)
 	{
 		// crude way to sync state of the linebreaker with ai-issued commands
-		m_linebreakerstate = 1;
+		m_linebreakerstate = linebreaker::state::closed;
 	}
-	if (m_linebreakerstate == 1 && false == (mvControlled->Mains || mvControlled->dizel_startup))
+	if (m_linebreakerstate == linebreaker::state::closed && false == (mvControlled->Mains || mvControlled->dizel_startup))
 	{
 		// crude way to catch cases where the main was knocked out
 		// because the state of the line breaker isn't changed to match, we need to do it here manually
-		m_linebreakerstate = 0;
+		m_linebreakerstate = linebreaker::state::open;
 	}
 	if (is_hold_coil_lever(ggMainOffButton) && hold_coil_lever::cuts_off(ggMainOffButton.GetDesiredValue()))
 	{
@@ -8772,10 +8937,10 @@ bool TTrain::Update(double const Deltatime)
 			// put the lever back on to match, like the line breaker state above
 			ggMainOffButton.UpdateValue(0.0);
 		}
-		else if (m_linebreakerstate == 2)
+		else if (m_linebreakerstate == linebreaker::state::closing)
 		{
 			// the hold coil was cut off while the closing button was held, the line breaker won't close on its release
-			m_linebreakerstate = 0;
+			m_linebreakerstate = linebreaker::state::open;
 		}
 	}
 
@@ -8799,18 +8964,18 @@ bool TTrain::Update(double const Deltatime)
 		// if the button disconnecting the line breaker is down prevent the timer from accumulating
 		fMainRelayTimer = 0.0f;
 	}
-	if (m_linebreakerstate == 0 && fMainRelayTimer > mvControlled->InitialCtrlDelay)
+	if (m_linebreakerstate == linebreaker::state::open && fMainRelayTimer > mvControlled->InitialCtrlDelay)
 	{
 		// wlaczanie WSa z opoznieniem
 		// mark the line breaker as ready to close; for electric series vehicles with impulse switch the setup is completed on button release
-		m_linebreakerstate = 2;
+		m_linebreakerstate = linebreaker::state::closing;
 	}
 	// for diesels and/or vehicles with toggle switch setup we complete the engine start here
 	// TODO: make it a test for main_on_bt of type push_delayed instead
-	if (m_linebreakerstate == 2 && (ggMainOnButton.SubModel == nullptr || mvControlled->EngineType != TEngineType::ElectricSeriesMotor))
+	if (m_linebreakerstate == linebreaker::state::closing && (ggMainOnButton.SubModel == nullptr || mvControlled->EngineType != TEngineType::ElectricSeriesMotor))
 	{
 		// try to finalize state change of the line breaker, set the state based on the outcome
-		m_linebreakerstate = mvControlled->MainSwitch(true, mvControlled->MainSwitchRange()) ? 1 : 0;
+		m_linebreakerstate = mvControlled->MainSwitch(true, mvControlled->MainSwitchRange()) ? linebreaker::state::closed : linebreaker::state::open;
 	}
 	// the switches of the other vehicles in multiple
 	update_remote_linebreakers(Deltatime);
@@ -9384,10 +9549,10 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaSHP.Turn(mvOccupied->SecuritySystem.is_cabsignal_blinking());
 		btLampkaCzuwakaSHP.Turn(btLampkaSHP.GetValue() || btLampkaCzuwaka.GetValue());
 
-		btLampkaWylSzybki.Turn(m_linebreakerstate == 2 || mvControlled->Mains);
-		btLampkaWylSzybkiOff.Turn(m_linebreakerstate != 2 && !mvControlled->Mains);
-		btLampkaMainBreakerReady.Turn(mvControlled->MainsInitTimeCountdown <= 0.0 && m_linebreakerstate != 2 && !mvControlled->Mains);
-		btLampkaMainBreakerBlinkingIfReady.Turn(m_linebreakerstate == 2 || mvControlled->Mains || mvControlled->MainsInitTimeCountdown < 0.0 && simulation::Time.data().wMilliseconds > 500);
+		btLampkaWylSzybki.Turn(m_linebreakerstate == linebreaker::state::closing || mvControlled->Mains);
+		btLampkaWylSzybkiOff.Turn(m_linebreakerstate != linebreaker::state::closing && !mvControlled->Mains);
+		btLampkaMainBreakerReady.Turn(mvControlled->MainsInitTimeCountdown <= 0.0 && m_linebreakerstate != linebreaker::state::closing && !mvControlled->Mains);
+		btLampkaMainBreakerBlinkingIfReady.Turn(m_linebreakerstate == linebreaker::state::closing || mvControlled->Mains || mvControlled->MainsInitTimeCountdown < 0.0 && simulation::Time.data().wMilliseconds > 500);
 
 		btLampkaPrzetw.Turn(mvOccupied->Power110vIsAvailable);
 		btLampkaPrzetwOff.Turn(!mvOccupied->Power110vIsAvailable);
@@ -9784,7 +9949,7 @@ bool TTrain::Update(double const Deltatime)
 	{
 		if (ggScndCtrlButton.is_toggle())
 		{
-			ggScndCtrlButton.UpdateValue(mvControlled->ScndCtrlPos > 0 ? 1.f : 0.f, dsbSwitch);
+			ggScndCtrlButton.UpdateValue(mvControlled->IsSpeedCtrlEngaged() ? 1.f : 0.f, dsbSwitch);
 		}
 		ggScndCtrlButton.Update(lowvoltagepower);
 	}
@@ -9881,6 +10046,8 @@ bool TTrain::Update(double const Deltatime)
 	ggWiperSw.Update();
 	ggMaxCurrentCtrl.UpdateValue(true == mvControlled->ShuntModeAllow ? (true == mvControlled->ShuntMode ? 1.f : 0.f) : mvControlled->MotorOverloadRelayHighThreshold ? 1.f : 0.f);
 	ggMaxCurrentCtrl.Update();
+	ggAutoRelayButton.UpdateValue(mvOccupied->AutoRelayFlag ? 1.f : 0.f);
+	ggAutoRelayButton.Update();
 	// NBMX wrzesien 2003 - drzwi
 	ggDoorLeftPermitButton.Update(lowvoltagepower);
 	ggDoorRightPermitButton.Update(lowvoltagepower);
@@ -9995,7 +10162,17 @@ bool TTrain::Update(double const Deltatime)
 	ggDimHeadlightsButton.Update();
 	ggDimHeadlightsButton.Update();
 	//------------
+	// the converter switches follow the vehicle when something else flips them (the AI driver, the other cab,
+	// the pressure switch of an EMU), not only when the cab is entered (set_cab_controls())
+	if (ggConverterButton.SubModel != nullptr && mvOccupied->ConvSwitchType != "impulse" && mvOccupied->ConverterStart == start_t::manual)
+	{
+		ggConverterButton.UpdateValue(mvOccupied->ConverterAllow ? 1.f : 0.f, dsbSwitch);
+	}
 	ggConverterButton.Update();
+	if (ggConverterLocalButton.SubModel != nullptr)
+	{
+		ggConverterLocalButton.UpdateValue(mvOccupied->ConverterAllowLocal ? 1.f : 0.f, dsbSwitch);
+	}
 	ggConverterLocalButton.Update();
 	ggConverterOffButton.Update();
 	ggTrainHeatingButton.Update();
@@ -10064,6 +10241,8 @@ bool TTrain::Update(double const Deltatime)
 	ggFuelPumpButton.Update();
 	ggOilPumpButton.Update();
 	ggOilFuelPumpButton.Update();
+	ggTractionModeSwitch.Update();
+	ggGensetButton.Update();
 	ggMotorBlowersFrontButton.Update();
 	ggMotorBlowersRearButton.Update();
 	ggMotorBlowersAllOffButton.Update();
@@ -10731,9 +10910,14 @@ void TTrain::load_script_screen(cParser &Parser, script_language const Language)
 	{
 		return;
 	}
-	if (substr_path(entry.config.script).empty())
+	if (auto path{script_screens::screen_script_path(DynamicObject->asBaseDir, entry.config.script)}; path.has_value())
 	{
-		entry.config.script = DynamicObject->asBaseDir + entry.config.script;
+		entry.config.script = std::move(*path);
+	}
+	else
+	{
+		ErrorLog(std::format("Bad script screen: \"{}\" leads outside the game's folder", entry.config.script));
+		return;
 	}
 
 	TSubModel *submodel{nullptr};
@@ -11620,6 +11804,7 @@ void TTrain::clear_cab_controls()
 	ggBrakeOperationModeCtrl.Clear();
 	ggWiperSw.Clear();
 	ggMaxCurrentCtrl.Clear();
+	ggAutoRelayButton.Clear();
 	ggMainOffButton.Clear();
 	ggMainOnButton.Clear();
 	for (auto &remotelinebreaker : m_remotelinebreakers)
@@ -11766,6 +11951,8 @@ void TTrain::clear_cab_controls()
 	ggFuelPumpButton.Clear();
 	ggOilPumpButton.Clear();
 	ggOilFuelPumpButton.Clear();
+	ggTractionModeSwitch.Clear();
+	ggGensetButton.Clear();
 	ggMotorBlowersFrontButton.Clear();
 	ggMotorBlowersRearButton.Clear();
 	ggMotorBlowersAllOffButton.Clear();
@@ -11886,7 +12073,7 @@ void TTrain::set_cab_controls(int const Cab)
 	// line breaker
 	if (ggMainButton.SubModel != nullptr)
 	{ // instead of single main button there can be on/off pair
-		ggMainButton.PutValue(ggMainButton.type() == TGaugeType::push ? 0.5f : m_linebreakerstate > 0 ? 1.f : 0.f);
+		ggMainButton.PutValue(ggMainButton.type() == TGaugeType::push ? 0.5f : m_linebreakerstate != linebreaker::state::open ? 1.f : 0.f);
 	}
 	// line breakers of the other vehicles in multiple
 	for (std::size_t index = 0; index < m_remotelinebreakers.size(); ++index)
@@ -11983,15 +12170,17 @@ void TTrain::set_cab_controls(int const Cab)
 	// converter
 	if (mvOccupied->ConvSwitchType != "impulse")
 	{
-		ggConverterButton.PutValue(mvControlled->ConverterAllow ? 1.f : 0.f);
+		ggConverterButton.PutValue(mvOccupied->ConverterAllow ? 1.f : 0.f);
 	}
-	ggConverterLocalButton.PutValue(mvControlled->ConverterAllowLocal ? 1.f : 0.f);
+	ggConverterLocalButton.PutValue(mvOccupied->ConverterAllowLocal ? 1.f : 0.f);
 	// compressor
 	ggCompressorButton.PutValue(mvControlled->CompressorAllow ? 1.f : 0.f);
 	ggCompressorLocalButton.PutValue(mvControlled->CompressorAllowLocal ? 1.f : 0.f);
 	ggCompressorListButton.PutValue(static_cast<float>(mvOccupied->CompressorListPos - 1));
 	// motor overload relay threshold / shunt mode
 	ggMaxCurrentCtrl.PutValue(true == mvControlled->ShuntModeAllow ? (true == mvControlled->ShuntMode ? 1.f : 0.f) : mvControlled->MotorOverloadRelayHighThreshold ? 1.f : 0.f);
+	// automatic relays (AutoRelay)
+	ggAutoRelayButton.PutValue(mvOccupied->AutoRelayFlag ? 1.f : 0.f);
 	// lights
 	ggLightsButton.PutValue(static_cast<float>(mvOccupied->LightsPos - 1));
 
@@ -12125,6 +12314,12 @@ void TTrain::set_cab_controls(int const Cab)
 	{
 		ggOilFuelPumpButton.PutValue(mvControlled->OilFuelPumpsEnabled() ? 1.f : 0.f);
 	}
+	// traction selector and genset of a dual-mode vehicle
+	ggTractionModeSwitch.PutValue(mvControlled->GensetSelected() ? 1.f : 0.f);
+	if (ggGensetButton.type() != TGaugeType::push)
+	{
+		ggGensetButton.PutValue(mvControlled->Genset.is_enabled ? 1.f : 0.f);
+	}
 	// traction motor fans
 	if (ggMotorBlowersFrontButton.type() != TGaugeType::push)
 	{
@@ -12147,7 +12342,7 @@ void TTrain::set_cab_controls(int const Cab)
 	// tempomat
 	if (false == ggScndCtrlButton.is_push())
 	{
-		ggScndCtrlButton.PutValue(mvControlled->ScndCtrlPos > 0 ? 1.f : 0.f);
+		ggScndCtrlButton.PutValue(mvControlled->IsSpeedCtrlEngaged() ? 1.f : 0.f);
 	}
 	// sandbox
 	if (ggAutoSandButton.type() != TGaugeType::push)
@@ -12326,6 +12521,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-mainpipelock:", &mvOccupied->LockPipe},
 	    {"i-battery:", &mvOccupied->Power24vIsAvailable},
 	    {"i-cablight:", &Cabine[iCabn].bLight},
+	    {"i-compartmentlights:", &mvOccupied->CompartmentLights.is_active},
 	};
 	{
 		auto lookup = autolights.find(Label);
@@ -12396,6 +12592,7 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	                                                          {"brakeprofiler_sw:", ggBrakeProfileR},
 	                                                          {"brakeopmode_sw:", ggBrakeOperationModeCtrl},
 	                                                          {"maxcurrent_sw:", ggMaxCurrentCtrl},
+	                                                          {"autorelay_sw:", ggAutoRelayButton},
 	                                                          {"main_off_bt:", ggMainOffButton},
 	                                                          {"main_on_bt:", ggMainOnButton},
 	                                                          {"mainb_sw:", m_remotelinebreakers[0].main_switch},
@@ -12462,6 +12659,8 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	                                                          {"fuelpump_sw:", ggFuelPumpButton},
 	                                                          {"oilpump_sw:", ggOilPumpButton},
 	                                                          {"oilfuelpump_sw:", ggOilFuelPumpButton},
+	                                                          {"tractionmode_sw:", ggTractionModeSwitch},
+	                                                          {"genset_sw:", ggGensetButton},
 	                                                          {"oilpressb:", ggOilPressB},
 	                                                          {"motorblowersfront_sw:", ggMotorBlowersFrontButton},
 	                                                          {"motorblowersrear_sw:", ggMotorBlowersRearButton},
