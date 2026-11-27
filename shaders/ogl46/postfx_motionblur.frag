@@ -1,25 +1,9 @@
 #version 460 core
 #define STAGE_FRAGMENT 1
-<<<<<<<< HEAD:shaders/vk14/postfx_motionblur.frag
-#define LAYOUT_POST 1
-#include "common.glsl"
-// param is pc.data of the push constants (the model block in the opengl renderer): param[0].x the scale of the velocities
-========
->>>>>>>> staging:shaders/ogl46/postfx_motionblur.frag
 layout(location = 14) in vec2 f_coords;
 layout(location = 0) out vec4 out_color;
 
 #pragma texture(color_tex, 0, RGB)
-<<<<<<<< HEAD:shaders/vk14/postfx_motionblur.frag
-layout(set = POST_SET, binding = POST_TEXTURE_FIRST + 0) uniform sampler2D color_tex;
-
-#pragma texture(velocity_tex, 1, RG)
-layout(set = POST_SET, binding = POST_TEXTURE_FIRST + 1) uniform sampler2D velocity_tex;
-
-#pragma texture(depth_tex, 2, R)
-layout(set = POST_SET, binding = POST_TEXTURE_FIRST + 2) uniform sampler2D depth_tex;
-
-========
 layout(binding = 0) uniform sampler2D color_tex;
 
 #pragma texture(velocity_tex, 1, RG)
@@ -29,7 +13,6 @@ layout(binding = 1) uniform sampler2D velocity_tex;
 layout(binding = 2) uniform sampler2D depth_tex;
 
 #include "common.glsl"
->>>>>>>> staging:shaders/ogl46/postfx_motionblur.frag
 
 void main()
 {
@@ -51,10 +34,6 @@ void main()
         vec2 offset = velocity * (float(i) / float(nSamples - 1) - 0.5);
 
         vec2 coord = f_coords + offset;
-        // a sample off the picture would read its edge row again and again: a fast movement towards the bottom
-        // of the screen (the ground racing under a low free camera) smeared it into a bright band there
-        if (any(lessThan(coord, 0.5 * texelSize)) || any(greaterThan(coord, vec2(1.0) - 0.5 * texelSize)))
-            continue;
         float depth = texture(depth_tex, coord).x;
 
         if (abs(depth - ori_depth) < depth_diff)
@@ -63,3 +42,4 @@ void main()
 
     out_color = vec4((result.rgb / result.w), 1.0);
 }
+
