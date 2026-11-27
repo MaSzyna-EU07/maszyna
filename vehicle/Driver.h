@@ -477,7 +477,7 @@ private:
     std::optional<int> iDirectionBackup; // consist direction to be restored after coupling/uncoupling and similar direction-changing operations
     std::optional<std::pair<TDynamicObject*,int>> iCouplingVehicle; // <vehicle, coupler> to be coupled with another consist in current coupling operation
     int iVehicleCount = -2; // wartość neutralna // ilość pojazdów do odłączenia albo zabrania ze składu (-1=wszystkie)
-    int iCoupler = 0; // maska sprzęgu, jaką należy użyć przy łączeniu (po osiągnięciu trybu Connect), 0 gdy jazda bez łączenia
+    CouplingSet iCoupler; // maska sprzęgu, jaką należy użyć przy łączeniu (po osiągnięciu trybu Connect), 0 gdy jazda bez łączenia
     int iDriverFailCount = 0; // licznik błędów AI
     bool Need_TryAgain = false; // true, jeśli druga pozycja w elektryku nie załapała
 //    bool Need_BrakeRelease = true;

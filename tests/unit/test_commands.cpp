@@ -249,7 +249,7 @@ TEST_CASE("commands: every command run on every real vehicle") {
 			auto const &command{commands[i]};
 			trace.mark(std::format("{} {} {}", command.name, command.value1, command.value2));
 			auto const parsed{ParseVehicleCommand(command.name)};
-			done = real->RunCommand(parsed.command, command.value1, command.value2, coupling::control, parsed.argument);
+			done = real->RunCommand(parsed.command, command.value1, command.value2, Coupling::control, parsed.argument);
 			trace.sample(static_cast<double>(i + 1), real.mover());
 		}
 		trace.check();
@@ -448,9 +448,9 @@ struct train {
 	vehicle middle{definition::fiz("4e_v1/4e"), 0.0, "middle"};
 	vehicle last{definition::fiz("4e_v1/4e"), 0.0, "last"};
 
-	explicit train(int Coupling) {
-		head->Attach(end::rear, end::rear, &middle.mover(), Coupling, true, false);
-		middle->Attach(end::front, end::front, &last.mover(), Coupling, true, false);
+	explicit train(CouplingSet const couplings) {
+		head->Attach(end::rear, end::rear, &middle.mover(), couplings, true, false);
+		middle->Attach(end::front, end::front, &last.mover(), couplings, true, false);
 	}
 };
 
@@ -485,24 +485,24 @@ TEST_CASE("commands: travel along the train, turned round for a vehicle facing b
 		CHECK(consist.last->Pantographs[end::rear].valve.is_enabled);
 	}
 	SUBCASE("sent backwards, it goes no further than the sender: nothing is coupled at its front") {
-		consist.head->RunCommand(VehicleCommand::doorLock, 0, -1, coupling::control);
+		consist.head->RunCommand(VehicleCommand::doorLock, 0, -1, Coupling::control);
 		CHECK_FALSE(consist.head->Doors.lock_enabled);
 		CHECK(consist.middle->Doors.lock_enabled);
 	}
 	SUBCASE("the same command again isn't taken by the next vehicle a second time") {
-		CHECK(consist.middle->SetInternalCommand(VehicleCommand::doorStep, 0, 1, coupling::control));
-		CHECK_FALSE(consist.middle->SetInternalCommand(VehicleCommand::doorStep, 0, 1, coupling::control));
+		CHECK(consist.middle->SetInternalCommand(VehicleCommand::doorStep, 0, 1, Coupling::control));
+		CHECK_FALSE(consist.middle->SetInternalCommand(VehicleCommand::doorStep, 0, 1, Coupling::control));
 		CHECK_FALSE(consist.head->RunInternalCommand()); // nothing to run
 	}
 }
 
 TEST_CASE("commands: don't pass a coupling without the control cable") {
-	train consist{coupling::coupler | coupling::brakehose};
-	consist.head->RunCommand(VehicleCommand::doorLock, 0, 1, coupling::control);
+	train consist{Coupling::coupler | Coupling::brakeHose};
+	consist.head->RunCommand(VehicleCommand::doorLock, 0, 1, Coupling::control);
 	CHECK_FALSE(consist.head->Doors.lock_enabled);
 	CHECK(consist.middle->Doors.lock_enabled);
 	// a command of another coupling goes through it
-	consist.head->RunCommand(VehicleCommand::doorStep, 0, 1, coupling::brakehose);
+	consist.head->RunCommand(VehicleCommand::doorStep, 0, 1, Coupling::brakeHose);
 	CHECK_FALSE(consist.middle->Doors.step_enabled);
 }
 

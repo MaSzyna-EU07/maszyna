@@ -50,10 +50,10 @@ void TMoverParameters::PutCommand(std::string const &NewCommand, double NewValue
 // Q: 20160714
 // Ustawienie komendy wraz z parametrami
 // *************************************************************************************************
-bool TMoverParameters::SetInternalCommand(VehicleCommand const NewCommand, double NewValue1, double NewValue2, int const Couplertype)
+bool TMoverParameters::SetInternalCommand(VehicleCommand const NewCommand, double NewValue1, double NewValue2, CouplingSet const Couplertype)
 {
 	bool SIC;
-	if (CommandIn.Command == NewCommand && CommandIn.Argument.empty() && CommandIn.Value1 == NewValue1 && CommandIn.Value2 == NewValue2 && CommandIn.Coupling == Couplertype)
+	if (CommandIn.Command == NewCommand && CommandIn.Argument.empty() && CommandIn.Value1 == NewValue1 && CommandIn.Value2 == NewValue2 && CommandIn.couplings == Couplertype)
 		SIC = false;
 	else
 	{
@@ -62,7 +62,7 @@ bool TMoverParameters::SetInternalCommand(VehicleCommand const NewCommand, doubl
 		CommandIn.Argument.clear();
 		CommandIn.Value1 = NewValue1;
 		CommandIn.Value2 = NewValue2;
-		CommandIn.Coupling = Couplertype;
+		CommandIn.couplings = Couplertype;
 		SIC = true;
 		LastLoadChangeTime = 0; // zerowanie czasu (roz)ładowania
 	}
@@ -74,7 +74,7 @@ bool TMoverParameters::SetInternalCommand(VehicleCommand const NewCommand, doubl
 // Q: 20160714
 // wysyłanie komendy w kierunku dir (1=przód, -1=tył) do kolejnego pojazdu (jednego)
 // *************************************************************************************************
-bool TMoverParameters::SendCtrlToNext(VehicleCommand const CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype)
+bool TMoverParameters::SendCtrlToNext(VehicleCommand const CtrlCommand, double const ctrlvalue, double const dir, CouplingSet const Couplertype)
 {
 	bool OK;
 	int d; // numer sprzęgu w kierunku którego wysyłamy
@@ -84,7 +84,7 @@ bool TMoverParameters::SendCtrlToNext(VehicleCommand const CtrlCommand, double c
 	OK = true; // ( dir != 0 ); // experimentally disabled
 	d = (1 + static_cast<int>(Sign(dir))) / 2; // dir=-1=>d=0, dir=1=>d=1 - wysyłanie tylko w tył
 	// musi być wybrana niezerowa kabina
-	if (OK && Couplers[d].Connected != nullptr && TestFlag(Couplers[d].CouplingFlag, Couplertype))
+	if (OK && Couplers[d].Connected != nullptr && Couplers[d].CouplingFlag.HasAll(Couplertype))
 	{
 
 		if (Couplers[d].ConnectedNr != d)
@@ -114,7 +114,7 @@ bool TMoverParameters::SendCtrlToNext(VehicleCommand const CtrlCommand, double c
 // Komenda musi być zdefiniowana tutaj, a jeśli się wywołuje funkcję, to ona nie może
 // sama przesyłać do kolejnych pojazdów. Należy też się zastanowić, czy dla uzyskania
 // jakiejś zmiany (np. IncMainCtrl) lepiej wywołać funkcję, czy od razu wysłać komendę.
-bool TMoverParameters::RunCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype, std::string_view const Argument)
+bool TMoverParameters::RunCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype, std::string_view const Argument)
 {
 	// the group of the command sets OK; a command none of them knows isn't done
 	if (bool OK{false}; RunControllerCommand(Command, CValue1, CValue2, Couplertype, OK) || RunRelaysCommand(Command, CValue1, CValue2, Couplertype, OK) ||
@@ -134,7 +134,7 @@ bool TMoverParameters::RunCommand(VehicleCommand const Command, double CValue1, 
 }
 
 // RunCommand() for the controllers; returns whether the command is one of them
-bool TMoverParameters::RunControllerCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+bool TMoverParameters::RunControllerCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype, bool &OK)
 {
 	if (Command == VehicleCommand::mainController)
 	{
@@ -183,7 +183,7 @@ bool TMoverParameters::RunControllerCommand(VehicleCommand const Command, double
 }
 
 // RunCommand() for the direction, the automatic start and the current relays; returns whether the command is one of them
-bool TMoverParameters::RunRelaysCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+bool TMoverParameters::RunRelaysCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype, bool &OK)
 {
 	if (Command == VehicleCommand::direction)
 	{
@@ -217,7 +217,7 @@ bool TMoverParameters::RunRelaysCommand(VehicleCommand const Command, double CVa
 }
 
 // RunCommand() for the cab and the speed control; returns whether the command is one of them
-bool TMoverParameters::RunCabCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+bool TMoverParameters::RunCabCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype, bool &OK)
 {
 	if (Command == VehicleCommand::cabActivation)
 	{
@@ -268,7 +268,7 @@ bool TMoverParameters::RunCabCommand(VehicleCommand const Command, double CValue
 }
 
 // RunCommand() for the train brake, the releaser and the emergency brake; returns whether the command is one of them
-bool TMoverParameters::RunBrakeCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+bool TMoverParameters::RunBrakeCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype, bool &OK)
 {
 	if (Command == VehicleCommand::brake) // youBy - jak sie EP hamuje, to trza sygnal wyslac...
 	{
@@ -308,7 +308,7 @@ bool TMoverParameters::RunBrakeCommand(VehicleCommand const Command, double CVal
 }
 
 // RunCommand() for the brake delays, the spring brake, the sand and the cab signalling; returns whether the command is one of them
-bool TMoverParameters::RunBrakeEquipmentCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+bool TMoverParameters::RunBrakeEquipmentCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype, bool &OK)
 {
 	if (Command == VehicleCommand::brakeDelay)
 	{
@@ -355,7 +355,7 @@ bool TMoverParameters::RunBrakeEquipmentCommand(VehicleCommand const Command, do
 }
 
 // RunCommand() for the heating, the converter, the battery and the compressor; returns whether the command is one of them
-bool TMoverParameters::RunAuxiliariesCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+bool TMoverParameters::RunAuxiliariesCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype, bool &OK)
 {
 	if (Command == VehicleCommand::heatingSwitch)
 	{
@@ -403,7 +403,7 @@ bool TMoverParameters::RunAuxiliariesCommand(VehicleCommand const Command, doubl
 }
 
 // RunCommand() for the water, fuel and oil pumps and the water heater; returns whether the command is one of them
-bool TMoverParameters::RunPumpsCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+bool TMoverParameters::RunPumpsCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype, bool &OK)
 {
 	if (Command == VehicleCommand::waterPumpBreakerSwitch)
 	{
@@ -514,7 +514,7 @@ bool TMoverParameters::RunPumpsCommand(VehicleCommand const Command, double CVal
 }
 
 // RunCommand() for the motor blowers and the compartment lights; returns whether the command is one of them
-bool TMoverParameters::RunBlowersCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+bool TMoverParameters::RunBlowersCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype, bool &OK)
 {
 	if (Command == VehicleCommand::motorBlowersFrontSwitch)
 	{
@@ -580,7 +580,7 @@ bool TMoverParameters::RunBlowersCommand(VehicleCommand const Command, double CV
 }
 
 // RunCommand() for the line breaker, the relays and the pantographs; returns whether the command is one of them
-bool TMoverParameters::RunPowerCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+bool TMoverParameters::RunPowerCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype, bool &OK)
 {
 	if (Command == VehicleCommand::mainSwitch)
 	{
@@ -598,7 +598,7 @@ bool TMoverParameters::RunPowerCommand(VehicleCommand const Command, double CVal
 		auto const inputcab{(static_cast<int>(CValue1) & 0x40) != 0 ? 1 : 0};
 		auto const inputoperation{static_cast<int>(CValue1) & ~(0x80 | 0x40)};
 		auto const noswap{TrainType == train_type::emu || TrainType == train_type::et41};
-		auto swap{false == noswap && TestFlag(Couplers[CValue2 == -1 ? end::rear : end::front].CouplingFlag, coupling::control)};
+		auto swap{false == noswap && Couplers[CValue2 == -1 ? end::rear : end::front].CouplingFlag.HasAll(Coupling::control)};
 		if (auto const reversed{inputcab != (CabActive != -1 ? 1 : 0)}; reversed)
 		{
 			swap = !swap;
@@ -634,7 +634,7 @@ bool TMoverParameters::RunPowerCommand(VehicleCommand const Command, double CVal
 }
 
 // RunCommand() for the doors and the departure signal; returns whether the command is one of them
-bool TMoverParameters::RunDoorsCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+bool TMoverParameters::RunDoorsCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype, bool &OK)
 {
 	if (Command == VehicleCommand::doorPermit)
 	{
@@ -780,7 +780,7 @@ bool TMoverParameters::RunInternalCommand()
 
 	if (CommandIn.Command != VehicleCommand::none)
 	{
-		OK = RunCommand(CommandIn.Command, CommandIn.Value1, CommandIn.Value2, CommandIn.Coupling, CommandIn.Argument);
+		OK = RunCommand(CommandIn.Command, CommandIn.Value1, CommandIn.Value2, CommandIn.couplings, CommandIn.Argument);
 		if (OK)
 		{
 
@@ -789,7 +789,7 @@ bool TMoverParameters::RunInternalCommand()
 			CommandIn.Argument.clear();
 			CommandIn.Value1 = 0;
 			CommandIn.Value2 = 0;
-			CommandIn.Coupling = 0;
+			CommandIn.couplings = {};
 			CommandIn.Location.X = 0;
 			CommandIn.Location.Y = 0;
 			CommandIn.Location.Z = 0;

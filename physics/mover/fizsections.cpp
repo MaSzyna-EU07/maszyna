@@ -578,14 +578,20 @@ void TMoverParameters::LoadFIZ_BuffCoupl(std::string const &line, int const Inde
 	extract_value(thiscoupler->DmaxB, "DmaxB", line, "");
 	extract_value(thiscoupler->FmaxB, "FmaxB", line, "");
 	extract_value(thiscoupler->beta, "beta", line, "");
-	extract_value(thiscoupler->AutomaticCouplingFlag, "AutomaticFlag", line, "");
-	extract_value(thiscoupler->AllowedFlag, "AllowedFlag", line, "");
-	if (thiscoupler->AllowedFlag < 0)
-	{
-		thiscoupler->AllowedFlag = -thiscoupler->AllowedFlag | coupling::permanent;
-	}
-	extract_value(thiscoupler->PowerCoupling, "PowerCoupling", line, "");
-	extract_value(thiscoupler->PowerFlag, "PowerFlag", line, "");
+	// the sets are numbers in the definition, the sums of the numbers of the kinds of coupling
+	auto automaticflag{thiscoupler->AutomaticCouplingFlag.Bits()};
+	extract_value(automaticflag, "AutomaticFlag", line, "");
+	thiscoupler->AutomaticCouplingFlag = CouplingSet::FromBits(automaticflag);
+	auto allowedflag{thiscoupler->AllowedFlag.Bits()};
+	extract_value(allowedflag, "AllowedFlag", line, "");
+	// negative: the coupling is permanent besides
+	thiscoupler->AllowedFlag = allowedflag < 0 ? CouplingSet::FromBits(-allowedflag) | Coupling::permanent : CouplingSet::FromBits(allowedflag);
+	auto powercoupling{thiscoupler->PowerCoupling.Bits()};
+	extract_value(powercoupling, "PowerCoupling", line, "");
+	thiscoupler->PowerCoupling = CouplingSet::FromBits(powercoupling);
+	auto powerflag{thiscoupler->PowerFlag.Bits()};
+	extract_value(powerflag, "PowerFlag", line, "");
+	thiscoupler->PowerFlag = CouplingSet::FromBits(powerflag);
 	extract_value(thiscoupler->control_type, "ControlType", line, "");
 
 	if (thiscoupler->CouplerType != TCouplerType::NoCoupler && thiscoupler->CouplerType != TCouplerType::Bare && thiscoupler->CouplerType != TCouplerType::Articulated)

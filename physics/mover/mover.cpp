@@ -144,8 +144,8 @@ TMoverParameters::TMoverParameters(double VelInitial, std::string const &TypeNam
 
 	for (auto &couplerentry : Couplers)
 	{
-		couplerentry.AllowedFlag = 3; // domyślnie hak i hamulec, inne trzeba włączyć jawnie w FIZ
-		couplerentry.CouplingFlag = 0;
+		couplerentry.AllowedFlag = Coupling::coupler | Coupling::brakeHose; // domyślnie hak i hamulec, inne trzeba włączyć jawnie w FIZ
+		couplerentry.CouplingFlag = {};
 		couplerentry.Connected = nullptr;
 		couplerentry.ConnectedNr = 0; // Ra: to nie ma znaczenia jak nie podłączony
 		couplerentry.Render = false;
@@ -193,7 +193,7 @@ void TMoverParameters::change_train_velocity(double const Change)
 		{
 			auto const &coupler{vehicle->Couplers[end]};
 			auto *other{coupler.Connected};
-			if (other == nullptr || coupler.CouplingFlag == coupling::faux || std::any_of(train.begin(), train.end(), [other](auto const &Entry) { return Entry.first == other; }))
+			if (other == nullptr || coupler.CouplingFlag == Coupling::none || std::any_of(train.begin(), train.end(), [other](auto const &Entry) { return Entry.first == other; }))
 			{
 				continue;
 			}
@@ -522,11 +522,11 @@ void TMoverParameters::compute_movement_(double const Deltatime)
 	UpdateBatteryVoltage(Deltatime);
 	UpdateScndPipePressure(Deltatime); // druga rurka, youBy
 
-	if ((DCEMUED_CC & 1) != 0 && (Couplers[end::front].CouplingFlag & coupling::control) != 0)
+	if ((DCEMUED_CC & 1) != 0 && Couplers[end::front].CouplingFlag.HasAny(Coupling::control))
 	{
 		DynamicBrakeEMUStatus &= Couplers[end::front].Connected->DynamicBrakeEMUStatus;
 	}
-	if ((DCEMUED_CC & 2) != 0 && (Couplers[end::rear].CouplingFlag & coupling::control) != 0)
+	if ((DCEMUED_CC & 2) != 0 && Couplers[end::rear].CouplingFlag.HasAny(Coupling::control))
 	{
 		DynamicBrakeEMUStatus &= Couplers[end::rear].Connected->DynamicBrakeEMUStatus;
 	}
@@ -542,13 +542,13 @@ void TMoverParameters::compute_movement_(double const Deltatime)
 
 	m_plc.update(Deltatime);
 
-	PowerCouplersCheck(Deltatime, coupling::highvoltage);
-	PowerCouplersCheck(Deltatime, coupling::power110v);
-	PowerCouplersCheck(Deltatime, coupling::power24v);
+	PowerCouplersCheck(Deltatime, Coupling::highVoltage);
+	PowerCouplersCheck(Deltatime, Coupling::power110v);
+	PowerCouplersCheck(Deltatime, Coupling::power24v);
 
-	Power24vVoltage = std::max(PowerCircuits[0].first, GetTrainsetVoltage(coupling::power24v));
+	Power24vVoltage = std::max(PowerCircuits[0].first, GetTrainsetVoltage(Coupling::power24v));
 	Power24vIsAvailable = Power24vVoltage > 0;
-	Power110vIsAvailable = PowerCircuits[1].first > 0 || GetTrainsetVoltage(coupling::power110v) > 0;
+	Power110vIsAvailable = PowerCircuits[1].first > 0 || GetTrainsetVoltage(Coupling::power110v) > 0;
 }
 
 // *************************************************************************************************
@@ -671,7 +671,7 @@ bool TMoverParameters::Sandbox(bool const State, range_t const Notify)
 	if (Notify != range_t::local)
 	{
 		// if requested pass the command on
-		auto const couplingtype = Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control;
+		auto const couplingtype = Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control;
 
 		if (State == true)
 		{
@@ -694,7 +694,7 @@ bool TMoverParameters::Sandbox(bool const State, range_t const Notify)
 // *************************************************************************************************
 bool TMoverParameters::SandboxAutoAllow(bool State)
 {
-	// SendCtrlToNext(VehicleCommand::sandboxAutoAllow, int(State), CabActive, ctrain_controll);
+	// SendCtrlToNext(VehicleCommand::sandboxAutoAllow, int(State), CabActive, Coupling::control);
 
 	if (SandDoseAutoAllow != State)
 	{

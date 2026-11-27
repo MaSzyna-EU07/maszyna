@@ -508,7 +508,7 @@ TEST_CASE("controls: a locomotive running into a standing wagon") {
 		CAPTURE(speed);
 		scenario scenario{std::format("controls/collision/{} kmh", static_cast<int>(speed)), motion()};
 		// the wagon stands in front, the locomotive comes from behind it
-		scenario.add("bdhpumn_v3/bdhpumn").add("4e_v1/4e", 0, coupling::faux, speed, 30.0);
+		scenario.add("bdhpumn_v3/bdhpumn").add("4e_v1/4e", 0, Coupling::none, speed, 30.0);
 		auto const &wagon{scenario.vehicle(0)};
 		scenario.wait(30.0);
 		// slow, the locomotive pushes the wagon off, the buffers only touching, and both roll to a stop; fast,

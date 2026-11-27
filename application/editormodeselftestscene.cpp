@@ -268,7 +268,7 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 			auto const front{vehicle->VectorFront()};
 			auto const coupler = [&](int const End) {
 				auto const &coupler{vehicle->MoverParameters->Couplers[End]};
-				return coupler.Connected != nullptr ? coupler.Connected->Name + "/" + std::to_string(coupler.CouplingFlag) : std::string{"-"};
+				return coupler.Connected != nullptr ? coupler.Connected->Name + "/" + std::to_string(coupler.CouplingFlag.Bits()) : std::string{"-"};
 			};
 			WriteLog(format("SELFTEST vehicle %s head %.2f %.2f front %.2f %.2f dir %d coupler0 %s coupler1 %s", vehicle->name().c_str(), head.x, head.z, front.x, front.z, vehicle->iDirection, coupler(0).c_str(), coupler(1).c_str()));
 		}

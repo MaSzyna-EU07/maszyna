@@ -51,7 +51,7 @@ TEST_CASE("queries: the damage of a vehicle as the driver's panel describes it")
 TEST_CASE("queries: the ammeters of a vehicle without power show the current of the ones it controls") {
 	vehicle unpowered{definition::fiz("en57_v1/6ba_840")};
 	vehicle powered{definition::fiz("en57_v1/5bgb")};
-	unpowered->Attach(end::rear, end::front, &powered.mover(), coupling::control, true, false);
+	unpowered->Attach(end::rear, end::front, &powered.mover(), Coupling::control, true, false);
 	powered->Power = 600.0;
 	powered->Itot = 321.7;
 	unpowered->Power = 0.0;

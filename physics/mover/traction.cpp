@@ -303,12 +303,12 @@ double TMoverParameters::ShowEngineRotation(int VehN) const
 		return std::abs(enrot);
 	case 2:
 		for (b = 0; b <= 1; ++b)
-			if (TestFlag(Couplers[b].CouplingFlag, coupling::control) && Couplers[b].Connected->Power > 0.01)
+			if (Couplers[b].CouplingFlag.HasAll(Coupling::control) && Couplers[b].Connected->Power > 0.01)
 				return fabs(Couplers[b].Connected->enrot);
 		break;
 	case 3: // to nie uwzględnia ewentualnego odwrócenia pojazdu w środku
 		for (b = 0; b <= 1; ++b)
-			if (TestFlag(Couplers[b].CouplingFlag, coupling::control) && Couplers[b].Connected->Power > 0.01 && TestFlag(Couplers[b].Connected->Couplers[b].CouplingFlag, coupling::control) && Couplers[b].Connected->Couplers[b].Connected->Power > 0.01)
+			if (Couplers[b].CouplingFlag.HasAll(Coupling::control) && Couplers[b].Connected->Power > 0.01 && Couplers[b].Connected->Couplers[b].CouplingFlag.HasAll(Coupling::control) && Couplers[b].Connected->Couplers[b].Connected->Power > 0.01)
 				return fabs(Couplers[b].Connected->Couplers[b].Connected->enrot);
 		break;
 	default:
@@ -412,7 +412,7 @@ bool TMoverParameters::MotorBlowersSwitch(bool State, end const Side, range_t co
 	if (Notify != range_t::local)
 	{
 		SendCtrlToNext(Side == end::front ? VehicleCommand::motorBlowersFrontSwitch : VehicleCommand::motorBlowersRearSwitch, fan.is_enabled ? 1 : 0, CabActive,
-		               Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		               Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return fan.is_enabled != initialstate;
@@ -436,7 +436,7 @@ bool TMoverParameters::MotorBlowersSwitchOff(bool State, end const Side, range_t
 	if (Notify != range_t::local)
 	{
 		SendCtrlToNext(Side == end::front ? VehicleCommand::motorBlowersFrontSwitchOff : VehicleCommand::motorBlowersRearSwitchOff, fan.is_disabled ? 1 : 0, CabActive,
-		               Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		               Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return fan.is_disabled != initialstate;
@@ -456,7 +456,7 @@ bool TMoverParameters::TractionModeSwitch(traction_mode const Mode, range_t cons
 
 	if (Notify != range_t::local && accepted)
 	{
-		SendCtrlToNext(VehicleCommand::tractionMode, Mode == traction_mode::genset ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::tractionMode, Mode == traction_mode::genset ? 1 : 0, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return TractionMode != initialstate;
@@ -548,7 +548,7 @@ bool TMoverParameters::DynamicBrakeSwitch(bool Switch)
 		DBS = true;
 		for (auto &thiscoupler : Couplers)
 			//  with Couplers[b] do
-			if (TestFlag(thiscoupler.CouplingFlag, coupling::control))
+			if (thiscoupler.CouplingFlag.HasAll(Coupling::control))
 				thiscoupler.Connected->DynamicBrakeFlag = Switch;
 		// end;
 		// if (DynamicBrakeType=dbrake_passive) and (TrainType=train_type::et42) then
@@ -1454,7 +1454,7 @@ bool TMoverParameters::FuseFlagCheck(void) const
 		FFC = FuseFlag;
 	else // pobor pradu jezeli niema mocy
 		for (auto &thiscoupler : Couplers)
-			if (TestFlag(thiscoupler.CouplingFlag, coupling::control) && thiscoupler.Connected->Power > 0.01)
+			if (thiscoupler.CouplingFlag.HasAll(Coupling::control) && thiscoupler.Connected->Power > 0.01)
 				FFC = thiscoupler.Connected->FuseFlagCheck();
 
 	return FFC;
@@ -1549,7 +1549,7 @@ bool TMoverParameters::RelayReset(int const Relays, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(VehicleCommand::relayReset, Relays, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::relayReset, Relays, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return reset;
@@ -1637,7 +1637,7 @@ bool TMoverParameters::MaxCurrentSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(VehicleCommand::maxCurrentSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::maxCurrentSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return State != initialstate;
@@ -1684,7 +1684,7 @@ bool TMoverParameters::ResistorsFlagCheck(void) const
 	else // pobor pradu jezeli niema mocy
 	{
 		for (auto &thiscoupler : Couplers)
-			if (TestFlag(thiscoupler.CouplingFlag, coupling::control) && thiscoupler.Connected->Power > 0.01)
+			if (thiscoupler.CouplingFlag.HasAll(Coupling::control) && thiscoupler.Connected->Power > 0.01)
 				RFC = thiscoupler.Connected->ResistorsFlagCheck();
 	}
 	return RFC;
@@ -1722,7 +1722,7 @@ double TMoverParameters::ShowCurrentP(int AmpN) const
 		int current = 0;
 		for (int b = 0; b < 2; b++)
 			// with Couplers[b] do
-			if (TestFlag(Couplers[b].CouplingFlag, coupling::control) && Couplers[b].Connected->Power > 0.01)
+			if (Couplers[b].CouplingFlag.HasAll(Coupling::control) && Couplers[b].Connected->Power > 0.01)
 				current = static_cast<int>(Couplers[b].Connected->ShowCurrent(AmpN));
 		return current;
 	}

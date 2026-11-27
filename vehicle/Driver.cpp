@@ -2504,7 +2504,7 @@ void TController::Activation()
         ZeroDirection();
         mvOccupied->CabOccupied = mvOccupied->CabActive; // użytkownik moze zmienić CabOccupied wychodząc
         mvOccupied->CabDeactivisation(); // tak jest w Train.cpp
-        if (TestFlag(pVehicle->MoverParameters->Couplers[iDirectionOrder < 0 ? end::rear : end::front].CouplingFlag, coupling::control)) {
+        if (pVehicle->MoverParameters->Couplers[iDirectionOrder < 0 ? end::rear : end::front].CouplingFlag.HasAll(Coupling::control)) {
             ZeroLocalBrake();
             if( initialspringbrakestate ) {
                 mvOccupied->SpringBrakeActivate( false );
@@ -2517,7 +2517,7 @@ void TController::Activation()
         // TODO: clean this up, there's lot of redundancy with TMoverParameters::ChangeCab() and TTrain::MoveToVehicle()
         {
             int movedirection { ( iDirection < 0 ? end::rear : end::front ) };
-            auto *targetvehicle { pVehicle->FirstFind( movedirection, coupling::control ) };
+            auto *targetvehicle { pVehicle->FirstFind( movedirection, Coupling::control ) };
             if( pVehicle != targetvehicle ) {
                 auto *targetvehicledriver { targetvehicle->Mechanik }; // zapamiętanie tego, co ewentualnie tam siedzi, żeby w razie dwóch zamienić miejscami
                 // move to the new vehicle
@@ -2854,7 +2854,7 @@ bool TController::CheckVehicles(TOrders user)
         while (p)
         {
             if( p != pVehicle ) {
-                if( false == p->is_connected( pVehicle, coupling::control ) ) {
+                if( false == p->is_connected( pVehicle, Coupling::control ) ) {
                     // NOTE: don't set battery in controllable vehicles, let the user/ai do it explicitly
                     // HACK: wagony muszą mieć baterię załączoną do otwarcia drzwi...
                     p->MoverParameters->BatterySwitch( true );
@@ -2883,8 +2883,8 @@ bool TController::CheckVehicles(TOrders user)
 
         if( user == Connect && true == main ) {
             // HACK: with additional vehicles in the consist ensure all linked vehicles are set to move in the same direction
-            if( pVehicle->Prev(coupling::control) != nullptr
-             || pVehicle->Next(coupling::control) != nullptr ) {
+            if( pVehicle->Prev(Coupling::control) != nullptr
+             || pVehicle->Next(Coupling::control) != nullptr ) {
                 sync_consist_reversers();
             }
             // potentially sync compartment lighting state for the newly connected vehicles
@@ -2912,7 +2912,7 @@ bool TController::CheckVehicles(TOrders user)
 /*
             if( ( true == drivingFlags.connect )
                 && ( true == TestFlag( OrderCurrentGet(), Connect ) ) ) {
-                iCoupler = 0; // dalsza jazda manewrowa już bez łączenia
+                iCoupler = {}; // dalsza jazda manewrowa już bez łączenia
                 drivingFlags.connect = false; // zdjęcie flagi doczepiania
                 SetVelocity( 0, 0, stopJoin ); // wyłączyć przyspieszanie
                 JumpToNextOrder(); // wykonanie następnej komendy
@@ -2921,7 +2921,7 @@ bool TController::CheckVehicles(TOrders user)
         }
 
         // detect push-pull train configurations and mark them accordingly
-        if( frontvehicle->is_connected( pVehicles[ end::rear ], coupling::control ) ) {
+        if( frontvehicle->is_connected( pVehicles[ end::rear ], Coupling::control ) ) {
             // zmiana czoła przez zmianę kabiny
             drivingFlags.pushPull = true;
         }
@@ -2957,7 +2957,7 @@ bool TController::CheckVehicles(TOrders user)
                 // TODO: replace connection test with connection check between last engine and first car, specifically
                 auto const isheatingcouplingactive { (
                     ControlledEnginesCount == 1 ?
-                        frontvehicle->is_connected( pVehicles[ end::rear ], coupling::heating ) :
+                        frontvehicle->is_connected( pVehicles[ end::rear ], Coupling::heating ) :
                         true ) };
                 auto const isheatingneeded {
                     (is_emu() || is_dmu() ? true :
@@ -3023,9 +3023,9 @@ TBrakeSystem TController::consist_brake_system() const {
             // NOTE: we could simplify this by doing only check of the rear coupler, but this can be quite tricky in itself
             // TODO: add easier ways to access front/rear coupler taking into account vehicle's direction
             isepcapable = (vehicle->MoverParameters->Couplers[end::front].Connected == nullptr ||
-			               (vehicle->MoverParameters->Couplers[end::front].CouplingFlag & coupling::control && vehicle->MoverParameters->Couplers[end::front].Connected->Power > -1)) &&
+			               (vehicle->MoverParameters->Couplers[end::front].CouplingFlag & Coupling::control && vehicle->MoverParameters->Couplers[end::front].Connected->Power > -1)) &&
 			              (vehicle->MoverParameters->Couplers[end::rear].Connected == nullptr ||
-			               (vehicle->MoverParameters->Couplers[end::rear].CouplingFlag & coupling::control && vehicle->MoverParameters->Couplers[end::rear].Connected->Power > -1));
+			               (vehicle->MoverParameters->Couplers[end::rear].CouplingFlag & Coupling::control && vehicle->MoverParameters->Couplers[end::rear].Connected->Power > -1));
             vehicle = vehicle->Next(); // kolejny pojazd, podłączony od tyłu (licząc od czoła)
         }
     }
@@ -3634,11 +3634,11 @@ bool TController::IncBrake()
              || mvOccupied->TrainType == train_type::et42 ) {
                 // NOTE: we're doing simplified checks full of presuptions here.
                 // they'll break if someone does strange thing like turning around the second unit
-                if( mvOccupied->Couplers[end::rear].CouplingFlag & coupling::permanent
+                if( mvOccupied->Couplers[end::rear].CouplingFlag & Coupling::permanent
                  && mvOccupied->Couplers[end::rear].Connected->Couplers[end::rear].Connected != nullptr ) {
                     standalone = false;
                 }
-                if( mvOccupied->Couplers[end::front].CouplingFlag & coupling::permanent
+                if( mvOccupied->Couplers[end::front].CouplingFlag & Coupling::permanent
                  && mvOccupied->Couplers[end::front].Connected->Couplers[end::front].Connected != nullptr ) {
                     standalone = false;
                 }
@@ -3655,8 +3655,8 @@ bool TController::IncBrake()
             else {
 /*
                 standalone =
-                    ( ( mvOccupied->Couplers[ 0 ].CouplingFlag == 0 )
-                   && ( mvOccupied->Couplers[ 1 ].CouplingFlag == 0 ) );
+                    ( ( mvOccupied->Couplers[ 0 ].CouplingFlag.Empty() )
+                   && ( mvOccupied->Couplers[ 1 ].CouplingFlag.Empty() ) );
 */
                 if( pVehicles[ end::front ] != pVehicles[ end::rear ] ) {
                     // more detailed version, will use manual braking also for coupled sets of controlled vehicles
@@ -3667,9 +3667,9 @@ bool TController::IncBrake()
                         // TODO: add easier ways to access front/rear coupler taking into account vehicle's direction
                         standalone =
                             (vehicle->MoverParameters->Couplers[end::front].Connected == nullptr ||
-					                  (vehicle->MoverParameters->Couplers[end::front].CouplingFlag & coupling::control && vehicle->MoverParameters->Couplers[end::front].Connected->Power > 1)) &&
+					                  (vehicle->MoverParameters->Couplers[end::front].CouplingFlag & Coupling::control && vehicle->MoverParameters->Couplers[end::front].Connected->Power > 1)) &&
 					                 (vehicle->MoverParameters->Couplers[end::rear].Connected == nullptr ||
-					                  (vehicle->MoverParameters->Couplers[end::rear].CouplingFlag & coupling::control && vehicle->MoverParameters->Couplers[end::rear].Connected->Power > 1));
+					                  (vehicle->MoverParameters->Couplers[end::rear].CouplingFlag & Coupling::control && vehicle->MoverParameters->Couplers[end::rear].Connected->Power > 1));
                         vehicle = vehicle->Next(); // kolejny pojazd, podłączony od tyłu (licząc od czoła)
                     }
                 }
@@ -5327,7 +5327,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
         }
         if (NewValue2 != 0) // jeśli podany jest sprzęg
         {
-            iCoupler = std::floor( std::abs( NewValue2 ) ); // jakim sprzęgiem
+            iCoupler = CouplingSet::FromBits( static_cast<int>( std::floor( std::abs( NewValue2 ) ) ) ); // jakim sprzęgiem
             OrderNext(Connect); // najpierw połącz pojazdy
             if (NewValue1 >= 0.0) // jeśli ilość wagonów inna niż wszystkie
             { // to po podpięciu należy się odczepić
@@ -6764,7 +6764,7 @@ TController::determine_consist_state() {
     auto islocalconverterswitchoff { false };
 
     pVehicle->for_each(
-        coupling::control,
+        Coupling::control,
         [this, &islocalconverterswitchoff]( TDynamicObject * Vehicle ) {
             auto const *vehicle { Vehicle->MoverParameters };
             islocalconverterswitchoff |= vehicle->LineContactorsHeldByLocalConverterSwitch();
@@ -6982,7 +6982,7 @@ TController::control_pantographs() {
 
     // raise/lower pantographs as needed
     auto const useregularpantographlayout {
-        pVehicle->Next(coupling::control) == nullptr // standalone
+        pVehicle->Next(Coupling::control) == nullptr // standalone
      || is_emu() // special case
      || mvControlling->TrainType == train_type::et41 }; // special case
 
@@ -7642,7 +7642,7 @@ TController::check_departure() {
             }
         }
     }
-    else if( VelSignal == 0.0 && VelNext > 0.0 && mvOccupied->Vel < 1.0 && (iCoupler > 0 || ( false == drivingFlags.stopHere )) ) {
+    else if( VelSignal == 0.0 && VelNext > 0.0 && mvOccupied->Vel < 1.0 && (false == iCoupler.Empty() || ( false == drivingFlags.stopHere )) ) {
 		// Ra: tu jest coś nie tak, bo bez tego warunku ruszało w manewrowym !!!!
 		SetVelocity(VelNext, VelNext, stopSem); // omijanie SBL
 	}
@@ -7823,7 +7823,7 @@ TController::UpdateConnect() {
             // jeżeli został podłączony
             CheckVehicles( Connect ); // sprawdzić światła nowego składu
 
-            iCoupler = 0; // dalsza jazda manewrowa już bez łączenia
+            iCoupler = {}; // dalsza jazda manewrowa już bez łączenia
             iCouplingVehicle.reset();
             drivingFlags.connect = false; // zdjęcie flagi doczepiania
             JumpToNextOrder( true ); // wykonanie następnej komendy
@@ -7873,11 +7873,11 @@ TController::unit_count( int const Threshold ) const {
             end::rear :
             end::front ) };
         auto const coupling { vehicle->MoverParameters->Couplers[ decoupledend ].CouplingFlag };
-        if( coupling == coupling::faux ) {
+        if( coupling == Coupling::none ) {
             break;
         }
         // jeżeli sprzęg zablokowany to liczymy człony jako jeden
-        if( ( coupling & coupling::permanent ) == 0 ) {
+        if( false == coupling.HasAny( Coupling::permanent ) ) {
             ++unitcount;
         }
         vehicle = vehicle->Next();
@@ -7920,7 +7920,7 @@ TController::UpdateDisconnect() {
                     end::front :
                     end::rear;
                 // jeżeli sprzęg zablokowany to liczymy człony jako jeden
-                if( decoupledvehicle->MoverParameters->Couplers[ decoupledend ].CouplingFlag & coupling::permanent ) {
+                if( decoupledvehicle->MoverParameters->Couplers[ decoupledend ].CouplingFlag & Coupling::permanent ) {
                     ++vehiclecount;
                 }
                 if( decoupledvehicle != pVehicle ) {
@@ -7943,7 +7943,7 @@ TController::UpdateDisconnect() {
                     decoupledvehicle->Dettach( decoupledend );
                 }
                 // tylko jeśli odepnie
-                if( decoupledvehicle->MoverParameters->Couplers[ decoupledend ].CouplingFlag == coupling::faux ) {
+                if( decoupledvehicle->MoverParameters->Couplers[ decoupledend ].CouplingFlag == Coupling::none ) {
                     WriteLog( "Uncoupling [" + mvOccupied->Name + "]: uncoupled" );
                     iVehicleCount = -2;
                     // update trainset state
@@ -9589,7 +9589,7 @@ TController::check_route_ahead( double const Range ) {
         if( ( OrderCurrentGet() & ~( Shunt | Loose_shunt | Obey_train | Bank ) ) == 0 ) { // jedzie w dowolnym trybie albo Wait_for_orders
             PutCommand( "ShuntVelocity", VelSignal, VelNext, nullptr );
         }
-        else if( iCoupler ) { // jeśli jedzie w celu połączenia
+        else if( false == iCoupler.Empty() ) { // jeśli jedzie w celu połączenia
             SetVelocity( VelSignal, VelNext );
         }
         break;

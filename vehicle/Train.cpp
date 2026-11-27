@@ -913,7 +913,7 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	}
 
 	bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
-	TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, 4);
+	TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, Coupling::control);
 	int in = 0;
 	while (p && in < 8)
 	{
@@ -928,7 +928,7 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 				dict->insert("eimp_c" + std::to_string(in) + "_inv" + std::to_string(j + 1) + "_allow", p->MoverParameters->Inverters[j].Activate);
 			}
 		}
-		p = kier ? p->Next(4) : p->Prev(4);
+		p = kier ? p->Next(Coupling::control) : p->Prev(Coupling::control);
 	}
 	for (int i = 0; i < 20; ++i)
 	{
@@ -1117,11 +1117,11 @@ void TTrain::set_paired_open_motor_connectors_button(bool const State)
 	{
 		// crude implementation of the button affecting entire unit for multi-unit engines
 		// TODO: rework it into part of standard command propagation system
-		if (mvControlled->Couplers[end::front].Connected != nullptr && true == TestFlag(mvControlled->Couplers[end::front].CouplingFlag, coupling::permanent))
+		if (mvControlled->Couplers[end::front].Connected != nullptr && true == mvControlled->Couplers[end::front].CouplingFlag.HasAll(Coupling::permanent))
 		{
 			mvControlled->Couplers[end::front].Connected->StLinSwitchOff = State;
 		}
-		if (mvControlled->Couplers[end::rear].Connected != nullptr && true == TestFlag(mvControlled->Couplers[end::rear].CouplingFlag, coupling::permanent))
+		if (mvControlled->Couplers[end::rear].Connected != nullptr && true == mvControlled->Couplers[end::rear].CouplingFlag.HasAll(Coupling::permanent))
 		{
 			mvControlled->Couplers[end::rear].Connected->StLinSwitchOff = State;
 		}
@@ -7401,7 +7401,7 @@ void TTrain::OnCommand_inverterenable(TTrain *Train, command_data const &Command
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
 		bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
-		int flag = Train->DynamicObject->MoverParameters->InverterControlCouplerFlag;
+		auto const flag{CouplingSet::FromBits(Train->DynamicObject->MoverParameters->InverterControlCouplerFlag)};
 		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
@@ -7440,7 +7440,7 @@ void TTrain::OnCommand_inverterdisable(TTrain *Train, command_data const &Comman
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
 		bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
-		int flag = Train->DynamicObject->MoverParameters->InverterControlCouplerFlag;
+		auto const flag{CouplingSet::FromBits(Train->DynamicObject->MoverParameters->InverterControlCouplerFlag)};
 		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
@@ -7479,7 +7479,7 @@ void TTrain::OnCommand_invertertoggle(TTrain *Train, command_data const &Command
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
 		bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
-		int flag = Train->DynamicObject->MoverParameters->InverterControlCouplerFlag;
+		auto const flag{CouplingSet::FromBits(Train->DynamicObject->MoverParameters->InverterControlCouplerFlag)};
 		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
@@ -8807,7 +8807,7 @@ void TTrain::OnCommand_cabchangeforward(TTrain *Train, command_data const &Comma
 		if (auto const movedirection{1}; false == Train->CabChange(movedirection))
 		{
 			auto const exitdirection{(movedirection > 0 ? end::front : end::rear)};
-			if (TestFlag(Train->mvOccupied->Couplers[exitdirection].CouplingFlag, coupling::gangway))
+			if (Train->mvOccupied->Couplers[exitdirection].CouplingFlag.HasAll(Coupling::gangway))
 			{
 				// przejscie do nastepnego pojazdu
 				auto *targetvehicle = exitdirection == end::front ? Train->DynamicObject->PrevConnected() : Train->DynamicObject->NextConnected();
@@ -8837,7 +8837,7 @@ void TTrain::OnCommand_cabchangebackward(TTrain *Train, command_data const &Comm
 		{
 			// current vehicle doesn't extend any farther in this direction, check if we there's one connected we can move to
 			auto const exitdirection{(movedirection > 0 ? end::front : end::rear)};
-			if (TestFlag(Train->mvOccupied->Couplers[exitdirection].CouplingFlag, coupling::gangway))
+			if (Train->mvOccupied->Couplers[exitdirection].CouplingFlag.HasAll(Coupling::gangway))
 			{
 				// przejscie do nastepnego pojazdu
 				auto *targetvehicle = exitdirection == end::front ? Train->DynamicObject->PrevConnected() : Train->DynamicObject->NextConnected();
@@ -9153,7 +9153,7 @@ bool TTrain::Update(double const Deltatime)
 	}
 
 	bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
-	TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, 4);
+	TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, Coupling::control);
 	int in = 0;
 	fEIMParams[0][6] = 0;
 	iCarNo = 0;
@@ -9262,9 +9262,9 @@ bool TTrain::Update(double const Deltatime)
 				in++;
 				iPowerNo = in;
 			}
-			if ((kier ? p->Next(coupling::permanent) : p->Prev(coupling::permanent)) != (kier ? p->Next(coupling::control) : p->Prev(coupling::control)))
+			if ((kier ? p->Next(Coupling::permanent) : p->Prev(Coupling::permanent)) != (kier ? p->Next(Coupling::control) : p->Prev(Coupling::control)))
 				iUnitNo++;
-			p = kier ? p->Next(coupling::control) : p->Prev(coupling::control);
+			p = kier ? p->Next(Coupling::control) : p->Prev(Coupling::control);
 			iCarNo = i + 1;
 		}
 		else
@@ -9363,9 +9363,9 @@ bool TTrain::Update(double const Deltatime)
 	// youBy - prad w drugim czlonie: galaz lub calosc
 	{
 		TDynamicObject const *tmp{nullptr};
-		if (DynamicObject->NextConnected() && TestFlag(mvControlled->Couplers[end::rear].CouplingFlag, coupling::control) && mvOccupied->CabOccupied == 1)
+		if (DynamicObject->NextConnected() && mvControlled->Couplers[end::rear].CouplingFlag.HasAll(Coupling::control) && mvOccupied->CabOccupied == 1)
 			tmp = DynamicObject->NextConnected();
-		if (DynamicObject->PrevConnected() && TestFlag(mvControlled->Couplers[end::front].CouplingFlag, coupling::control) && mvOccupied->CabOccupied == -1)
+		if (DynamicObject->PrevConnected() && mvControlled->Couplers[end::front].CouplingFlag.HasAll(Coupling::control) && mvOccupied->CabOccupied == -1)
 			tmp = DynamicObject->PrevConnected();
 		if (tmp && tmp->MoverParameters->Power > 0)
 		{
@@ -9565,7 +9565,7 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaStyczn.Turn(mvControlled->LineContactorsLampLit()); // mozna prowadzic rozruch
 		btLampkaPrzekRozn.Turn(!mvControlled->GroundRelay && mvControlled->MainCircuitLampsEnabled()); // relay is off and needs a reset
 		btLampkaNadmSil.Turn(mvControlled->FuseFlagCheck() && mvControlled->MainCircuitLampsEnabled()); // relay is off and needs a reset
-		btLampkaUkrotnienie.Turn(TestFlag(mvControlled->Couplers[mvControlled->CabOccupied == 1 ? rear : front].CouplingFlag, control));
+		btLampkaUkrotnienie.Turn(mvControlled->Couplers[mvControlled->CabOccupied == 1 ? rear : front].CouplingFlag.HasAll(Coupling::control));
 		btLampkaHamPosp.Turn(TestFlag(mvOccupied->Hamulec->GetBrakeStatus(), 1)); // lampka drugiego stopnia hamowania
 		// TODO: youBy wyciągnąć flagę wysokiego stopnia
 		btLampkaNadmWent.Turn(mvControlled->RventRot < 5.0 && mvControlled->ResistorsFlagCheck()); // hunter-121211: lampka zanikowo-pradowego wentylatorow
@@ -9806,9 +9806,9 @@ bool TTrain::Update(double const Deltatime)
 	{ // yB - wskazniki drugiego czlonu
 		TDynamicObject const *tmp{nullptr}; //=mvControlled->mvSecond; //Ra 2014-07: trzeba to jeszcze wyjąć z kabiny...
 		// Ra 2014-07: no nie ma potrzeby szukać tego w każdej klatce
-		if (TestFlag(mvControlled->Couplers[1].CouplingFlag, coupling::control) && mvOccupied->CabOccupied > 0)
+		if (mvControlled->Couplers[1].CouplingFlag.HasAll(Coupling::control) && mvOccupied->CabOccupied > 0)
 			tmp = DynamicObject->NextConnected();
-		if (TestFlag(mvControlled->Couplers[0].CouplingFlag, coupling::control) && mvOccupied->CabOccupied < 0)
+		if (mvControlled->Couplers[0].CouplingFlag.HasAll(Coupling::control) && mvOccupied->CabOccupied < 0)
 			tmp = DynamicObject->PrevConnected();
 
 		if (tmp)
@@ -11560,13 +11560,13 @@ void TTrain::DynamicSet(TDynamicObject *d)
 	mvSecond = nullptr; // gdyby się nic nie znalazło
 	if (mvOccupied->Power > 1.0) // dwuczłonowe lub ukrotnienia, żeby nie szukać każdorazowo
 	{
-		if (mvOccupied->Couplers[1].Connected ? mvOccupied->Couplers[1].AllowedFlag & coupling::control : false)
+		if (mvOccupied->Couplers[1].Connected != nullptr && mvOccupied->Couplers[1].AllowedFlag.HasAny(Coupling::control))
 		{ // gdy jest człon od sprzęgu 1, a sprzęg łączony
 			// warsztatowo (powiedzmy)
 			if (mvOccupied->Couplers[1].Connected->Power > 1.0) // ten drugi ma moc
 				mvSecond = mvOccupied->Couplers[1].Connected; // wskaźnik na drugiego
 		}
-		else if (mvOccupied->Couplers[0].Connected ? mvOccupied->Couplers[0].AllowedFlag & coupling::control : false)
+		else if (mvOccupied->Couplers[0].Connected != nullptr && mvOccupied->Couplers[0].AllowedFlag.HasAny(Coupling::control))
 		{ // gdy jest człon od sprzęgu 0, a sprzęg łączony
 			// warsztatowo (powiedzmy)
 			if (mvOccupied->Couplers[0].Connected->Power > 1.0) // ale ten drugi ma moc
@@ -12355,7 +12355,7 @@ void TTrain::set_cab_controls(int const Cab)
 
 	// finding each inverter - not so optimal, but action ins performed only during changing cabin
 	bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
-	int flag = DynamicObject->MoverParameters->InverterControlCouplerFlag;
+	auto const flag{CouplingSet::FromBits(DynamicObject->MoverParameters->InverterControlCouplerFlag)};
 	int itemstart = 0;
 	for ([[maybe_unused]] auto const &item : ggInverterToggleButtons) // for each button
 	{

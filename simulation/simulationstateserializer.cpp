@@ -1478,7 +1478,7 @@ state_serializer::deserialize_endtrainset( cParser &Input, scene::scratch_data &
                 0,
                 nullptr );
     }
-    if( Scratchpad.trainset.couplings.back() == coupling::faux ) {
+    if( Scratchpad.trainset.couplings.back() == 0 ) { // no coupling
         // jeśli ostatni pojazd ma sprzęg 0 to założymy mu końcówki blaszane (jak AI się odpali, to sobie poprawi)
         // place end signals only on trains without a driver, activate markers otherwise
         Scratchpad.trainset.vehicles.back()->RaLightsSet(
@@ -1625,12 +1625,12 @@ state_serializer::deserialize_dynamic( cParser &Input, scene::scratch_data &Scra
     auto coupling = couplingdatawithparams != std::string::npos ? std::atoi(couplingdata.substr(0, couplingdatawithparams).c_str()) : std::atoi(couplingdata.c_str());
     if( coupling < 0 ) {
         // sprzęg zablokowany (pojazdy nierozłączalne przy manewrach)
-        coupling = -coupling | coupling::permanent;
+        coupling = ( CouplingSet::FromBits( -coupling ) | Coupling::permanent ).Bits();
     }
     if( offset != -1.0
      && std::abs(offset) > 0.5 ) { // maksymalna odległość między sprzęgami - do przemyślenia
         // likwidacja sprzęgu, jeśli odległość zbyt duża - to powinno być uwzględniane w fizyce sprzęgów...
-        coupling = coupling::faux; 
+        coupling = 0; // no coupling
     }
     auto const params = couplingdatawithparams != std::string::npos ? couplingdata.substr(couplingdatawithparams + 1) : "";
     // load amount and type
@@ -1692,8 +1692,8 @@ state_serializer::deserialize_dynamic( cParser &Input, scene::scratch_data &Scra
         }
         // automatically establish permanent connections for couplers which specify them in their definitions
         if( coupling != 0
-         && vehicle->MoverParameters->Couplers[(offset == -1.0 ? end::front : end::rear)].AllowedFlag & coupling::permanent ) {
-            coupling |= coupling::permanent;
+         && vehicle->MoverParameters->Couplers[(offset == -1.0 ? end::front : end::rear)].AllowedFlag & Coupling::permanent ) {
+            coupling = ( CouplingSet::FromBits( coupling ) | Coupling::permanent ).Bits();
         }
         if( true == Scratchpad.trainset.is_open ) {
             Scratchpad.trainset.vehicles.emplace_back( vehicle );

@@ -25,7 +25,7 @@ public:
 	scenario(std::string Name, std::vector<channel> Channels, track const &Track = {0.15, 0.0, catenary_3kv});
 
 	// adds a real vehicle at the back, see consist::add()
-	scenario &add(std::string const &Path, int Cab = 0, int Coupling = consist::full_coupling, double Velocity = 0.0, double Gap = 0.0);
+	scenario &add(std::string const &Path, int Cab = 0, CouplingSet couplings = consist::full_coupling, double Velocity = 0.0, double Gap = 0.0);
 
 	consist &train() { return m_train; }
 	TMoverParameters &vehicle(std::size_t Index) { return m_train[Index].mover(); }

@@ -128,25 +128,6 @@ enum DerailReason
 /// <summary>Fuzzy-logic probability weight: damage caused by wheel slip.</summary>
 #define p_slippdmg (1e-03)
 
-/*typ sprzegu*/
-/// <summary>Coupling type: virtual — vehicles share a track and are aware of each other.</summary>
-static int const ctrain_virtual = 0; // gdy pojazdy na tym samym torze się widzą wzajemnie
-/// <summary>Coupling type: physical coupler.</summary>
-static int const ctrain_coupler = 1; // sprzeg fizyczny
-/// <summary>Coupling type: pneumatic brake hose.</summary>
-static int const ctrain_pneumatic = 2; // przewody hamulcowe
-/// <summary>Coupling type: control cable (multiple-unit).</summary>
-static int const ctrain_controll = 4; // przewody sterujące (ukrotnienie)
-/// <summary>Coupling type: high-voltage power cable.</summary>
-static int const ctrain_power = 8; // przewody zasilające (WN)
-/// <summary>Coupling type: passenger gangway.</summary>
-static int const ctrain_passenger = 16; // mostek przejściowy
-/// <summary>Coupling type: secondary 8 atm pneumatic line (yellow, main air).</summary>
-static int const ctrain_scndpneumatic = 32; // przewody 8 atm (żółte; zasilanie powietrzem)
-/// <summary>Coupling type: high-voltage train heating cable.</summary>
-static int const ctrain_heating = 64; // przewody ogrzewania WN
-/// <summary>Coupling type: permanent (inter-section) — not separable during ordinary shunting; encoded as negative in config files.</summary>
-static int const ctrain_depot = 128; // nie rozłączalny podczas zwykłych manewrów (międzyczłonowy), we wpisie wartość ujemna
 /// <summary>Vehicle ends — front or rear (mutually exclusive).</summary>
 enum end
 {
@@ -165,35 +146,130 @@ enum side
 	left = 1
 };
 
-/// <summary>Bit flags representing the kind of physical/logical connections in a coupling. Combinable.</summary>
-enum coupling
+/// <summary>The kinds of connection a coupling between two vehicles makes. The numbers are the ones of the scenery
+/// files and the vehicle definitions (AllowedFlag, the coupling of a vehicle in a train), where they add up.</summary>
+enum class Coupling : unsigned
 {
-	/// <summary>No coupling (virtual / not connected).</summary>
-	faux = 0x0,
-	/// <summary>Mechanical coupler.</summary>
-	coupler = 0x1,
-	/// <summary>Pneumatic brake hose (PG).</summary>
-	brakehose = 0x2,
-	/// <summary>Control cable (multiple-unit).</summary>
-	control = 0x4,
-	/// <summary>High-voltage cable (traction supply).</summary>
-	highvoltage = 0x8,
-	/// <summary>Passenger gangway.</summary>
-	gangway = 0x10,
-	/// <summary>Main air (8 atm) line — secondary pneumatic supply.</summary>
-	mainhose = 0x20,
-	/// <summary>Train heating cable.</summary>
-	heating = 0x40,
-	/// <summary>Permanent (non-separable) coupling.</summary>
-	permanent = 0x80,
-	/// <summary>24 V auxiliary power cable.</summary>
-	power24v = 0x100,
-	/// <summary>110 V auxiliary power cable.</summary>
-	power110v = 0x200,
-	/// <summary>3-phase 400 V auxiliary power cable.</summary>
-	power3x400v = 0x400,
-	//    uic = 0x1000,
+	none = 0x0, // the vehicles only see each other (virtual)
+	coupler = 0x1, // the mechanical coupler
+	brakeHose = 0x2, // the brake pipe
+	control = 0x4, // the control cable of the multiple unit
+	highVoltage = 0x8, // the high voltage cable of the traction supply
+	gangway = 0x10, // the gangway for the passengers
+	mainHose = 0x20, // the main reservoir pipe (8 bar, yellow)
+	heating = 0x40, // the high voltage cable of the train heating
+	permanent = 0x80, // not parted by usual shunting (between the sections of a unit); negative in a definition
+	power24v = 0x100, // the 24 V cable
+	power110v = 0x200, // the 110 V cable
+	power3x400v = 0x400, // the 3x400 V cable
 };
+
+/// <summary>A set of the kinds of connection of a coupling: what a coupling joins, what a vehicle allows, what a
+/// command needs to pass. Read from and written to the numbers of the files only through FromBits() and Bits().</summary>
+class CouplingSet
+{
+public:
+	constexpr CouplingSet() = default;
+	constexpr CouplingSet(Coupling const kind) : bits{static_cast<unsigned>(kind)} {} // NOSONAR: a kind is a set of one
+	// the set the number of a file gives (the sum of the numbers of the kinds)
+	static constexpr CouplingSet FromBits(int const number)
+	{
+		CouplingSet set;
+		set.bits = static_cast<unsigned>(number);
+		return set;
+	}
+	// every kind of coupling: a coupling of any kind has one of them
+	static constexpr CouplingSet All()
+	{
+		return FromBits(-1);
+	}
+	// any kind at all: as the old number was true when it wasn't zero
+	constexpr explicit operator bool() const
+	{
+		return bits != 0;
+	}
+	// the number of the set, for the files and the log
+	constexpr int Bits() const
+	{
+		return static_cast<int>(bits);
+	}
+	constexpr bool Empty() const
+	{
+		return bits == 0;
+	}
+	// all the kinds of the other set are in this one
+	constexpr bool HasAll(CouplingSet const other) const
+	{
+		return (bits & other.bits) == other.bits;
+	}
+	// any of the kinds of the other set is in this one
+	constexpr bool HasAny(CouplingSet const other) const
+	{
+		return (bits & other.bits) != 0;
+	}
+	// adds the kinds; returns whether any of them was missing
+	constexpr bool Set(CouplingSet const other)
+	{
+		if (HasAll(other))
+		{
+			return false;
+		}
+		bits |= other.bits;
+		return true;
+	}
+	// takes the kinds away, where all of them are there; returns whether it did
+	constexpr bool Clear(CouplingSet const other)
+	{
+		if (false == HasAll(other))
+		{
+			return false;
+		}
+		bits &= ~other.bits;
+		return true;
+	}
+	// this set without the kinds of the other
+	constexpr CouplingSet Without(CouplingSet const other) const
+	{
+		return FromBits(static_cast<int>(bits & ~other.bits));
+	}
+	constexpr CouplingSet &operator|=(CouplingSet const other)
+	{
+		bits |= other.bits;
+		return *this;
+	}
+	constexpr CouplingSet &operator&=(CouplingSet const other)
+	{
+		bits &= other.bits;
+		return *this;
+	}
+	friend constexpr CouplingSet operator|(CouplingSet left, CouplingSet const right)
+	{
+		return left |= right;
+	}
+	friend constexpr CouplingSet operator&(CouplingSet left, CouplingSet const right)
+	{
+		return left &= right;
+	}
+	// the kinds in one of the sets and not in the other: what changed between them
+	constexpr CouplingSet &operator^=(CouplingSet const other)
+	{
+		bits ^= other.bits;
+		return *this;
+	}
+	friend constexpr CouplingSet operator^(CouplingSet left, CouplingSet const right)
+	{
+		return left ^= right;
+	}
+	friend constexpr bool operator==(CouplingSet const &left, CouplingSet const &right) = default;
+
+private:
+	unsigned bits{0};
+};
+
+constexpr CouplingSet operator|(Coupling const left, Coupling const right)
+{
+	return CouplingSet{left} | CouplingSet{right};
+}
 /// <summary>Range of effect for a control command (mutually exclusive).</summary>
 enum class range_t
 {
@@ -616,7 +692,7 @@ struct TCommand
 	/// <summary>Second numeric argument.</summary>
 	double Value2 = 0.0;
 	/// <summary>Coupling flag controlling how the command propagates between vehicles.</summary>
-	int Coupling{coupling::control}; // coupler flag used to determine command propagation
+	CouplingSet couplings{Coupling::control}; // the couplings the command passes through
 	/// <summary>World-space location associated with the command.</summary>
 	TLocation Location;
 };

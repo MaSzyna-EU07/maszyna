@@ -479,13 +479,13 @@ struct TCoupling
 	double FmaxC = 1000.0;
 	double beta = 0.0;
 	TCouplerType CouplerType = TCouplerType::NoCoupler; /*typ sprzegu*/
-	int AutomaticCouplingFlag = coupling::coupler;
-	int AllowedFlag = coupling::coupler | coupling::brakehose; // Ra: maska dostępnych
-	int PowerFlag = coupling::power110v | coupling::power24v;
-	int PowerCoupling = coupling::permanent; // type of coupling required for power transfer
+	CouplingSet AutomaticCouplingFlag{Coupling::coupler};
+	CouplingSet AllowedFlag{Coupling::coupler | Coupling::brakeHose}; // Ra: maska dostępnych
+	CouplingSet PowerFlag{Coupling::power110v | Coupling::power24v};
+	CouplingSet PowerCoupling{Coupling::permanent}; // type of coupling required for power transfer
 	/*zmienne*/
 	bool AutomaticCouplingAllowed{true}; // whether automatic coupling can be currently performed
-	int CouplingFlag = 0; /*0 - wirtualnie, 1 - sprzegi, 2 - pneumatycznie, 4 - sterowanie, 8 - kabel mocy*/
+	CouplingSet CouplingFlag; // what the coupling joins; none: the vehicles only see each other
 	class TMoverParameters *Connected = nullptr; /*co jest podlaczone*/
 	int ConnectedNr = 0; // Ra: od której strony podłączony do (Connected): 0=przód, 1=tył
 	double CForce = 0.0; /*sila z jaka dzialal*/
@@ -502,29 +502,29 @@ struct TCoupling
 	power_coupling power_110v;
 	power_coupling power_24v;
 	// the circuit of the power coupling given, nullptr for a coupling which isn't one
-	power_coupling *power(coupling const Coupling)
+	power_coupling *power(Coupling const kind)
 	{
-		switch (Coupling)
+		switch (kind)
 		{
-		case coupling::highvoltage:
+		case Coupling::highVoltage:
 			return &power_high;
-		case coupling::power110v:
+		case Coupling::power110v:
 			return &power_110v;
-		case coupling::power24v:
+		case Coupling::power24v:
 			return &power_24v;
 		default:
 			return nullptr;
 		}
 	}
-	power_coupling const *power(coupling const Coupling) const
+	power_coupling const *power(Coupling const kind) const
 	{
-		switch (Coupling)
+		switch (kind)
 		{
-		case coupling::highvoltage:
+		case Coupling::highVoltage:
 			return &power_high;
-		case coupling::power110v:
+		case Coupling::power110v:
 			return &power_110v;
-		case coupling::power24v:
+		case Coupling::power24v:
 			return &power_24v;
 		default:
 			return nullptr;
@@ -1768,7 +1768,7 @@ class TMoverParameters
 	// obsługa sprzęgów
 	static double CouplerDist(TMoverParameters const *Left, TMoverParameters const *Right);
 	static double Distance(const TLocation &Loc1, const TLocation &Loc2, const TDimension &Dim1, const TDimension &Dim2);
-	bool Attach(int ConnectNo, int ConnectToNr, TMoverParameters *ConnectTo, int CouplingType, bool Enforce = false, bool Audible = true);
+	bool Attach(int ConnectNo, int ConnectToNr, TMoverParameters *ConnectTo, CouplingSet CouplingType, bool Enforce = false, bool Audible = true);
 	int DettachStatus(int ConnectNo);
 	bool Dettach(int ConnectNo);
 	void damage_coupler(int const End);
@@ -1859,7 +1859,7 @@ class TMoverParameters
 	double ShowEngineRotation(int VehN) const;
 
 	// Q *******************************************************************************************
-	double GetTrainsetVoltage(int const Coupling = coupling::heating | coupling::highvoltage) const;
+	double GetTrainsetVoltage(CouplingSet const couplings = Coupling::heating | Coupling::highVoltage) const;
 	double GetTrainsetHighVoltage() const;
 	// what turns the physics on, counted for the debug panel (Timer::switching_counter)
 	enum class wake_cause
@@ -1893,20 +1893,20 @@ class TMoverParameters
 	double EngineMaxRPM() const;
 
 	/*! przesylanie komend sterujacych*/
-	bool SendCtrlToNext(VehicleCommand const CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = coupling::control);
-	bool SetInternalCommand(VehicleCommand const NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
-	bool RunCommand(VehicleCommand const Command, double CValue1, double CValue2, int const Couplertype = coupling::control, std::string_view Argument = {});
+	bool SendCtrlToNext(VehicleCommand const CtrlCommand, double const ctrlvalue, double const dir, CouplingSet const Couplertype = Coupling::control);
+	bool SetInternalCommand(VehicleCommand const NewCommand, double NewValue1, double NewValue2, CouplingSet const Couplertype = Coupling::control);
+	bool RunCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet const Couplertype = Coupling::control, std::string_view Argument = {});
 	// the parts of RunCommand(), by the area of the commands
-	bool RunControllerCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunRelaysCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunCabCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunBrakeCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunBrakeEquipmentCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunAuxiliariesCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunPumpsCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunBlowersCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunPowerCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
-	bool RunDoorsCommand(VehicleCommand const Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunControllerCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet Couplertype, bool &OK);
+	bool RunRelaysCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet Couplertype, bool &OK);
+	bool RunCabCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet Couplertype, bool &OK);
+	bool RunBrakeCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet Couplertype, bool &OK);
+	bool RunBrakeEquipmentCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet Couplertype, bool &OK);
+	bool RunAuxiliariesCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet Couplertype, bool &OK);
+	bool RunPumpsCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet Couplertype, bool &OK);
+	bool RunBlowersCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet Couplertype, bool &OK);
+	bool RunPowerCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet Couplertype, bool &OK);
+	bool RunDoorsCommand(VehicleCommand const Command, double CValue1, double CValue2, CouplingSet Couplertype, bool &OK);
 	void DoorPermitCommand(double CValue1, double CValue2);
 	void DoorRemoteCommand(bool Open, double CValue1, double CValue2);
 	bool RunLoadCommand(VehicleCommand const Command, double CValue1, double CValue2, std::string_view Argument, bool &OK);
@@ -2111,7 +2111,7 @@ class TMoverParameters
 	bool ControlCouplingAllowed(int const End, TMoverParameters const &Other, int const OtherEnd) const;
 	// the CouplingType to join the End of this vehicle and the OtherEnd of the other one with, without the control coupling
 	// when ControlCouplingAllowed() rules it out. a permanent coupling (of the vehicles of one unit) is kept whole
-	int CompatibleCoupling(int const End, TMoverParameters const &Other, int const OtherEnd, int const CouplingType) const;
+	CouplingSet CompatibleCoupling(int const End, TMoverParameters const &Other, int const OtherEnd, CouplingSet const CouplingType) const;
 	// the horns of the Signal (WarningSignal bits) which have the air or the voltage they need to sound
 	int SoundingHorns(int const Signal) const;
 	// whether the signal lamps of the main circuit (line contactors, ground relay, motor overload relays) can light:
@@ -2225,12 +2225,12 @@ class TMoverParameters
 	/*-funkcje typowe dla lokomotywy elektrycznej*/
 	void LowVoltagePowerCheck(double const Deltatime);
 	void MainsCheck(double const Deltatime);
-	void PowerCouplersCheck(double const Deltatime, coupling const Coupling);
+	void PowerCouplersCheck(double const Deltatime, Coupling const kind);
 	// the parts of PowerCouplersCheck()
-	double LocalPowerVoltage(coupling Coupling);
-	void PowerCouplersVoltage(coupling Coupling, double abslocalvoltage, bool localpowersource);
-	void PowerCouplersCurrent(coupling Coupling, bool localpowersource);
-	double *PowerCircuitCurrent(coupling Coupling);
+	double LocalPowerVoltage(Coupling kind);
+	void PowerCouplersVoltage(Coupling kind, double abslocalvoltage, bool localpowersource);
+	void PowerCouplersCurrent(Coupling kind, bool localpowersource);
+	double *PowerCircuitCurrent(Coupling kind);
 	void ConverterCheck(double const Timestep); // przetwornica
 	void HeatingCheck(double const Timestep);
 	void WaterPumpCheck(double const Timestep);

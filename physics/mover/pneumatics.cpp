@@ -248,7 +248,7 @@ bool TMoverParameters::SpringBrakeActivate(bool State)
 {
 	if (Power24vIsAvailable || Power110vIsAvailable)
 	{
-		SendCtrlToNext(VehicleCommand::springBrakeActivate, int(State), CabActive, SpringBrake.MultiTractionCoupler);
+		SendCtrlToNext(VehicleCommand::springBrakeActivate, int(State), CabActive, CouplingSet::FromBits(SpringBrake.MultiTractionCoupler));
 
 		if (SpringBrake.Activate != State)
 		{
@@ -323,7 +323,7 @@ bool TMoverParameters::CompressorSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(VehicleCommand::compressorSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::compressorSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return CompressorAllow != initialstate;
@@ -338,7 +338,7 @@ bool TMoverParameters::ChangeCompressorPreset(int const State, range_t const Not
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(VehicleCommand::compressorPreset, State, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::compressorPreset, State, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return CompressorListPos != initialstate;
@@ -828,8 +828,8 @@ void TMoverParameters::CompressorCheck(double dt)
 	// NOTE: this is crude implementation, limited only to adjacent vehicles
 	// TODO: re-implement when a more elegant/flexible system is in place
 	auto const coupledgovernorlock{
-	    (Couplers[end::rear].Connected != nullptr && true == TestFlag(Couplers[end::rear].CouplingFlag, coupling::permanent) && Couplers[end::rear].Connected->CompressorGovernorLock) ||
-	    (Couplers[end::front].Connected != nullptr && true == TestFlag(Couplers[end::front].CouplingFlag, coupling::permanent) && Couplers[end::front].Connected->CompressorGovernorLock)};
+	    (Couplers[end::rear].Connected != nullptr && true == Couplers[end::rear].CouplingFlag.HasAll(Coupling::permanent) && Couplers[end::rear].Connected->CompressorGovernorLock) ||
+	    (Couplers[end::front].Connected != nullptr && true == Couplers[end::front].CouplingFlag.HasAll(Coupling::permanent) && Couplers[end::front].Connected->CompressorGovernorLock)};
 	auto const governorlock{CompressorGovernorLock || coupledgovernorlock};
 
 	auto const compressorflag{CompressorFlag};
@@ -1141,7 +1141,7 @@ void TMoverParameters::UpdateDistributorSettings()
 		for (auto const &couplerentry : Couplers)
 			// nie podoba mi się to rozwiązanie, chyba trzeba
 			// dodać jakiś wpis do fizyki na to
-			if (et41or42(TrainType) && couplerentry.Connected != nullptr && et41or42(couplerentry.Connected->TrainType) && (couplerentry.CouplingFlag & 36) == 36)
+			if (et41or42(TrainType) && couplerentry.Connected != nullptr && et41or42(couplerentry.Connected->TrainType) && couplerentry.CouplingFlag.HasAll(Coupling::control | Coupling::mainHose))
 				LocBrakePress = std::max(couplerentry.Connected->LocHandle->GetCP(), LocBrakePress);
 
 		// if ((DynamicBrakeFlag) && (EngineType == ElectricInductionMotor))
@@ -1349,7 +1349,7 @@ double TMoverParameters::GetDVc(double dt)
 	dv1 = 0;
 	dv2 = 0;
 	// sprzeg 1
-	if (Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic))
+	if (Couplers[0].Connected != nullptr && Couplers[0].CouplingFlag.HasAll(Coupling::brakeHose))
 	{ //*0.85
 		c = Couplers[0].Connected; // skrot           //0.08           //e/D * L/D = e/D^2 * L
 		dv1 = 0.5 * dt * PF(PipePress, neighbour_pipe_pressure(*c, c->PipePress, *c->Pipe), Spg / (1.0 + 0.015 / Spg * Dim.L));
@@ -1358,7 +1358,7 @@ double TMoverParameters::GetDVc(double dt)
 			c->switch_physics(true, wake_cause::mainpipe);
 	}
 	// sprzeg 2
-	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic))
+	if (Couplers[1].Connected != nullptr && Couplers[1].CouplingFlag.HasAll(Coupling::brakeHose))
 	{
 		c = Couplers[1].Connected; // skrot
 		dv2 = 0.5 * dt * PF(PipePress, neighbour_pipe_pressure(*c, c->PipePress, *c->Pipe), Spg / (1.0 + 0.015 / Spg * Dim.L));
@@ -1367,8 +1367,8 @@ double TMoverParameters::GetDVc(double dt)
 			c->switch_physics(true, wake_cause::mainpipe);
 	}
 	// if ((Couplers[1].Connected != NULL) && (Couplers[0].Connected != NULL))
-	//     if ((TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic)) &&
-	//         (TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic)))
+	//     if ((Couplers[0].CouplingFlag.HasAll(Coupling::brakeHose)) &&
+	//         (Couplers[1].CouplingFlag.HasAll(Coupling::brakeHose)))
 	//     {
 	//         dV = 0.05 * dt * PF(Couplers[0].Connected->PipePress, Couplers[1].Connected->PipePress,
 	//                             (Spg * 0.85) / (1 + 0.03 * Dim.L)) *
@@ -1392,7 +1392,7 @@ double TMoverParameters::GetScndDVc(double dt)
 	double dv2 = 0;
 
 	// sprzeg 1
-	if (Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic))
+	if (Couplers[0].Connected != nullptr && Couplers[0].CouplingFlag.HasAll(Coupling::mainHose))
 	{
 		c = Couplers[0].Connected; // skrot
 		dv1 = 0.5 * dt * PF(ScndPipePress, neighbour_pipe_pressure(*c, c->ScndPipePress, *c->Pipe2), Spz * 0.75);
@@ -1401,7 +1401,7 @@ double TMoverParameters::GetScndDVc(double dt)
 			c->switch_physics(true, wake_cause::scndpipe);
 	}
 	// sprzeg 2
-	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
+	if (Couplers[1].Connected != nullptr && Couplers[1].CouplingFlag.HasAll(Coupling::mainHose))
 	{
 		c = Couplers[1].Connected; // skrot
 		dv2 = 0.5 * dt * PF(ScndPipePress, neighbour_pipe_pressure(*c, c->ScndPipePress, *c->Pipe2), Spz * 0.75);
@@ -1409,7 +1409,7 @@ double TMoverParameters::GetScndDVc(double dt)
 		if (pipe_wakes(dv2, ScndPipePress, *c->Pipe2))
 			c->switch_physics(true, wake_cause::scndpipe);
 	}
-	if (Couplers[1].Connected != nullptr && Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic) && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
+	if (Couplers[1].Connected != nullptr && Couplers[0].Connected != nullptr && Couplers[0].CouplingFlag.HasAll(Coupling::mainHose) && Couplers[1].CouplingFlag.HasAll(Coupling::mainHose))
 	{
 		double const dV = 0.00025 * dt * PF(Couplers[0].Connected->ScndPipePress, Couplers[1].Connected->ScndPipePress, Spz * 0.25);
 		Couplers[0].Connected->Pipe2->Flow(+dV);
@@ -1427,7 +1427,7 @@ struct train_pipe
 	std::shared_ptr<TReservoir> TMoverParameters::*reservoir;
 	double TMoverParameters::*pressure;
 	bool TMoverParameters::*pending; // the vehicle stepped the pipe, the exchange through its hoses is yet to come
-	int hose; // the coupling flag of the pipe's hose
+	CouplingSet hose; // the coupling of the pipe's hose
 	double (TMoverParameters::*exchange)(double); // the air the hoses carry in a step, the neighbours' share sent to them
 	double (*area)(TMoverParameters const &); // the cross-section of the hose, as the exchange takes it
 };
@@ -1436,14 +1436,14 @@ struct train_pipe
 train_pipe const brake_pipe{&TMoverParameters::Pipe,
                             &TMoverParameters::PipePress,
                             &TMoverParameters::PipeCouplersPending,
-                            ctrain_pneumatic,
+                            Coupling::brakeHose,
                             &TMoverParameters::GetDVc,
                             [](TMoverParameters const &Vehicle) { return Vehicle.Spg / (1.0 + 0.015 / Vehicle.Spg * Vehicle.Dim.L); }};
 // the main reservoir pipe, GetScndDVc()
 train_pipe const main_reservoir_pipe{&TMoverParameters::Pipe2,
                                      &TMoverParameters::ScndPipePress,
                                      &TMoverParameters::ScndPipeCouplersPending,
-                                     ctrain_scndpneumatic,
+                                     Coupling::mainHose,
                                      &TMoverParameters::GetScndDVc,
                                      [](TMoverParameters const &) { return 0.5067 * 0.75; }};
 
@@ -1456,7 +1456,7 @@ int hose_substeps(TMoverParameters const &Vehicle, train_pipe const &Pipe, doubl
 	auto const capacity{(Vehicle.*Pipe.reservoir)->GetCap()};
 	for (auto const &hose : Vehicle.Couplers)
 	{
-		if (hose.Connected == nullptr || false == TestFlag(hose.CouplingFlag, Pipe.hose))
+		if (hose.Connected == nullptr || false == hose.CouplingFlag.HasAll(Pipe.hose))
 		{
 			continue;
 		}
@@ -1509,7 +1509,7 @@ std::vector<std::size_t> hose_trains(std::vector<TMoverParameters *> const &Vehi
 			stack.pop_back();
 			for (auto const &hose : vehicle.Couplers)
 			{
-				if (hose.Connected == nullptr || false == TestFlag(hose.CouplingFlag, Pipe.hose))
+				if (hose.Connected == nullptr || false == hose.CouplingFlag.HasAll(Pipe.hose))
 				{
 					continue;
 				}

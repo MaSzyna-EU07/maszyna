@@ -18,7 +18,7 @@ using test::vehicle;
 
 namespace {
 
-constexpr int hook_and_brake_hose{coupling::coupler | coupling::brakehose};
+constexpr CouplingSet hook_and_brake_hose{Coupling::coupler | Coupling::brakeHose};
 
 // an EU07 with nobody in it, its brake pipe held by the test the way a driver's valve would hold it, and the
 // vehicle it hauls. Velocity as of a trainset of a scenery [km/h]: not 0, the vehicles are ready to depart,

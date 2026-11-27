@@ -660,10 +660,10 @@ private:
 	bool HeadlightsAoff{false}; // wygaszone swiatelki A
 	bool HeadlightsBoff{false}; // wygaszone swiatelki B
     // checks whether there's unbroken connection of specified type to specified vehicle
-    bool is_connected( TDynamicObject const *Vehicle, coupling const Coupling = coupling::coupler ) const;
+    bool is_connected( TDynamicObject const *Vehicle, CouplingSet const couplings = Coupling::coupler ) const;
 	TDynamicObject * PrevAny() const;
-	TDynamicObject * Prev(int C = -1) const;
-	TDynamicObject * Next(int C = -1) const;
+	TDynamicObject * Prev(CouplingSet couplings = CouplingSet::All()) const; // the vehicle coupled with any of the couplings given
+	TDynamicObject * Next(CouplingSet couplings = CouplingSet::All()) const;
     void SetdMoveLen(double dMoveLen);
     void ResetdMoveLen();
     double GetdMoveLen();
@@ -687,7 +687,7 @@ private:
 
 	TDynamicObject * ABuScanNearestObject(glm::vec3 pos, TTrack *Track, double ScanDir, double ScanDist,
 	                                                int &CouplNr);
-    TDynamicObject * GetFirstDynamic(int cpl_type, int cf = 1);
+    TDynamicObject * GetFirstDynamic(int cpl_type, CouplingSet cf = Coupling::coupler);
 	void ABuSetModelShake(glm::dvec3 mShake);
 
     // place in vehicle_table::m_items, set by its update for the groups of the physics steps on many threads
@@ -886,7 +886,7 @@ public:
     bool has_signal_pc5_on() const;
     bool has_signal_on( int const Side, int const Pattern ) const;
     void set_cab_lights( int const Cab, float const Level );
-    TDynamicObject * FirstFind(int &coupler_nr, int cf = 1);
+    TDynamicObject * FirstFind(int &coupler_nr, CouplingSet cf = Coupling::coupler);
     float GetEPP(); // wyliczanie sredniego cisnienia w PG
     int DirectionSet(int d); // ustawienie kierunku w składzie
     // odczyt kierunku w składzie; returns 1 if true, -1 otherwise
@@ -905,11 +905,11 @@ public:
     auto find_vehicle( int const Direction, double const Range, bool const InLine = false ) const -> std::tuple<TDynamicObject *, int, double, bool>;
     // locates potential vehicle connected with specific coupling type and satisfying supplied predicate
     template <typename Predicate_>
-    auto find_vehicle( coupling const Coupling, Predicate_ const Predicate ) -> TDynamicObject *;
+    auto find_vehicle( CouplingSet const couplings, Predicate_ const Predicate ) -> TDynamicObject *;
     TDynamicObject * FindPowered();
     TDynamicObject * FindPantographCarrier();
     template <typename UnaryFunction_>
-    void for_each( coupling const Coupling, UnaryFunction_ const Function );
+    void for_each( CouplingSet const couplings, UnaryFunction_ const Function );
     void ParamSet(int what, int into);
     // zapytanie do AI, po którym segmencie skrzyżowania jechać
     int RouteWish(TTrack *tr);
@@ -1050,18 +1050,18 @@ private:
 
 template <typename Predicate_>
 auto
-TDynamicObject::find_vehicle( coupling const Coupling, Predicate_ const Predicate ) -> TDynamicObject * {
+TDynamicObject::find_vehicle( CouplingSet const couplings, Predicate_ const Predicate ) -> TDynamicObject * {
 
     if( Predicate( this ) ) {
         return this; }
     // try first to look towards the rear
     auto *vehicle { this };
-    while( ( vehicle = vehicle->Next( Coupling ) ) != nullptr ) {
+    while( ( vehicle = vehicle->Next( couplings ) ) != nullptr ) {
         if( Predicate( vehicle ) ) {
             return vehicle; } }
     // if we didn't yet find a suitable vehicle try in the other direction
     vehicle = this;
-    while( ( vehicle = vehicle->Prev( Coupling ) ) != nullptr ) {
+    while( ( vehicle = vehicle->Prev( couplings ) ) != nullptr ) {
         if( Predicate( vehicle ) ) {
             return vehicle; } }
     // if we still don't have a match give up
@@ -1070,16 +1070,16 @@ TDynamicObject::find_vehicle( coupling const Coupling, Predicate_ const Predicat
 
 template <typename UnaryFunction_>
 void
-TDynamicObject::for_each( coupling const Coupling, UnaryFunction_ const Function ) {
+TDynamicObject::for_each( CouplingSet const couplings, UnaryFunction_ const Function ) {
 
     Function( this );
     // walk first towards the rear
     auto *vehicle { this };
-    while( ( vehicle = vehicle->Next( Coupling ) ) != nullptr ) {
+    while( ( vehicle = vehicle->Next( couplings ) ) != nullptr ) {
         Function( vehicle ); }
     // then towards the front
     vehicle = this;
-    while( ( vehicle = vehicle->Prev( Coupling ) ) != nullptr ) {
+    while( ( vehicle = vehicle->Prev( couplings ) ) != nullptr ) {
         Function( vehicle ); }
 }
 

@@ -344,36 +344,36 @@ void TMoverParameters::LowVoltagePowerCheck(double const /*Deltatime*/)
 	}
 }
 
-void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling const Coupling)
+void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, Coupling const kind)
 {
-	if (Coupling != coupling::highvoltage && Coupling != coupling::power110v && Coupling != coupling::power24v)
+	if (kind != Coupling::highVoltage && kind != Coupling::power110v && kind != Coupling::power24v)
 	{
 		// only power couplings carry voltage
 		return;
 	}
 
-	auto const localvoltage{LocalPowerVoltage(Coupling)};
+	auto const localvoltage{LocalPowerVoltage(kind)};
 
 	auto const abslocalvoltage{std::abs(localvoltage)};
 	auto const localpowersource{(abslocalvoltage > 1.0)};
 
 	// przekazywanie napiec
-	PowerCouplersVoltage(Coupling, abslocalvoltage, localpowersource);
+	PowerCouplersVoltage(kind, abslocalvoltage, localpowersource);
 
 	// przekazywanie pradow
-	PowerCouplersCurrent(Coupling, localpowersource);
+	PowerCouplersCurrent(kind, localpowersource);
 }
 
 // the current the vehicle draws from the circuit of the power coupling given
-double *TMoverParameters::PowerCircuitCurrent(coupling const Coupling)
+double *TMoverParameters::PowerCircuitCurrent(Coupling const kind)
 {
-	switch (Coupling)
+	switch (kind)
 	{
-	case coupling::highvoltage:
+	case Coupling::highVoltage:
 		return &TotalCurrent;
-	case coupling::power110v:
+	case Coupling::power110v:
 		return &PowerCircuits[1].second;
-	case coupling::power24v:
+	case Coupling::power24v:
 		return &PowerCircuits[0].second;
 	default:
 		return nullptr;
@@ -381,16 +381,16 @@ double *TMoverParameters::PowerCircuitCurrent(coupling const Coupling)
 }
 
 // the voltage of the vehicle's own source for the coupling given; notes the low voltage circuits' too
-double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
+double TMoverParameters::LocalPowerVoltage(Coupling const kind)
 {
 	auto localvoltage{0.0};
 
 	// local power sources
 	// the results could be kept in the PowerCircuit fields
-	switch (Coupling)
+	switch (kind)
 	{
 
-	case coupling::highvoltage:
+	case Coupling::highVoltage:
 	{
 		// heating power sources
 		if (Heating)
@@ -428,7 +428,7 @@ double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
 		break;
 	}
 
-	case coupling::power110v:
+	case Coupling::power110v:
 	{
 		if (ConverterFlag)
 		{
@@ -439,7 +439,7 @@ double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
 		break;
 	}
 
-	case coupling::power24v:
+	case Coupling::power24v:
 	{
 		if (Battery)
 		{
@@ -460,9 +460,9 @@ double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
 }
 
 // the voltage passed through the vehicle to the coupler at its other end, from the coupled vehicle or its own source
-void TMoverParameters::PowerCouplersVoltage(coupling const Coupling, double const abslocalvoltage, bool const localpowersource)
+void TMoverParameters::PowerCouplersVoltage(Coupling const kind, double const abslocalvoltage, bool const localpowersource)
 {
-	if (Couplers[end::front].power(Coupling) == nullptr)
+	if (Couplers[end::front].power(kind) == nullptr)
 	{
 		// not a power coupling, there's no voltage to pass
 		return;
@@ -477,29 +477,29 @@ void TMoverParameters::PowerCouplersVoltage(coupling const Coupling, double cons
 		bool oppositecouplingispresent;
 		bool localpowerexportisenabled;
 
-		switch (Coupling)
+		switch (kind)
 		{
 
-		case coupling::highvoltage:
+		case Coupling::highVoltage:
 		{
-			auto const oppositehighvoltagecoupling{(oppositecoupler.CouplingFlag & coupling::highvoltage) != 0};
-			auto const oppositeheatingcoupling{(oppositecoupler.CouplingFlag & coupling::heating) != 0};
+			auto const oppositehighvoltagecoupling{oppositecoupler.CouplingFlag.HasAny(Coupling::highVoltage)};
+			auto const oppositeheatingcoupling{oppositecoupler.CouplingFlag.HasAny(Coupling::heating)};
 
 			oppositecouplingispresent = oppositehighvoltagecoupling || oppositeheatingcoupling;
 			localpowerexportisenabled = oppositehighvoltagecoupling || (oppositeheatingcoupling && localpowersource && Heating);
 			break;
 		}
 
-		case coupling::power110v:
+		case Coupling::power110v:
 		{
-			oppositecouplingispresent = TestFlag(oppositecoupler.CouplingFlag, oppositecoupler.PowerCoupling) && (oppositecoupler.PowerFlag & coupling::power110v) != 0;
+			oppositecouplingispresent = oppositecoupler.CouplingFlag.HasAll(oppositecoupler.PowerCoupling) && oppositecoupler.PowerFlag.HasAny(Coupling::power110v);
 			localpowerexportisenabled = oppositecouplingispresent;
 			break;
 		}
 
-		case coupling::power24v:
+		case Coupling::power24v:
 		{
-			oppositecouplingispresent = TestFlag(oppositecoupler.CouplingFlag, oppositecoupler.PowerCoupling) && (oppositecoupler.PowerFlag & coupling::power24v) != 0;
+			oppositecouplingispresent = oppositecoupler.CouplingFlag.HasAll(oppositecoupler.PowerCoupling) && oppositecoupler.PowerFlag.HasAny(Coupling::power24v);
 			localpowerexportisenabled = oppositecouplingispresent;
 			break;
 		}
@@ -510,8 +510,8 @@ void TMoverParameters::PowerCouplersVoltage(coupling const Coupling, double cons
 		}
 		}
 
-		auto const *coupling = thiscoupler.power(Coupling);
-		auto *oppositecoupling = oppositecoupler.power(Coupling);
+		auto const *coupling = thiscoupler.power(kind);
+		auto *oppositecoupling = oppositecoupler.power(kind);
 
 		// start with base voltage
 		oppositecoupling->voltage = abslocalvoltage;
@@ -521,7 +521,7 @@ void TMoverParameters::PowerCouplersVoltage(coupling const Coupling, double cons
 		if (thiscoupler.Connected != nullptr)
 		{
 			auto const &connectedcoupler{thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr]};
-			auto const *connectedcoupling = connectedcoupler.power(Coupling);
+			auto const *connectedcoupling = connectedcoupler.power(kind);
 			auto const connectedvoltage{(connectedcoupling->is_live ? connectedcoupling->voltage : 0.0)};
 			oppositecoupling->voltage = std::max(oppositecoupling->voltage, connectedvoltage - coupling->current * 0.02);
 			oppositecoupling->is_live = connectedvoltage > 0.1 && oppositecouplingispresent;
@@ -536,11 +536,11 @@ void TMoverParameters::PowerCouplersVoltage(coupling const Coupling, double cons
 }
 
 // the current drawn through the couplers, shared by their voltages, or added to the vehicle's own
-void TMoverParameters::PowerCouplersCurrent(coupling const Coupling, bool const localpowersource)
+void TMoverParameters::PowerCouplersCurrent(Coupling const kind, bool const localpowersource)
 {
-	auto const *frontcoupling{Couplers[end::front].power(Coupling)};
-	auto const *rearcoupling{Couplers[end::rear].power(Coupling)};
-	auto *totalcurrent{PowerCircuitCurrent(Coupling)};
+	auto const *frontcoupling{Couplers[end::front].power(kind)};
+	auto const *rearcoupling{Couplers[end::rear].power(kind)};
+	auto *totalcurrent{PowerCircuitCurrent(kind)};
 	if (frontcoupling == nullptr || rearcoupling == nullptr || totalcurrent == nullptr)
 	{
 		// not a power coupling, there's no current to share
@@ -550,7 +550,7 @@ void TMoverParameters::PowerCouplersCurrent(coupling const Coupling, bool const 
 
 	for (auto &thiscoupler : Couplers)
 	{
-		auto *coupling = thiscoupler.power(Coupling);
+		auto *coupling = thiscoupler.power(kind);
 
 		coupling->current = 0.0;
 
@@ -560,8 +560,8 @@ void TMoverParameters::PowerCouplersCurrent(coupling const Coupling, bool const 
 		}
 
 		auto const &connectedothercoupler{thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr == end::front ? end::rear : end::front]};
-		auto const *connectedothercoupling = connectedothercoupler.power(Coupling);
-		auto const extracurrent = Coupling == coupling::highvoltage ? std::abs(Itot) * IsVehicleEIMBrakingFactor() : 0.0;
+		auto const *connectedothercoupling = connectedothercoupler.power(kind);
+		auto const extracurrent = kind == Coupling::highVoltage ? std::abs(Itot) * IsVehicleEIMBrakingFactor() : 0.0;
 
 		if (false == localpowersource)
 		{
@@ -862,8 +862,8 @@ bool TMoverParameters::BatterySwitch(bool State, range_t const Notify)
 	// switching batteries does not require activation
 	if (Notify != local)
 	{
-		SendCtrlToNext(VehicleCommand::batterySwitch, State ? 1 : 0, 1, Notify == unit ? coupling::control | coupling::permanent : coupling::control);
-		SendCtrlToNext(VehicleCommand::batterySwitch, State ? 1 : 0, -1, Notify == unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::batterySwitch, State ? 1 : 0, 1, Notify == unit ? Coupling::control | Coupling::permanent : Coupling::control);
+		SendCtrlToNext(VehicleCommand::batterySwitch, State ? 1 : 0, -1, Notify == unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return Battery != initialstate;
@@ -884,7 +884,7 @@ bool TMoverParameters::CompartmentLightsSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(VehicleCommand::compartmentLightsSwitch, CompartmentLights.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::compartmentLightsSwitch, CompartmentLights.is_enabled ? 1 : 0, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return CompartmentLights.is_enabled != initialstate;
@@ -906,7 +906,7 @@ bool TMoverParameters::CompartmentLightsSwitchOff(bool State, range_t const Noti
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(VehicleCommand::compartmentLightsSwitchOff, CompartmentLights.is_disabled ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::compartmentLightsSwitchOff, CompartmentLights.is_disabled ? 1 : 0, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return CompartmentLights.is_disabled != initialstate;
@@ -927,7 +927,7 @@ bool TMoverParameters::MainSwitch(bool const State, range_t const Notify)
 	{
 		// pass the command to other vehicles
 		// TBD: pass the requested state, or the actual state?
-		SendCtrlToNext(VehicleCommand::mainSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::mainSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return (Mains || dizel_startup) != initialstate;
@@ -1038,7 +1038,7 @@ bool TMoverParameters::ConverterSwitch(bool State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(VehicleCommand::converterSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::converterSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return ConverterAllow != initialstate;
@@ -1055,7 +1055,7 @@ bool TMoverParameters::HeatingSwitch(bool const State, range_t const Notify)
 	{
 		// pass the command to other vehicles
 		// TBD: pass the requested state, or the actual state?
-		SendCtrlToNext(VehicleCommand::heatingSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::heatingSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return HeatingAllow != initialstate;
@@ -1081,7 +1081,7 @@ bool TMoverParameters::GensetSwitch(bool const State, range_t const Notify)
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(VehicleCommand::gensetSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::gensetSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return Genset.is_enabled != initialstate;
@@ -1207,7 +1207,7 @@ bool TMoverParameters::OperatePantographsValve(operation_t const State, range_t 
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(VehicleCommand::pantographsValve, static_cast<double>(State), CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::pantographsValve, static_cast<double>(State), CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return true;
@@ -1271,7 +1271,7 @@ bool TMoverParameters::OperatePantographValve(end const End, operation_t const S
 		               // HACK: pack the state, pantograph index and sender cab into 8-bit value
 		               // with high bit storing front/rear pantograph, and 7th bit storing sender cab
 		               static_cast<double>(0x80 * (End == end::front ? 0 : 1) + 0x40 * (CabActive != -1 ? 1 : 0) + static_cast<int>(State)), CabActive,
-		               Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		               Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return true;
@@ -1286,7 +1286,7 @@ bool TMoverParameters::DropAllPantographs(bool const State, range_t const Notify
 
 	if (Notify != range_t::local)
 	{
-		SendCtrlToNext(VehicleCommand::pantographsAllDown, State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+		SendCtrlToNext(VehicleCommand::pantographsAllDown, State ? 1 : 0, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
 	return State != initialstate;
@@ -1296,7 +1296,7 @@ bool TMoverParameters::DropAllPantographs(bool const State, range_t const Notify
 // Q: 20160709
 // Funkcja zwracajaca napiecie dla calego skladu, przydatna dla EZT
 // *************************************************************************************************
-double TMoverParameters::GetTrainsetVoltage(int const Coupling) const
+double TMoverParameters::GetTrainsetVoltage(CouplingSet const couplings) const
 { // ABu: funkcja zwracajaca napiecie dla calego skladu, przydatna dla EZT
 	// TBD, TODO: call once per vehicle update, return cached results?
 	std::array<double, 2> voltages{0.0, 0.0};
@@ -1307,13 +1307,13 @@ double TMoverParameters::GetTrainsetVoltage(int const Coupling) const
 			continue;
 		}
 		auto const &thiscoupler{Couplers[end]};
-		if (auto const fullcoupling{thiscoupler.CouplingFlag | (TestFlag(thiscoupler.CouplingFlag, thiscoupler.PowerCoupling) ? thiscoupler.PowerFlag : 0)}; (fullcoupling & Coupling) == 0)
+		if (auto const fullcoupling{thiscoupler.CouplingFlag | (thiscoupler.CouplingFlag.HasAll(thiscoupler.PowerCoupling) ? thiscoupler.PowerFlag : CouplingSet{})}; false == fullcoupling.HasAny(couplings))
 		{
 			continue;
 		}
-		auto const *connectedpowercoupling = (Coupling & (coupling::highvoltage | coupling::heating)) != 0 ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_high :
-		                               (Coupling & coupling::power110v) != 0                         ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_110v :
-		                               (Coupling & coupling::power24v) != 0                          ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_24v :
+		auto const *connectedpowercoupling = couplings.HasAny(Coupling::highVoltage | Coupling::heating) ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_high :
+		                               couplings.HasAny(Coupling::power110v)                         ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_110v :
+		                               couplings.HasAny(Coupling::power24v)                          ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_24v :
 		                                                                                               nullptr;
 		if (connectedpowercoupling != nullptr && connectedpowercoupling->is_live)
 		{
@@ -1326,7 +1326,7 @@ double TMoverParameters::GetTrainsetVoltage(int const Coupling) const
 double TMoverParameters::GetTrainsetHighVoltage() const
 {
 
-	return std::max(GetTrainsetVoltage(coupling::highvoltage), HeatingAllow ? GetTrainsetVoltage(coupling::heating) : 0.0);
+	return std::max(GetTrainsetVoltage(Coupling::highVoltage), HeatingAllow ? GetTrainsetVoltage(Coupling::heating) : 0.0);
 }
 
 int TMoverParameters::clampDimmerPosition(int const Position) const

@@ -125,8 +125,8 @@ definition mixed_wagon(int const Index) {
 	return definition::fiz(Index % 3 == 1 ? "3wl_v2/3wl" : "430w_v2/430w");
 }
 
-vehicle &add_mixed(consist &Train, int const Index, int const Coupling, double const Velocity, double const Gap) {
-	auto &wagon{Train.add(mixed_wagon(Index), 0, Coupling, Velocity, Gap)};
+vehicle &add_mixed(consist &Train, int const Index, CouplingSet const couplings, double const Velocity, double const Gap) {
+	auto &wagon{Train.add(mixed_wagon(Index), 0, couplings, Velocity, Gap)};
 	if (Index % 3 != 1) {
 		wagon->AssignLoad("coal", 59.5f);
 		wagon->ComputeMass();
@@ -162,7 +162,7 @@ crash_outcome freight_crash(double const Speed, double const Radius, double cons
 	}
 	train.run(30.0, track);
 	// the train running into it, its locomotive leading, a metre short of the hit
-	train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, Speed, 1.0);
+	train.add(definition::fiz("4e_v1/4e"), 0, Coupling::none, Speed, 1.0);
 	for (int i = 0; i < 12; ++i) {
 		add_mixed(train, i, consist::full_coupling, Speed, 0.0);
 	}
@@ -202,7 +202,7 @@ double locomotive_into_wagon(double const Speed, double const Dt) {
 	wagon->AssignLoad("coal", 59.5f);
 	wagon->ComputeMass();
 	// behind the wagon, running forwards into its rear end
-	auto &locomotive{train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, Speed, 0.5)};
+	auto &locomotive{train.add(definition::fiz("4e_v1/4e"), 0, Coupling::none, Speed, 0.5)};
 	train.run(3.0, {}, Dt);
 	return wagon->Couplers[end::rear].crush + locomotive->Couplers[end::front].crush;
 }
@@ -235,7 +235,7 @@ struct contact_outcome {
 contact_outcome contact(definition const &Front, definition const &Back, double const Speed, double const Gap, double const Seconds = 5.0, double const Dt = 0.01) {
 	consist train;
 	auto &front{train.add(Front)};
-	auto &back{train.add(Back, 0, coupling::faux, Speed, Gap)};
+	auto &back{train.add(Back, 0, Coupling::none, Speed, Gap)};
 	train.run(Seconds, {}, Dt);
 	contact_outcome result;
 	result.crush = front->Couplers[end::rear].crush + back->Couplers[end::front].crush;
@@ -266,8 +266,8 @@ double pushed_ratio_of(TMoverParameters const &Vehicle, int const End, double co
 }
 
 // a loaded 430W coal wagon
-vehicle &add_loaded(consist &Train, int const Coupling, double const Velocity, double const Gap) {
-	auto &wagon{Train.add(definition::fiz("430w_v2/430w"), 0, Coupling, Velocity, Gap)};
+vehicle &add_loaded(consist &Train, CouplingSet const couplings, double const Velocity, double const Gap) {
+	auto &wagon{Train.add(definition::fiz("430w_v2/430w"), 0, couplings, Velocity, Gap)};
 	wagon->AssignLoad("coal", 59.5f);
 	wagon->ComputeMass();
 	return wagon;
@@ -579,7 +579,7 @@ TEST_CASE("collisions: a locomotive at its starting effort against a braked trai
 		train[i].hold_brake_pipe(0.0);
 	}
 	train.run(30.0, line);
-	auto &locomotive{train.add(definition::fiz("st44_v2/m62-1151"), 1, coupling::faux, 0.0, 0.0)};
+	auto &locomotive{train.add(definition::fiz("st44_v2/m62-1151"), 1, Coupling::none, 0.0, 0.0)};
 	test::driven const driver{locomotive.mover(), locomotive.mover(), locomotive.mover(), [&train](double const Seconds, test::track const &Track) { train.run(Seconds, Track); }};
 	REQUIRE(test::start_up(driver, line));
 	test::release_brakes(locomotive.mover());
@@ -625,7 +625,7 @@ TEST_CASE("collisions: a locomotive running onto an empty wagon at 9 km/h doesn'
 	curve.radius = 150.0;
 	consist train;
 	auto &empty{train.add(definition::fiz("3wl_v2/3wl"))};
-	auto &locomotive{train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, 9.0, 0.5)};
+	auto &locomotive{train.add(definition::fiz("4e_v1/4e"), 0, Coupling::none, 9.0, 0.5)};
 	auto pushed{0.0};
 	auto worst{0.0};
 	auto over{0}; // steps past the climbing limit
@@ -661,7 +661,7 @@ TEST_CASE("collisions: a train propelling an empty wagon into a braked one in a 
 		train[i].hold_brake_pipe(0.0);
 	}
 	train.run(30.0, curve);
-	auto &empty{train.add(definition::fiz("3wl_v2/3wl"), 0, coupling::faux, 15.0, 1.0)};
+	auto &empty{train.add(definition::fiz("3wl_v2/3wl"), 0, Coupling::none, 15.0, 1.0)};
 	train.add(definition::fiz("4e_v1/4e"), 0, consist::full_coupling, 15.0, 0.0);
 	for (int i = 0; i < 6; ++i) {
 		add_loaded(train, consist::full_coupling, 15.0, 0.0);
@@ -681,8 +681,8 @@ TEST_CASE("collisions: a repaired vehicle has its ends rebuilt and is back on th
 	model_setting const physical{global_settings::collision_model::physical};
 	flag_setting const crashdamage{Global.crash_damage, true};
 	consist train;
-	auto &wagon{add_loaded(train, coupling::faux, 0.0, 0.0)};
-	auto &locomotive{train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, 30.0, 0.5)};
+	auto &wagon{add_loaded(train, Coupling::none, 0.0, 0.0)};
+	auto &locomotive{train.add(definition::fiz("4e_v1/4e"), 0, Coupling::none, 30.0, 0.5)};
 	train.run(3.0);
 	REQUIRE(wagon->Couplers[end::rear].crush + locomotive->Couplers[end::front].crush > cl::override_crush);
 	REQUIRE((derailed(wagon.mover()) || derailed(locomotive.mover())));
@@ -764,7 +764,7 @@ TEST_CASE("collisions: the legacy rule with physics.collisions old, the crush wi
 			model_setting const setting{model};
 			consist train;
 			train.add(definition::fiz(front));
-			train.add(definition::fiz(back), 0, coupling::faux, speed, 20.0);
+			train.add(definition::fiz(back), 0, Coupling::none, speed, 20.0);
 			train.run(10.0);
 			CHECK(derailed(train[0].mover()) == (physical ? frontout_new : frontout_old));
 			CHECK(derailed(train[1].mover()) == (physical ? backout_new : backout_old));
@@ -805,7 +805,7 @@ TEST_CASE("collisions: the model of the collisions goes apart from the one of th
 			model_setting const setting{collisions};
 			consist train;
 			train.add(definition::fiz("4e_v1/4e"));
-			train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, 25.0, 20.0);
+			train.add(definition::fiz("4e_v1/4e"), 0, Coupling::none, 25.0, 20.0);
 			train.run(10.0);
 			Global.derailment = previous;
 			auto const crush{train[0]->Couplers[end::rear].crush + train[1]->Couplers[end::front].crush};
@@ -844,7 +844,7 @@ TEST_CASE("collisions: the crush of a locomotive hitting a wagon doesn't depend 
 TEST_CASE("collisions: automatic couplers hit too fast don't catch, the ends crush; torn off, they don't couple again") {
 	model_setting const physical{global_settings::collision_model::physical};
 	flag_setting const crashdamage{Global.crash_damage, true};
-	auto const automatic{definition::load("wagon").set("BuffCoupl", "CType", "Automatic").set("BuffCoupl", "AutomaticFlag", coupling::coupler | coupling::brakehose)};
+	auto const automatic{definition::load("wagon").set("BuffCoupl", "CType", "Automatic").set("BuffCoupl", "AutomaticFlag", Coupling::coupler | Coupling::brakeHose)};
 	for (auto const speed : {20.0, 30.0, 45.0}) {
 		CAPTURE(speed);
 		vehicle moving{automatic, speed, "moving"};
@@ -882,7 +882,7 @@ TEST_CASE("collisions: road vehicles keep the legacy rule") {
 		model_setting const setting{model};
 		consist road;
 		road.add(definition::fiz("road/man/nl293"));
-		road.add(definition::fiz("road/man/nl293"), 0, coupling::faux, 40.0, 5.0);
+		road.add(definition::fiz("road/man/nl293"), 0, Coupling::none, 40.0, 5.0);
 		road.run(5.0);
 		CHECK(derailed(road[0].mover()));
 		CHECK(derailed(road[1].mover()));
@@ -897,7 +897,7 @@ TEST_CASE("collisions: a vehicle off the rails by the new model stays in the cha
 	flag_setting const crashdamage{Global.crash_damage, true};
 	consist train;
 	auto &wagon{train.add(definition::fiz("430w_v2/430w"))};
-	auto &locomotive{train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, 10.0, 0.5)};
+	auto &locomotive{train.add(definition::fiz("4e_v1/4e"), 0, Coupling::none, 10.0, 0.5)};
 	wagon->derail_in_collision(COLLISION_PUSHED_OFF, "for the test");
 	REQUIRE(derailed(wagon.mover()));
 	auto const before{wagon->TotalMass * wagon->V + locomotive->TotalMass * locomotive->V};
@@ -946,7 +946,7 @@ TEST_CASE("collisions: identical units built to EN 15227 at 36 km/h") {
 		consist train;
 		train.add(unit(Anticlimbers, 1.040));
 		train.add(unit(Anticlimbers, 1.040));
-		train.add(unit(Anticlimbers, 1.040 + Offset), 0, coupling::faux, Speed, 1.0);
+		train.add(unit(Anticlimbers, 1.040 + Offset), 0, Coupling::none, Speed, 1.0);
 		train.add(unit(Anticlimbers, 1.040 + Offset), 0, consist::full_coupling, Speed);
 		train.run(6.0);
 		struct {
@@ -1205,7 +1205,7 @@ TEST_CASE("collisions: two coaches (36 t and 41.6 t) at 8 km/h don't crush, nor 
 		auto &wall{train.add(light)};
 		wall->Derail(END_OF_TRACK);
 		REQUIRE(derailed(wall.mover()));
-		auto &running{train.add(heavy, 0, coupling::faux, 5.0, gap)};
+		auto &running{train.add(heavy, 0, Coupling::none, 5.0, gap)};
 		train.run(5.0);
 		CHECK(wall->Couplers[end::rear].crush + running->Couplers[end::front].crush == 0.0);
 		CHECK(running->CollisionDerail == NONE);
@@ -1231,7 +1231,7 @@ TEST_CASE("collisions: a locomotive pushing a standing braked train at full powe
 		}
 		train.run(30.0, line);
 		// the locomotive behind them, touching, driven forwards into them at full power
-		auto &locomotive{train.add(definition::fiz(path), 1, coupling::faux, 0.0, 0.0)};
+		auto &locomotive{train.add(definition::fiz(path), 1, Coupling::none, 0.0, 0.0)};
 		test::driven const driver{locomotive.mover(), locomotive.mover(), locomotive.mover(), [&train](double const Seconds, test::track const &Track) { train.run(Seconds, Track); }};
 		REQUIRE(test::start_up(driver, line));
 		test::release_brakes(locomotive.mover());
@@ -1298,14 +1298,14 @@ TEST_CASE("collisions: the monitor goes by the energy of the hit as well") {
 		CAPTURE(gap);
 		consist train;
 		train.add(definition::fiz("sm42_v1/6d1"));
-		train.add(definition::fiz("su45_v2/301d"), 0, coupling::faux, 5.8, gap);
+		train.add(definition::fiz("su45_v2/301d"), 0, Coupling::none, 5.8, gap);
 		train.run(5.0);
 		CHECK(train[0]->crush_reports + train[1]->crush_reports == 0);
 	}
 	// one past them it does
 	consist train;
 	train.add(definition::fiz("4e_v1/4e"));
-	train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, 25.0, 20.0);
+	train.add(definition::fiz("4e_v1/4e"), 0, Coupling::none, 25.0, 20.0);
 	train.run(10.0);
 	CHECK(train[0]->crush_reports + train[1]->crush_reports == 1);
 }
@@ -1370,7 +1370,7 @@ TEST_CASE("collisions: the cut of the speed of the legacy derailment is no hit i
 			for (auto const reason : {TOO_HIGH_SPEED, END_OF_TRACK}) {
 				CAPTURE(reason);
 				consist train;
-				auto &locomotive{train.add(definition::fiz(path), 0, coupling::faux, speed)};
+				auto &locomotive{train.add(definition::fiz(path), 0, Coupling::none, speed)};
 				for (int i = 0; i < 3; ++i) {
 					train.add(coach(41.0e3), 0, consist::full_coupling, speed);
 				}
@@ -1415,7 +1415,7 @@ TEST_CASE("collisions: the train behind a vehicle that ran off the end of the tr
 			auto const speed{pushed ? 33.0 : 30.0};
 			consist train;
 			if (false == pushed) {
-				train.add(definition::fiz("st44_v2/m62-1151"), 0, coupling::faux, speed);
+				train.add(definition::fiz("st44_v2/m62-1151"), 0, Coupling::none, speed);
 			}
 			constexpr int wagons{6};
 			for (int i = 0; i < wagons; ++i) {
@@ -1477,7 +1477,7 @@ TEST_CASE("collisions: a pair parting at the start of the step isn't crushed (l0
 		consist train;
 		auto &front{train.add(definition::fiz("430w_v2/430w"))};
 		// behind it with the buffers pressed to their stop, moving back away from it, or standing
-		auto &back{train.add(definition::fiz("430w_v2/430w"), 0, coupling::faux, parting ? -3.0 : 0.0, -0.3)};
+		auto &back{train.add(definition::fiz("430w_v2/430w"), 0, Coupling::none, parting ? -3.0 : 0.0, -0.3)};
 		// one step, the way the consist steps it, with the vehicle behind knocked forwards onto the front one between
 		// the forces and the movement, as a hit of another vehicle in the step does
 		constexpr double dt{0.01};

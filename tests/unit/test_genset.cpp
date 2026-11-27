@@ -527,7 +527,7 @@ TEST_CASE("genset: one genset feeds the next car through the high voltage coupli
 	consist train;
 	auto &first{train.add(dragon_genset().set("BuffCoupl", "AllowedFlag", 47), 1).mover()};
 	auto &second{train.add(dragon().set("BuffCoupl", "AllowedFlag", 47)).mover()};
-	REQUIRE((first.Couplers[end::rear].CouplingFlag & coupling::highvoltage) != 0);
+	REQUIRE(first.Couplers[end::rear].CouplingFlag.HasAny(Coupling::highVoltage));
 	wake(first);
 	REQUIRE(first.TractionModeSwitch(traction_mode::genset));
 	first.GensetSwitch(true);
@@ -553,11 +553,11 @@ TEST_CASE("genset: one genset feeds the next car through the high voltage coupli
 
 TEST_CASE("genset: the selector command travels along the train") {
 	// two locomotives in multiple: the control line, no permanent coupling
-	auto const coupling{coupling::coupler | coupling::brakehose | coupling::mainhose | coupling::control};
+	auto const coupling{Coupling::coupler | Coupling::brakeHose | Coupling::mainHose | Coupling::control};
 	consist train;
 	auto &first{train.add(dragon_genset().set("BuffCoupl", "AllowedFlag", 47), 1).mover()};
 	auto &second{train.add(dragon_genset().set("BuffCoupl", "AllowedFlag", 47), 0, coupling).mover()};
-	REQUIRE((first.Couplers[end::rear].CouplingFlag & coupling::control) != 0);
+	REQUIRE(first.Couplers[end::rear].CouplingFlag.HasAny(Coupling::control));
 	wake(first);
 	train.run(1.0, no_wire);
 	CHECK(first.TractionModeSwitch(traction_mode::genset, range_t::consist));
@@ -575,7 +575,7 @@ TEST_CASE("genset: the selector command travels along the train") {
 }
 
 TEST_CASE("genset: a selector command refused with the line breaker closed isn't passed on") {
-	auto const coupling{coupling::coupler | coupling::brakehose | coupling::mainhose | coupling::control};
+	auto const coupling{Coupling::coupler | Coupling::brakeHose | Coupling::mainHose | Coupling::control};
 	consist train;
 	auto &first{train.add(dragon_genset().set("BuffCoupl", "AllowedFlag", 47), 1).mover()};
 	auto &second{train.add(dragon_genset().set("BuffCoupl", "AllowedFlag", 47), 0, coupling).mover()};
@@ -595,7 +595,7 @@ TEST_CASE("genset: a selector command refused with the line breaker closed isn't
 }
 
 TEST_CASE("genset: a lead which starts its genset on its own passes the start switch on") {
-	auto const coupling{coupling::coupler | coupling::brakehose | coupling::mainhose | coupling::control};
+	auto const coupling{Coupling::coupler | Coupling::brakeHose | Coupling::mainHose | Coupling::control};
 	consist train;
 	auto &first{train.add(dragon_genset().set("BuffCoupl", "AllowedFlag", 47).set("Cntrl", "GensetStart", "Automatic"), 1).mover()};
 	auto &second{train.add(dragon_genset().set("BuffCoupl", "AllowedFlag", 47), 0, coupling).mover()};

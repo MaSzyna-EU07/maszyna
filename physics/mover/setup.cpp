@@ -410,7 +410,7 @@ double TMoverParameters::InitialScndPipePress(double const HosePressure) const
 	{
 		return CompressedVolume / VeselVolume;
 	}
-	if ((Couplers[end::front].AllowedFlag & coupling::mainhose) != 0 || (Couplers[end::rear].AllowedFlag & coupling::mainhose) != 0)
+	if (Couplers[end::front].AllowedFlag.HasAny(Coupling::mainHose) || Couplers[end::rear].AllowedFlag.HasAny(Coupling::mainHose))
 	{
 		return HosePressure;
 	}

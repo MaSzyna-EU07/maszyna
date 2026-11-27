@@ -82,7 +82,7 @@ int TMoverParameters::SoundingHorns(int const Signal) const
 		}
 		// a vehicle without a main reservoir of its own takes the air from the main pipe, a vehicle without either
 		// (a road vehicle, say) has no air to check
-		auto const mainpipe{((Couplers[end::front].AllowedFlag | Couplers[end::rear].AllowedFlag) & coupling::mainhose) != 0};
+		auto const mainpipe{(Couplers[end::front].AllowedFlag | Couplers[end::rear].AllowedFlag).HasAny(Coupling::mainHose)};
 		return false == mainpipe || ScndPipePress >= HornMinPressure;
 	}};
 	auto horns{0};

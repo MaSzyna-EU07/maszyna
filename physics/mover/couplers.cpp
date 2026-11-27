@@ -45,12 +45,12 @@ double TMoverParameters::CouplerDist(TMoverParameters const *Left, TMoverParamet
 	return Distance(Left->Loc, Right->Loc, Left->Dim, Right->Dim); // odległość pomiędzy sprzęgami (kula!)
 };
 
-bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *ConnectTo, int CouplingType, bool Enforce, bool Audible)
+bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *ConnectTo, CouplingSet CouplingType, bool Enforce, bool Audible)
 { // łączenie do swojego sprzęgu (ConnectNo) pojazdu (ConnectTo) stroną (ConnectToNr)
 	// Ra: zwykle wykonywane dwukrotnie, dla każdego pojazdu oddzielnie
 	// Ra: trzeba by odróżnić wymóg dociśnięcia od uszkodzenia sprzęgu przy podczepianiu AI do składu
 
-	if (ConnectTo == nullptr || CouplingType == coupling::faux)
+	if (ConnectTo == nullptr || CouplingType == Coupling::none)
 	{
 		return false;
 	}
@@ -72,14 +72,14 @@ bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *
 	{
 		WriteLog(std::format("Vehicles \"{}\" and \"{}\" can't share their control, coupled without the control connection", Name, ConnectTo->Name));
 		CouplingType = compatible;
-		if (CouplingType == coupling::faux)
+		if (CouplingType == Coupling::none)
 		{
 			return false;
 		}
 	}
 
 	// stykaja sie zderzaki i kompatybilne typy sprzegow, chyba że łączenie na starcie
-	if (thiscoupler.CouplingFlag == coupling::faux)
+	if (thiscoupler.CouplingFlag == Coupling::none)
 	{
 		// a new coupling: the play of the coupling as set up anew, without the stretch of the one before
 		thiscoupler.physics_state.couple();
@@ -99,16 +99,16 @@ bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *
 	othercoupler.CouplingFlag = CouplingType;
 	othercoupler.ConnectedNr = ConnectNo;
 
-	if (true == Audible && couplingchange != 0)
+	if (true == Audible && false == couplingchange.Empty())
 	{
 		// set sound event flag
 		int soundflag{sound::none};
-		std::vector<std::pair<coupling, sound>> const soundmappings = {{coupling::coupler, sound::attachcoupler},   {coupling::brakehose, sound::attachbrakehose},
-		                                                               {coupling::mainhose, sound::attachmainhose}, {coupling::control, sound::attachcontrol},
-		                                                               {coupling::gangway, sound::attachgangway},   {coupling::heating, sound::attachheating}};
+		std::vector<std::pair<Coupling, sound>> const soundmappings = {{Coupling::coupler, sound::attachcoupler},   {Coupling::brakeHose, sound::attachbrakehose},
+		                                                               {Coupling::mainHose, sound::attachmainhose}, {Coupling::control, sound::attachcontrol},
+		                                                               {Coupling::gangway, sound::attachgangway},   {Coupling::heating, sound::attachheating}};
 		for (auto const &[mappingcoupling, mappingsound] : soundmappings)
 		{
-			if ((couplingchange & mappingcoupling) != 0)
+			if (couplingchange.HasAny(mappingcoupling))
 			{
 				soundflag |= mappingsound;
 			}
@@ -124,14 +124,14 @@ int TMoverParameters::DettachStatus(int ConnectNo)
 	// powinny być 3 informacje: =0 sprzęg już rozłączony, <0 da się rozłączyć. >0 nie da się rozłączyć
 	if (!Couplers[ConnectNo].Connected)
 		return 0; // nie ma nic, to rozłączanie jest OK
-	if ((Couplers[ConnectNo].CouplingFlag & ctrain_coupler) == 0)
-		return -Couplers[ConnectNo].CouplingFlag; // hak nie połączony - rozłączanie jest OK
+	if (false == Couplers[ConnectNo].CouplingFlag.HasAny(Coupling::coupler))
+		return -Couplers[ConnectNo].CouplingFlag.Bits(); // hak nie połączony - rozłączanie jest OK
 	if (TestFlag(DamageFlag, dtrain_coupling))
-		return -Couplers[ConnectNo].CouplingFlag; // hak urwany - rozłączanie jest OK
+		return -Couplers[ConnectNo].CouplingFlag.Bits(); // hak urwany - rozłączanie jest OK
 	//    CouplerDist(ConnectNo);
 	if (Couplers[ConnectNo].type() != TCouplerType::Screw || Neighbours[ConnectNo].distance < 0.01)
-		return -Couplers[ConnectNo].CouplingFlag; // można rozłączać, jeśli dociśnięty
-	return Neighbours[ConnectNo].distance > 0.2 ? -Couplers[ConnectNo].CouplingFlag : Couplers[ConnectNo].CouplingFlag;
+		return -Couplers[ConnectNo].CouplingFlag.Bits(); // można rozłączać, jeśli dociśnięty
+	return Neighbours[ConnectNo].distance > 0.2 ? -Couplers[ConnectNo].CouplingFlag.Bits() : Couplers[ConnectNo].CouplingFlag.Bits();
 };
 
 bool TMoverParameters::Dettach(int ConnectNo)
@@ -151,25 +151,25 @@ bool TMoverParameters::Dettach(int ConnectNo)
 	if (couplingstate < 0)
 	{
 		// gdy scisniete zderzaki, chyba ze zerwany sprzeg (wirtualnego nie odpinamy z drugiej strony)
-		std::tie(othercoupler.Connected, othercoupler.ConnectedNr, othercoupler.CouplingFlag) = std::make_tuple(nullptr, -1, coupling::faux);
-		std::tie(thiscoupler.Connected, thiscoupler.ConnectedNr, thiscoupler.CouplingFlag) = std::make_tuple(nullptr, -1, coupling::faux);
+		std::tie(othercoupler.Connected, othercoupler.ConnectedNr, othercoupler.CouplingFlag) = std::make_tuple(nullptr, -1, Coupling::none);
+		std::tie(thiscoupler.Connected, thiscoupler.ConnectedNr, thiscoupler.CouplingFlag) = std::make_tuple(nullptr, -1, Coupling::none);
 	}
 	else if (couplingstate > 0)
 	{ // odłączamy węże i resztę, pozostaje sprzęg fizyczny, który wymaga dociśnięcia (z wirtualnym nic)
-		thiscoupler.CouplingFlag &= coupling::coupler;
-		othercoupler.CouplingFlag &= coupling::coupler;
+		thiscoupler.CouplingFlag &= Coupling::coupler;
+		othercoupler.CouplingFlag &= Coupling::coupler;
 	}
 	// set sound event flag
 	couplingchange ^= thiscoupler.CouplingFlag; // remaining bits were removed from coupling
-	if (couplingchange != 0)
+	if (false == couplingchange.Empty())
 	{
 		int soundflag{sound::detach}; // HACK: use detach flag to indicate removal of listed coupling
-		std::vector<std::pair<coupling, sound>> const soundmappings = {{coupling::coupler, sound::attachcoupler},   {coupling::brakehose, sound::attachbrakehose},
-		                                                               {coupling::mainhose, sound::attachmainhose}, {coupling::control, sound::attachcontrol},
-		                                                               {coupling::gangway, sound::attachgangway},   {coupling::heating, sound::attachheating}};
+		std::vector<std::pair<Coupling, sound>> const soundmappings = {{Coupling::coupler, sound::attachcoupler},   {Coupling::brakeHose, sound::attachbrakehose},
+		                                                               {Coupling::mainHose, sound::attachmainhose}, {Coupling::control, sound::attachcontrol},
+		                                                               {Coupling::gangway, sound::attachgangway},   {Coupling::heating, sound::attachheating}};
 		for (auto const &[mappingcoupling, mappingsound] : soundmappings)
 		{
-			if ((couplingchange & mappingcoupling) != 0)
+			if (couplingchange.HasAny(mappingcoupling))
 			{
 				soundflag |= mappingsound;
 			}
@@ -246,13 +246,13 @@ bool TMoverParameters::ControlCouplingAllowed(int const End, TMoverParameters co
 	return traction == traction_kind::none || othertraction == traction_kind::none || traction == othertraction;
 }
 
-int TMoverParameters::CompatibleCoupling(int const End, TMoverParameters const &Other, int const OtherEnd, int const CouplingType) const
+CouplingSet TMoverParameters::CompatibleCoupling(int const End, TMoverParameters const &Other, int const OtherEnd, CouplingSet const CouplingType) const
 {
-	if ((CouplingType & coupling::control) == 0 || (CouplingType & coupling::permanent) != 0 || ControlCouplingAllowed(End, Other, OtherEnd))
+	if (false == CouplingType.HasAny(Coupling::control) || CouplingType.HasAny(Coupling::permanent) || ControlCouplingAllowed(End, Other, OtherEnd))
 	{
 		return CouplingType;
 	}
-	return CouplingType & ~coupling::control;
+	return CouplingType.Without(Coupling::control);
 }
 
 // *************************************************************************************************
@@ -289,7 +289,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 		// 090503: dzwieki pracy zderzakow
 		SetFlag(thiscoupler.sounds, absdV > 5.0 ? sound::bufferclash | sound::loud : sound::bufferclash);
 	}
-	else if (thiscoupler.CouplingFlag != coupling::faux && newdistance > 0.001 && thiscoupler.Dist <= 0.001 && absdV > 0.005 && Vel > 1.0)
+	else if (thiscoupler.CouplingFlag != Coupling::none && newdistance > 0.001 && thiscoupler.Dist <= 0.001 && absdV > 0.005 && Vel > 1.0)
 	{
 		// 090503: dzwieki pracy sprzegu
 		SetFlag(thiscoupler.sounds, absdV > 0.035 ? sound::couplerstretch | sound::loud : sound::couplerstretch);
@@ -300,13 +300,13 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 
 	double CF{0.0};
 
-	if (thiscoupler.CouplingFlag == coupling::faux && initialdistance > 0.05)
+	if (thiscoupler.CouplingFlag == Coupling::none && initialdistance > 0.05)
 	{ // arbitrary distance
 		// potentially reset auto coupling lock
 		thiscoupler.AutomaticCouplingAllowed = true;
 	}
 
-	if (thiscoupler.CouplingFlag != coupling::faux || initialdistance < 0)
+	if (thiscoupler.CouplingFlag != Coupling::none || initialdistance < 0)
 	{
 
 		thiscoupler.Dist = safe_clamp(newdistance, thiscoupler.has_adapter() ? 0 : -thiscoupler.DmaxB, thiscoupler.DmaxC);
@@ -314,7 +314,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 		double BetaAvg = 0;
 		double Fmax = 0;
 
-		if (thiscoupler.CouplingFlag == coupling::faux)
+		if (thiscoupler.CouplingFlag == Coupling::none)
 		{
 
 			BetaAvg = thiscoupler.beta;
@@ -374,7 +374,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 		}
 	}
 
-	if (thiscoupler.CouplingFlag != coupling::faux)
+	if (thiscoupler.CouplingFlag != Coupling::none)
 	{
 		// uzgadnianie prawa Newtona, on the coupler of the other vehicle this one is coupled with, along that vehicle's
 		// axis: turned around once more when the vehicles face each other
@@ -425,7 +425,7 @@ void TMoverParameters::automatic_coupling(int const End, TMoverParameters &Other
 	auto &thiscoupler{Couplers[End]};
 	auto &othercoupler{Other.Couplers[OtherEnd]};
 
-	if (thiscoupler.type() != TCouplerType::Automatic || thiscoupler.type() != othercoupler.type() || thiscoupler.CouplingFlag != coupling::faux || false == thiscoupler.AutomaticCouplingAllowed ||
+	if (thiscoupler.type() != TCouplerType::Automatic || thiscoupler.type() != othercoupler.type() || thiscoupler.CouplingFlag != Coupling::none || false == thiscoupler.AutomaticCouplingAllowed ||
 	    false == othercoupler.AutomaticCouplingAllowed)
 	{
 		return;
@@ -440,7 +440,7 @@ void TMoverParameters::automatic_coupling(int const End, TMoverParameters &Other
 	// potentially exclude incompatible control coupling
 	if (thiscoupler.control_type != othercoupler.control_type)
 	{
-		couplingtype &= ~coupling::control;
+		couplingtype = couplingtype.Without(Coupling::control);
 	}
 	couplingtype = CompatibleCoupling(End, Other, OtherEnd, couplingtype);
 
@@ -503,7 +503,7 @@ double TMoverParameters::coupler_force_physical(int const End, double const dt)
 	auto const gap{Neighbours[End].distance + (End == end::front ? othervehiclemove - dMoveLen : dMoveLen - othervehiclemove)};
 	// the gap opens up when the front end falls behind the vehicle ahead of it, or the rear end runs ahead of the one behind
 	auto const gaprate{CouplerVelocityDifference(End, *othervehicle, otherend) * DirF(End)};
-	auto const coupled{thiscoupler.CouplingFlag != coupling::faux};
+	auto const coupled{thiscoupler.CouplingFlag != Coupling::none};
 	auto const adapter{thiscoupler.has_adapter() || othercoupler.has_adapter()};
 
 	if (false == coupled && Neighbours[End].distance > 0.05)
@@ -539,7 +539,7 @@ double TMoverParameters::coupler_force_physical(int const End, double const dt)
 
 	// tension pulls this vehicle towards the other one
 	auto const force{result.force * -DirF(End)};
-	if (thiscoupler.CouplingFlag != coupling::faux)
+	if (thiscoupler.CouplingFlag != Coupling::none)
 	{
 		// uzgadnianie prawa Newtona, as in CouplerForce()
 		othercoupler.CForce = -force * DirPatch(End, otherend);

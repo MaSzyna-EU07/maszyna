@@ -188,7 +188,7 @@ bool test_manager::tested_trains_at_rest() const
 	// the consists as they are now: a train the tested one couples to joins it, one it leaves behind doesn't
 	return std::ranges::none_of(Global.test.vehicles, [](std::string const &Name) {
 		auto *vehicle { simulation::Vehicles.find(Name) };
-		return vehicle != nullptr && vehicle->find_vehicle(coupling::coupler, is_moving) != nullptr;
+		return vehicle != nullptr && vehicle->find_vehicle(Coupling::coupler, is_moving) != nullptr;
 	});
 }
 

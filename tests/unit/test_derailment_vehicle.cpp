@@ -134,7 +134,7 @@ TEST_CASE("derailment: the model of eu07.ini") {
 TEST_CASE("derailment: the brake hoses tear") {
 	model_setting const physical{global_settings::derailment_model::physical};
 	vehicle eu07vehicle{definition::fiz("4e_v1/4e"), 150.0};
-	eu07vehicle->Couplers[end::rear].CouplingFlag = coupling::coupler | coupling::brakehose;
+	eu07vehicle->Couplers[end::rear].CouplingFlag = Coupling::coupler | Coupling::brakeHose;
 	test::track curve;
 	curve.radius = 300.0;
 	for (int step = 0; step < 20; ++step) {

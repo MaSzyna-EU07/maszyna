@@ -9,7 +9,7 @@ using test::vehicle;
 namespace {
 
 // the wagon from data/wagon.json with automatic couplers at both ends, which couple the given connections
-definition automatic_definition(int Flag = coupling::coupler | coupling::brakehose) {
+definition automatic_definition(CouplingSet const Flag = Coupling::coupler | Coupling::brakeHose) {
 	return definition::load("wagon").set("BuffCoupl", "CType", "Automatic").set("BuffCoupl", "AutomaticFlag", Flag);
 }
 
@@ -202,8 +202,8 @@ TEST_CASE("couplers: a wagon rolling slowly into a standing one couples with it"
 	pair.run(3.0);
 
 	REQUIRE(pair.coupled());
-	CHECK(moving->Couplers[end::front].CouplingFlag == (coupling::coupler | coupling::brakehose));
-	CHECK(standing->Couplers[end::rear].CouplingFlag == (coupling::coupler | coupling::brakehose));
+	CHECK(moving->Couplers[end::front].CouplingFlag == (Coupling::coupler | Coupling::brakeHose));
+	CHECK(standing->Couplers[end::rear].CouplingFlag == (Coupling::coupler | Coupling::brakeHose));
 	CHECK(moving->Couplers[end::front].Connected == &standing.mover());
 	CHECK_FALSE(derailed(moving));
 	CHECK_FALSE(derailed(standing));
@@ -423,7 +423,7 @@ TEST_CASE("couplers: an automatic coupler doesn't catch a coupler of another typ
 
 TEST_CASE("couplers: automatic couplers of different control systems couple without the control connection") {
 	crash_damage_setting const crashdamage{true};
-	auto const flag{coupling::coupler | coupling::brakehose | coupling::control};
+	auto const flag{Coupling::coupler | Coupling::brakeHose | Coupling::control};
 	auto moving{vehicle{automatic_definition(flag).set("BuffCoupl", "ControlType", "first"), 5.0, "moving"}};
 
 	SUBCASE("the same control system") {
@@ -438,7 +438,7 @@ TEST_CASE("couplers: automatic couplers of different control systems couple with
 		REQUIRE(standing->Couplers[end::rear].control_type == "second");
 		test::pair pair{moving, end::front, standing, end::rear, 1.0};
 		REQUIRE(couple_during(pair, 3.0));
-		CHECK(pair.coupling() == (coupling::coupler | coupling::brakehose));
+		CHECK(pair.coupling() == (Coupling::coupler | Coupling::brakeHose));
 	}
 }
 
@@ -488,8 +488,8 @@ vehicle articulated_wagon(double Velocity, std::string const &Name) {
 
 // couples the facing ends of the two vehicles for good, as the scenery does for an articulated set
 void join(vehicle &First, int FirstEnd, vehicle &Second, int SecondEnd) {
-	REQUIRE(First->Attach(FirstEnd, SecondEnd, &Second.mover(), coupling::coupler, true, false));
-	REQUIRE(Second->Attach(SecondEnd, FirstEnd, &First.mover(), coupling::coupler, true, false));
+	REQUIRE(First->Attach(FirstEnd, SecondEnd, &Second.mover(), Coupling::coupler, true, false));
+	REQUIRE(Second->Attach(SecondEnd, FirstEnd, &First.mover(), Coupling::coupler, true, false));
 }
 
 } // namespace
@@ -560,12 +560,12 @@ private:
 	bool m_previous{Global.control_coupling_engine_check};
 };
 
-constexpr int scenario_coupling{coupling::coupler | coupling::brakehose | coupling::mainhose | coupling::control};
+constexpr CouplingSet scenario_coupling{Coupling::coupler | Coupling::brakeHose | Coupling::mainHose | Coupling::control};
 
 // couples the rear of the first vehicle to the front of the second one the way the scenery does (forced, from the
 // first one only), returns the coupling the pair got
-int scenario_couple(vehicle &First, vehicle &Second, int Coupling = scenario_coupling) {
-	REQUIRE(First->Attach(end::rear, end::front, &Second.mover(), Coupling, true, false));
+CouplingSet scenario_couple(vehicle &First, vehicle &Second, CouplingSet const couplings = scenario_coupling) {
+	REQUIRE(First->Attach(end::rear, end::front, &Second.mover(), couplings, true, false));
 	CHECK(Second->Couplers[end::front].CouplingFlag == First->Couplers[end::rear].CouplingFlag);
 	return First->Couplers[end::rear].CouplingFlag;
 }
@@ -582,13 +582,13 @@ TEST_CASE("couplers: an electric and a diesel locomotive don't share their contr
 		auto diesel{vehicle{definition::fiz("sm42_v1/6d1"), 0.0, "diesel"}};
 		REQUIRE(diesel->EngineType == TEngineType::DieselElectric);
 		CHECK_FALSE(electric->ControlCouplingAllowed(end::rear, diesel.mover(), end::front));
-		CHECK(scenario_couple(electric, diesel) == (scenario_coupling & ~coupling::control));
+		CHECK(scenario_couple(electric, diesel) == scenario_coupling.Without(Coupling::control));
 	}
 	SUBCASE("a diesel-mechanical one without a control system named, either") {
 		auto diesel{vehicle{definition::fiz("sm03_v1/sm03"), 0.0, "diesel"}};
 		REQUIRE(diesel->EngineType == TEngineType::DieselEngine);
 		CHECK_FALSE(diesel->ControlCouplingAllowed(end::front, electric.mover(), end::rear));
-		CHECK(scenario_couple(diesel, electric) == (scenario_coupling & ~coupling::control));
+		CHECK(scenario_couple(diesel, electric) == scenario_coupling.Without(Coupling::control));
 	}
 	SUBCASE("unless both name the same control system") {
 		auto diesel{vehicle{definition::fiz("sm03_v1/sm03").set("BuffCoupl", "ControlType", "shared"), 0.0, "diesel"}};
@@ -597,7 +597,7 @@ TEST_CASE("couplers: an electric and a diesel locomotive don't share their contr
 	}
 	SUBCASE("unless the vehicles make one unit, coupled for good") {
 		auto diesel{vehicle{definition::fiz("sm03_v1/sm03"), 0.0, "diesel"}};
-		auto const forgood{scenario_coupling | coupling::permanent};
+		auto const forgood{scenario_coupling | Coupling::permanent};
 		CHECK(scenario_couple(electric, diesel, forgood) == forgood);
 	}
 	SUBCASE("unless the check is turned off") {
@@ -638,7 +638,7 @@ TEST_CASE("couplers: locomotives of the same traction and the cars keep their co
 TEST_CASE("couplers: automatic couplers of an electric and a diesel locomotive couple without the control connection") {
 	crash_damage_setting const crashdamage{true};
 	control_coupling_check_setting const check{true};
-	auto const flag{coupling::coupler | coupling::brakehose | coupling::control};
+	auto const flag{Coupling::coupler | Coupling::brakeHose | Coupling::control};
 	auto automatic = [flag](std::string const &Path) {
 		return definition::fiz(Path).set("BuffCoupl", "CType", "Automatic").set("BuffCoupl", "AutomaticFlag", flag);
 	};
@@ -648,7 +648,7 @@ TEST_CASE("couplers: automatic couplers of an electric and a diesel locomotive c
 		auto standing{vehicle{automatic("sm03_v1/sm03"), 0.0, "standing"}};
 		test::pair pair{moving, end::front, standing, end::rear, 1.0};
 		REQUIRE(couple_during(pair, 3.0));
-		CHECK(pair.coupling() == (coupling::coupler | coupling::brakehose));
+		CHECK(pair.coupling() == (Coupling::coupler | Coupling::brakeHose));
 	}
 	SUBCASE("an electric one") {
 		auto standing{vehicle{automatic("ep09_v2/104e"), 0.0, "standing"}};
@@ -664,8 +664,8 @@ TEST_CASE("couplers: the AI and the player get the coupling the vehicles can tak
 	auto diesel{vehicle{definition::fiz("sm42_v1/6d1"), 0.0, "diesel"}};
 	auto other{vehicle{definition::fiz("ep09_v2/104e"), 0.0, "other"}};
 
-	CHECK(electric->CompatibleCoupling(end::rear, diesel.mover(), end::front, scenario_coupling) == (scenario_coupling & ~coupling::control));
+	CHECK(electric->CompatibleCoupling(end::rear, diesel.mover(), end::front, scenario_coupling) == scenario_coupling.Without(Coupling::control));
 	CHECK(electric->CompatibleCoupling(end::rear, other.mover(), end::front, scenario_coupling) == scenario_coupling);
 	// nothing to take away without the control connection asked for
-	CHECK(electric->CompatibleCoupling(end::rear, diesel.mover(), end::front, coupling::coupler) == coupling::coupler);
+	CHECK(electric->CompatibleCoupling(end::rear, diesel.mover(), end::front, Coupling::coupler) == Coupling::coupler);
 }

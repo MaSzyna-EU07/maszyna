@@ -57,7 +57,7 @@ namespace
 // a derailed vehicle tears its brake hoses: the brake pipe vents and the rest of the train brakes in emergency
 void tear_brake_hoses(TMoverParameters &Vehicle)
 {
-	if (std::any_of(std::begin(Vehicle.Couplers), std::end(Vehicle.Couplers), [](auto const &Coupler) { return (Coupler.CouplingFlag & coupling::brakehose) == coupling::brakehose; }))
+	if (std::any_of(std::begin(Vehicle.Couplers), std::end(Vehicle.Couplers), [](auto const &Coupler) { return Coupler.CouplingFlag.HasAll(Coupling::brakeHose); }))
 	{
 		Vehicle.AlarmChainFlag = true;
 	}
@@ -109,7 +109,7 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	auto velocity{V};
 	auto othervehiclevelocity{othervehicle->V * otherdirection};
 	// calculate collision force and new velocities for involved vehicles
-	auto const VirtualCoupling{(thiscoupler.CouplingFlag == coupling::faux)};
+	auto const VirtualCoupling{(thiscoupler.CouplingFlag == Coupling::none)};
 	auto CCF{0.0};
 
 	switch (End)
@@ -141,7 +141,7 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 		}
 
 		// HACK: limit excessive speed derailment checks to vehicles which aren't part of the same consist
-		auto const outsideconsist{thiscoupler.CouplingFlag == coupling::faux || true == TestFlag(othervehicle->DamageFlag, dtrain_out)};
+		auto const outsideconsist{thiscoupler.CouplingFlag == Coupling::none || true == TestFlag(othervehicle->DamageFlag, dtrain_out)};
 		auto const velocitydifference{outsideconsist ? CollisionVelocity(End, *othervehicle, otherend) : 0.0};
 
 		if (velocitydifference > SafeCollisionVelocity)
@@ -169,7 +169,7 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	auto const accelerationspike{physical ? 0.0 : 1.0};
 	// derailed the legacy way a vehicle is a wall, off the rails by the new criteria it slides on and takes the hit. with
 	// the crush, the vehicles coupled to the wall push it on (crush_hit())
-	auto const coupled{thiscoupler.CouplingFlag != coupling::faux};
+	auto const coupled{thiscoupler.CouplingFlag != Coupling::none};
 	auto const wall = [crushing, coupled](TMoverParameters const &Vehicle) {
 		return TestFlag(Vehicle.DamageFlag, dtrain_out) && (false == crushing || (Vehicle.Derailed == derailment::outcome::none && false == coupled));
 	};
@@ -201,14 +201,14 @@ void TMoverParameters::damage_coupler(int const End)
 	if (SetFlag(DamageFlag, dtrain_coupling))
 		EventFlag = true;
 
-	auto const hosetorn{(thiscoupler.CouplingFlag & coupling::brakehose) == coupling::brakehose};
+	auto const hosetorn{thiscoupler.CouplingFlag.HasAll(Coupling::brakeHose)};
 	if (hosetorn)
 	{
 		// hamowanie nagle - zerwanie przewodow hamulcowych
 		AlarmChainFlag = true;
 	}
 
-	thiscoupler.CouplingFlag = 0;
+	thiscoupler.CouplingFlag = {};
 	thiscoupler.broken = true;
 
 	if (thiscoupler.Connected != nullptr)
@@ -216,7 +216,7 @@ void TMoverParameters::damage_coupler(int const End)
 		// break connection with other vehicle, if there's any: on the end it's coupled with, which is the front one too
 		// for vehicles facing each other
 		auto &othercoupler{thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr]};
-		othercoupler.CouplingFlag = coupling::faux;
+		othercoupler.CouplingFlag = Coupling::none;
 		// the coupling broke between the two, either end can be repaired
 		othercoupler.broken = true;
 		if (hosetorn && coupler_physics_at(End))
@@ -377,7 +377,7 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	// a vehicle derailed the legacy way (the end of the track, say) stays where it is, whatever hits it from outside its
 	// train. the vehicles coupled to it push it on, as the train behind a derailed vehicle does: a wall to them, it
 	// stopped the whole train at once, and the vehicles behind it crushed by the energy of the train
-	auto const coupled{thiscoupler.CouplingFlag != coupling::faux};
+	auto const coupled{thiscoupler.CouplingFlag != Coupling::none};
 	auto const wall{false == coupled && TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none};
 	auto const otherwall{false == coupled && TestFlag(othervehicle->DamageFlag, dtrain_out) && othervehicle->Derailed == derailment::outcome::none};
 	if (wall && otherwall)
@@ -506,16 +506,16 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 
 	// the crushed headstock tears off the draw gear, with the brake hose: both parts of the train brake in emergency.
 	// the coupler of an end not coupled is gone as well, it doesn't couple any more
-	if (thiscoupler.CouplingFlag != coupling::faux && std::max(thiscoupler.crush, othercoupler.crush) >= collision::draw_gear_crush)
+	if (thiscoupler.CouplingFlag != Coupling::none && std::max(thiscoupler.crush, othercoupler.crush) >= collision::draw_gear_crush)
 	{
-		auto const hose{(thiscoupler.CouplingFlag & coupling::brakehose) == coupling::brakehose};
+		auto const hose{thiscoupler.CouplingFlag.HasAll(Coupling::brakeHose)};
 		damage_coupler(End);
 		if (hose)
 		{
 			othervehicle->AlarmChainFlag = true;
 		}
 	}
-	else if (thiscoupler.CouplingFlag == coupling::faux)
+	else if (thiscoupler.CouplingFlag == Coupling::none)
 	{
 		if (thiscoupler.crush >= collision::draw_gear_crush && false == thiscoupler.broken)
 		{

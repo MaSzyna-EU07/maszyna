@@ -388,8 +388,8 @@ timetable_panel::update() {
 				//odejmij lokomotywy czynne, a przynajmniej aktualną
 				consistmass -= owner->pVehicle->MoverParameters->TotalMass;
 				// subtract potential other half of a two-part vehicle
-				if( auto const *previous { owner->pVehicle->Prev( coupling::permanent ) }; previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
-				auto const *next { owner->pVehicle->Next( coupling::permanent ) };
+				if( auto const *previous { owner->pVehicle->Prev( Coupling::permanent ) }; previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
+				auto const *next { owner->pVehicle->Next( Coupling::permanent ) };
 				if( next != nullptr ) { consistmass -= next->MoverParameters->TotalMass; }
 			}
             std::snprintf(
@@ -1632,7 +1632,7 @@ debug_panel::update_section_coupler( std::vector<text_line> &Output ) {
         Global.UITextColor );
     if( neighbour.vehicle != nullptr ) {
         Output.emplace_back(
-            std::format( "Neighbour: {} ({} end), coupling [{}], gap {:.1f} mm", neighbour.vehicle->name(), neighbour.vehicle_end == end::front ? "front" : "rear", coupler.CouplingFlag, neighbour.distance * 1000.0 ),
+            std::format( "Neighbour: {} ({} end), coupling [{}], gap {:.1f} mm", neighbour.vehicle->name(), neighbour.vehicle_end == end::front ? "front" : "rear", coupler.CouplingFlag.Bits(), neighbour.distance * 1000.0 ),
             Global.UITextColor );
     }
     else {

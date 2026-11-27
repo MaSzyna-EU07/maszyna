@@ -74,7 +74,7 @@ void release_brakes(TMoverParameters &Cab) {
 		auto const *vehicle{pending.back()};
 		pending.pop_back();
 		for (auto const &thiscoupler : vehicle->Couplers) {
-			if (thiscoupler.Connected != nullptr && thiscoupler.CouplingFlag != coupling::faux && std::ranges::find(train, thiscoupler.Connected) == train.end()) {
+			if (thiscoupler.Connected != nullptr && thiscoupler.CouplingFlag != Coupling::none && std::ranges::find(train, thiscoupler.Connected) == train.end()) {
 				thiscoupler.Connected->DecManualBrakeLevel(ManualBrakePosNo);
 				thiscoupler.Connected->SpringBrake.Activate = false;
 				train.push_back(thiscoupler.Connected);
