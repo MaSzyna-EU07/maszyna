@@ -51,6 +51,7 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic);
 int export_btf_standalone(std::string in, std::string out);
 int generate_nodebank_previews(int Argc, char *Argv[]);
+int e3d1_tools_standalone(int Argc, char *Argv[]);
 
 #include <string>
 #include <utilities/Globals.h>
@@ -145,6 +146,14 @@ int main(int argc, char *argv[])
 		int flags = std::stoi(std::string(argv[4]));
 		int dynamic = std::stoi(std::string(argv[5]));
 		export_e3d_standalone(in, out, flags, dynamic);
+	}
+	// standalone E3D1 tools, with the null renderer: conversion to shared geometry, comparison and load times (e3d1_tools_standalone.cpp)
+	else if (argc >= 2 && (std::string(argv[1]) == "-e3dpack" || std::string(argv[1]) == "-e3dverify" || std::string(argv[1]) == "-e3dbench"))
+	{
+		auto const result{e3d1_tools_standalone(argc, argv)};
+		fflush(stdout);
+		fflush(stderr);
+		std::_Exit(result);
 	}
 	// standalone generation of preview images of the node bank models: -generate-nodebank-previews [options]
 	else if (argc >= 2 && std::string(argv[1]) == "-generate-nodebank-previews")

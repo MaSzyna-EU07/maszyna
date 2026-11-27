@@ -304,6 +304,8 @@ private:
     int iSubModelsCount { 0 }; // Ra: używane do tworzenia binarnych
 	std::string asBinary; // nazwa pod którą zapisać model binarny
     std::string m_filename;
+    std::string m_binaryfolder; // of the binary file loaded, where the geometry pack of an E3D1 model is looked for from
+    bool m_e3d1 { false }; // the binary file loaded is E3D1, with the geometry in records
     nameoffset_sequence m_smokesources; // list of particle sources defined in the model
     instance_submodels m_instancesubmodels; // filled on first use, see instance_parts()
     bool m_instancesubmodelslocated { false };
@@ -317,6 +319,8 @@ public:
     float bounding_radius() const {
         return Root ? Root->m_boundingradius : 0.f; }
 	inline TSubModel * GetSMRoot() { return Root; };
+	// the sub-models of a model loaded from a binary file, Root[0] to Root[SubModelsCount() - 1]
+	int SubModelsCount() const { return iSubModelsCount; }
 	TSubModel * GetFromName(std::string const &Name) const;
     // returns submodels which scenery instances of the model refer to by name. the search for a name goes through the whole
     // submodel tree, so it's done once for the model instead of once for each of its instances
@@ -338,7 +342,9 @@ public:
 	void LoadFromBinFile(std::string const &FileName, bool dynamic);
     bool LoadFromFile(std::string const &FileName, bool dynamic);
     TSubModel *AppendChildFromGeometry(const std::string &name, const std::string &parent, const gfx::vertex_array &vertices, const gfx::index_array &indices);
-	void SaveToBinFile(std::string const &FileName);
+	// with bit 32 of convertmodels set the model is stored as E3D1, its geometry blocks added to the pack given
+	// (geometry.e3dpack in the folder of the file by default)
+	void SaveToBinFile(std::string const &FileName, std::string const &Pack = {});
 	uint32_t Flags() const { return iFlags; };
 	void Init();
 	// assigns each top level branch of the model, and everything below it, its own variant group id
@@ -349,6 +355,10 @@ public:
 	int TerrainCount() const;
 	TSubModel * TerrainSquare(int n);
 	void deserialize(std::istream &s, size_t size, bool dynamic);
+
+private:
+	// the geometry of the sub-models of an E3D1 file, from its GRF and GRI chunks and the pack
+	void deserialize_e3d1_geometry(unsigned char const *Records, std::size_t Recordssize, unsigned char const *Inline, std::size_t Inlinesize, std::vector<char> &Tangents);
 };
 
 //---------------------------------------------------------------------------
