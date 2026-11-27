@@ -49,7 +49,7 @@ class keeping_renderer final : public gfx_renderer
 	material_handle Fetch_Material(std::string const &, bool const) override { return null_handle; }
 	void Bind_Material(material_handle const, TSubModel const *, lighting_data const *) override {}
 	IMaterial const *Material(material_handle const) const override { return IMaterial::null_material(); }
-	std::shared_ptr<gl::program> Fetch_Shader(std::string const &) override { return nullptr; }
+	std::shared_ptr<gfx::shader_program> Fetch_Shader(std::string const &) override { return nullptr; }
 	texture_handle Fetch_Texture(std::string const &, bool const, GLint) override { return null_handle; }
 	void Bind_Texture(texture_handle const) override {}
 	void Bind_Texture(std::size_t const, texture_handle const) override {}
