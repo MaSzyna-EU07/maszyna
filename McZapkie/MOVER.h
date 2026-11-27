@@ -2488,6 +2488,15 @@ class TMoverParameters
 	basic_light CompartmentLights;
 
 	bool PhysicActivation = true;
+	// what the brake force (Fb) came from when the physics fell asleep (switch_physics()), for the test of ComputeTotalForce():
+	// asleep, a vehicle keeps the Fb and FStand of its last step, and a change of these wakes it
+	struct
+	{
+		double cylinder{0.0}; // BrakePress
+		double spring{0.0}; // SpringBrake.SBP
+		int manual{0}; // ManualBrakePos
+		double local{0.0}; // LocalBrakePosA
+	} sleep_brakes;
 
 	/*ABu: stale dla wyznaczania sil (i nie tylko) po optymalizacji*/
 	double FrictConst1 = 0.0;
@@ -2666,6 +2675,8 @@ class TMoverParameters
 	// standing still, its acceleration is the pull of the slope and of the couplers, as the brakes and the resistance count only
 	// against a speed (FTotal); with Global.physics_sleepheld one held by them, the way ComputeMovement() keeps it standing, doesn't
 	bool accelerating() const;
+	// whether the brakes of a vehicle whose physics sleeps have changed since it fell asleep, see sleep_brakes
+	bool brakes_changed_asleep() const;
 	double LocalBrakeRatio(void) const;
 	double ManualBrakeRatio(void) const;
 	double PipeRatio(void) const; /*ile napelniac*/
