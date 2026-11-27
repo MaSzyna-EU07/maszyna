@@ -8889,9 +8889,16 @@ void TController::control_uphill_start() {
     }
     fUphillHoldingForce = fMass * -fAccGravity;
     uphill_start::situation const now {
-        std::abs( velocity ) < EU07_AI_NOMOVEMENT, velocity, fConsistVelocity,
-        AccDesired > EU07_AI_NOACCELERATION, VelDesired > 0.0, BrakeCtrlPosition > 0.0,
-        fUphillTractiveForce, fUphillHoldingForce, IsConsistReleased, IsConsistCharged };
+        .standing = std::abs( velocity ) < EU07_AI_NOMOVEMENT,
+        .velocity = velocity,
+        .consist_velocity = fConsistVelocity,
+        .speed_up = AccDesired > EU07_AI_NOACCELERATION,
+        .speed_asked = VelDesired > 0.0,
+        .train_brake_applied = BrakeCtrlPosition > 0.0,
+        .tractive_force = fUphillTractiveForce,
+        .grade_force = fUphillHoldingForce,
+        .consist_released = IsConsistReleased,
+        .consist_charged = IsConsistCharged };
     if( false == bUphillStart ) {
         if( false == uphill_start::begins( now ) ) {
             return;
