@@ -653,6 +653,9 @@ char const charsetconversiontable[] = "E?,?\"_++?%S<STZZ?`'\"\".--??s>stzz"
                                 "RAAAALCCCEEEEIIDDNNOOOOxRUUUUYTB"
                                 "raaaalccceeeeiiddnnoooo-ruuuuyt?";
 
+// one plain character for each of the upper half of the code page, whatever the compiler makes of the literals
+static_assert(sizeof(charsetconversiontable) == 0x80 + 1);
+
 // wycięcie liter z ogonkami
 std::string Bezogonkow(std::string Input, bool const Underscorestospaces)
 {

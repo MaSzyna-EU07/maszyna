@@ -712,9 +712,8 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 		break;
 	}
 	case nodebank_panel::BRUSH:
-		ImGui::TextDisabled(STR_C("Hold LMB: paint models along the cursor path"));
+		// the brush turns the models itself (Turn), the rotation settings of the insert mode don't apply to it
 		m_brushobjects.render_options(m_nodebankpanel);
-		m_functionspanel.render_controls();
 		break;
 	case nodebank_panel::FILL:
 		if (m_filloptions)
@@ -1162,9 +1161,9 @@ void editor_ui::set_mode(nodebank_panel::edit_mode const Mode)
 	m_nodebankpanel.mode = Mode;
 	m_nodebankpanel.is_open = true;
 }
-float editor_ui::getSpacing()
+brush_object_list const &editor_ui::brush() const
 {
-	return m_brushobjects.spacing;
+	return m_brushobjects;
 }
 
 functions_panel::rotation_mode editor_ui::rot_mode()

@@ -38,6 +38,7 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/rendering/common/freecameramotion.cpp"
 	# and the http client the editor fetches its aids with
 	"${CMAKE_SOURCE_DIR}/editor/editorHttp.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorScatter.cpp"
 	# and what the switch tool tells of the drives of the switches
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchDrives.cpp"
 	# the camera, for the order of its rotations (test_camera.cpp)
