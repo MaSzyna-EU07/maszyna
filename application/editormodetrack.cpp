@@ -2883,6 +2883,9 @@ void editor_mode::draw_build_overlay() const
 					if (projection.project(bend.target.position, screen))
 						drawlist->AddCircle(screen, 14.0f, bend.problem.empty() ? IM_COL32(255, 60, 255, 255) : overlay_color::invalid, 20, 3.0f);
 				}
+				// what it breaks first: it isn't laid so
+				for (auto const &refusal : bend.report.refusals)
+					lines.emplace_back(refusal, overlay_color::invalid);
 				for (auto const &warning : bend.report.warnings)
 					lines.emplace_back(warning, overlay_color::invalid);
 			}
@@ -2923,12 +2926,14 @@ void editor_mode::draw_build_overlay() const
 				for (auto const &line : slip_report_lines(report))
 					lines.emplace_back(line, IM_COL32(255, 255, 255, 235));
 				notes = report.notes;
-				warnings = report.warnings;
+				// what it breaks first: it isn't laid so
+				warnings = report.refusals;
+				warnings.insert(warnings.end(), report.warnings.begin(), report.warnings.end());
 			}
 			else
 			{
 				station = curved_switch_start(forward, &snapped);
-				auto const report{curved_switch_report(preview, m_switch.frame, station, forward)};
+				auto const report{curved_switch_report(preview, m_switch.frame, station, forward, &m_switch.frame_tracks)};
 				if (report.curved)
 				{
 					lines.emplace_back(format(STR_C("main track R %s at the start, %s at the end"), radius(report.main_start).c_str(), radius(report.main_end).c_str()), IM_COL32(255, 255, 255, 235));
@@ -2936,7 +2941,8 @@ void editor_mode::draw_build_overlay() const
 				}
 				lines.emplace_back(format(STR_C("cant %.0f mm at the start, %.0f mm at the end"), report.cant_start, report.cant_end), IM_COL32(255, 255, 255, 235));
 				notes = report.notes;
-				warnings = report.warnings;
+				warnings = report.refusals;
+				warnings.insert(warnings.end(), report.warnings.begin(), report.warnings.end());
 			}
 			if (false == snapped.empty())
 				lines.emplace(lines.begin(), snapped, IM_COL32(255, 170, 40, 255));

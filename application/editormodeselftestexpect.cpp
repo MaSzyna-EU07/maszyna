@@ -330,6 +330,29 @@ void expect_includes(std::string const &What, std::istringstream &Words)
 	expectation(count == wanted, What, std::to_string(count), std::to_string(wanted));
 }
 
+// expect status <text>: the status the switch tool shows in its panel holds the text, the rest of the line
+void expect_status(std::string const &What, std::istringstream &Words, std::string const &Status)
+{
+	std::string wanted;
+	std::getline(Words >> std::ws, wanted);
+	if (wanted.empty())
+	{
+		expectation(false, What, "malformed", "the text the status holds");
+		return;
+	}
+	expectation(Status.find(wanted) != std::string::npos, What, "\"" + Status + "\"", "a status holding \"" + wanted + "\"");
+}
+
+// expect steps <count>: the steps Ctrl+Z takes back, the ones made together counted once
+void expect_steps(std::string const &What, std::istringstream &Words, std::size_t const Steps)
+{
+	std::size_t wanted{0};
+	Words >> wanted;
+	if (malformed(What, Words))
+		return;
+	expectation(Steps == wanted, What, std::to_string(Steps), std::to_string(wanted));
+}
+
 } // namespace
 
 editor_mode::selftest_result editor_mode::selftest_expect(std::string const &command, std::istringstream &words)
@@ -374,7 +397,11 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		expect_height(what, kind, words, m_selftest.marks);
 	else if (kind == "includes")
 		expect_includes(what, words);
+	else if (kind == "status")
+		expect_status(what, words, m_switch.status);
+	else if (kind == "steps")
+		expect_steps(what, words, static_cast<std::size_t>(std::ranges::count_if(m_history, [](EditorSnapshot const &Step) { return false == Step.joined; })));
 	else
-		expectation(false, what, "no expectation " + kind, "cant, joint, records, shaped, speed, gauge, track, route, norms, height, lift or includes");
+		expectation(false, what, "no expectation " + kind, "cant, joint, records, shaped, speed, gauge, track, route, norms, height, lift, includes, status or steps");
 	return selftest_result::handled;
 }

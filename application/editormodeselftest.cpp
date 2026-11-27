@@ -159,6 +159,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   splitkind <kind>, nudgekind <kind> <dx> <dz>   the first path over an element of the kind split in two, or moved
 //   switchplace <template> <x> <z> <direction> <side>   the catalogue template whose label starts so put into the straight
 //                                        nearest the point, or into the curve (switchcurve); slipplace <template> <x> <z>
+//   switchslide <name|selected> <metres|back|ahead>   the switch moved along its straight or the curve it's bent into, as dragged
+//   switchreplace <name|selected> <template>   the switch given the catalogue template whose label starts so, as the inspector gives it
 //   switchpieces <R> <n> [name]          logs the diverging path made of pieces of each switch: length, the arc R of 1:n against the axis
 //   switchbreak [name]                   the first piece of the diverging path moved off its neighbour, the switch committed
 //   switches                             logs the switches kept in the scenery and the speed of each diverging track
@@ -226,6 +228,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   expect height <track> <start|end> <m> <tolerance>   the height of the end of the first path
 //   expect lift <track> <start|end> <label> <m> <tolerance>   how far the end of the first path is above the height marked
 //   expect includes <track> <count>      the includes whose parameters name the track: the model and the events of a turntable
+//   expect status <text>                 the status of the switch tool, as its panel shows it, holds the text (the rest of the line)
+//   expect steps <count>                 the steps of the history Ctrl+Z takes back, the ones made together counted once
 //                                        each expect logs SELFTEST PASS or SELFTEST FAIL; a failed one, or a command no group takes,
 //                                        makes the run end with editor_selftest::failed_exit_code
 //   quit                                 logs SELFTEST result: <failed> failed of <expectations>, the editor closes

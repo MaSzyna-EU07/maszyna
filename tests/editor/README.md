@@ -55,8 +55,9 @@ with 1 when it couldn't start or an error ended it, and with the system's code o
 The fixture holds plain tracks only, no terrain: lines of straights (`a`, `s`, `d`, the pair `p` and `q` 4.5 m apart), a track
 of 1000 mm gauge (`g1`) beside one of the standard gauge (`g2`), a turntable of 16 m with `velocity 10` (`tt1`, with the
 include of its model and events), two curves of 600 and 604.5 m side by side with a cant of 60 mm (`i0`..`i9`, `o0`..`o9`,
-the straights at their ends taking the cant on and off), and a track apart with a vehicle (`v1`), without which the editor
-would put one of its own onto a track of the cases on saving. It uses only what every install of the game has.
+the straights at their ends taking the cant on and off), a straight taking a cant of 60 mm on along its middle track (`r1`..`r3`),
+a curve without cant of 60 m of R 2000 m and 60 m of R 400 m turning the same way between straights (`k0`..`k3`), and a track
+apart with a vehicle (`v1`), without which the editor would put one of its own onto a track of the cases on saving. It uses only what every install of the game has.
 
 ## Writing a case
 
@@ -79,6 +80,8 @@ The expectations (`expect <what> ...`), each logged as `SELFTEST PASS <what>` or
 | `expect height <track> <start\|end> <m> <tolerance>` | the height of the end of the first path |
 | `expect lift <track> <start\|end> <label> <m> <tolerance>` | how far the end is above the height `mark <label> <track> <start\|end>` kept |
 | `expect includes <track> <count>` | the includes whose parameters name the track: the model and the events of a turntable |
+| `expect status <text>` | the status of the switch tool, as its panel shows it, holds the text (the rest of the line) |
+| `expect steps <count>` | the steps of the history Ctrl+Z takes back, the ones made together counted once: none made by a change refused |
 
 A line `#> reopen` ends a run of the editor there (the part before it saves and ends with `quit`) and starts the editor again
 on the scenery as it was saved, for what has to be checked after a save and a load. The editor's own `openscenery` starts a
@@ -98,3 +101,11 @@ The cases check the fixes of PR #450 (the numbers are those of its test plan):
 | `6b_set_delete_whole` | a double switch, a slip and a crossover in a set go whole, with their records |
 | `7_crossover_delete` | deleting a switch of a crossover on a curve takes the crossover out whole: the outer track comes down, the record goes |
 | `7b_bent_switch_delete` | a switch bent out of the shape of its record still takes the record along when deleted |
+
+and the quick fixes of the switches (Q2 of the plan of the track editing):
+
+| case | fix |
+| --- | --- |
+| `q2_1_switch_speed` | a switch laid, or given another template, gets the speed of its diverging track written: of its type, bent into a curve with the cant taken with its sign and the cant deficiency of its frog |
+| `q2_2_switch_refusals` | a switch with the cant changing within it or a ramp ending nearer than 6 m, a double switch or a slip bent, or the curvature of its diverging track turning from one side to the other isn't laid; 1:9.403 bent is only warned of |
+| `q2_3_switch_move` | a switch moved along its curve or its straight is judged as when it's laid: moved too near a cant ramp, or onto one, it stays |
