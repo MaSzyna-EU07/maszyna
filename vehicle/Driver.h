@@ -19,7 +19,10 @@ http://mozilla.org/MPL/2.0/.
 #include "world/mtable.h"
 #include "utilities/translation.h"
 #include "application/driverhints.h"
+#include "vehicle/uphillstart.h"
+#include "vehicle/brakecharge.h"
 #include "vehicle/blackbox.h"
+#include "vehicle/aipower.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;
@@ -27,7 +30,9 @@ auto const EU07_AI_BRAKINGTESTACCELERATION = -0.06;
 auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
 auto const EU07_AI_UPHILLGRAVITY = -0.025; // [m/s2] about 2.5 per mille up: the gradient that rolls a standing train back
+auto const EU07_AI_UPHILLRELEASETIME = 60.0; // [s] the longest an uphill start keeps the power on while the train brake releases
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
+auto const EU07_AI_SANDEDSTARTVELOCITY = 15.0; // [km/h] a start that slipped keeps the sand on up to this speed
 
 enum TOrders
 { // rozkazy dla AI
@@ -184,7 +189,8 @@ class TSpeedPos
     void
         UpdateDistance( double dist ) {
             fDist -= dist; }
-    bool Set(basic_event *e, double d, double length, TOrders order = Wait_for_orders);
+    // Standing: the train stands, so an event found behind its head wasn't passed by it
+    bool Set(basic_event *e, double d, double length, TOrders order = Wait_for_orders, bool Standing = false);
     void Set(TTrack *t, double d, int f);
     std::string TableText() const;
     std::string GetName() const;
@@ -337,6 +343,10 @@ private:
     bool uphill_stop_hold() const;
     bool uphill_brake_committed( double const Velocity ) const;
     void control_uphill_start();
+    void end_uphill_start();
+    bool uphill_brake_top_up();
+    void secure_standing_train();
+    double locomotive_brake_force() const;
     std::pair<double, double> train_proximity_margins( bool const Passengerstop ) const;
 
     void update_timers( double const dt );
@@ -388,6 +398,7 @@ private:
     bool is_brake_charging_done() const;
     double consist_max_crp() const;
     bool is_departure_blocked( double const Delay ) const;
+    void control_field_shunting();
     void control_relays();
     void control_motor_connectors();
     void control_tractive_force();
@@ -440,7 +451,24 @@ private:
     double fShortfallTime = 0.0; // when that was checked
     int iShortfallGrowth = 0; // how many checks in a row the shortfall has grown
     bool bUphillStart = false; // starting uphill: the train brake holds the train until the power does
+    bool bSandedStart = false; // the wheels slipped while starting: sand while under power until the train is under way
+    double fSandedStartDecreaseTime = -1.0; // when the power was last taken down a step for a slip while starting
     double fUphillStartTime = 0.0; // when the uphill start began
+    bool bUphillRelease = false; // starting uphill, the power holds the train and the train brake is being released
+    bool bUphillBrakeTopUp = false; // starting uphill, the train brake is applied further before the locomotive brake comes off
+    uphill_start::top_up UphillTopUp; // starting uphill, what has been done to apply the train brake further
+    double fUphillReleaseTime = 0.0; // when the release began
+    double fUphillTractiveForce = 0.0; // the tractive force of the consist while starting uphill [N]
+    double fUphillHoldingForce = 0.0; // the grade force on the consist while starting uphill [N]
+    bool IsConsistReleased = true; // the brakes of the consist are off, the hold of an uphill start not counted
+    bool IsConsistCharged = true; // standing, the brake pipe and the auxiliary reservoirs are charged to start (or stopped charging)
+    brake_charge::state BrakeCharge; // standing, how the charge of the brakes rose
+    // the next start waits for the brakes to charge: the first after the train was prepared standing, or one with the
+    // pipe near empty. cleared once the train runs
+    bool bBrakeChargeStart = false;
+    bool bHasRun = false; // the train has moved (above 1 km/h) since it was placed
+    bool bBrakeChargeHold = false; // charging, the train stands on a light application of the train brake as well
+    double fConsistVelocity = 0.0; // the mass-weighted speed of the consist, positive in the direction of travel [km/h]
     double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)
     double VelSignal = 0.0; // ograniczenie prędkości z kompilacji znaków i sygnałów // normalnie na początku ma stać, no chyba że jedzie
@@ -682,6 +710,9 @@ public:
     bool CheckVehicles( TOrders user = Wait_for_orders );
 private:
     bool PrepareEngine();
+    // tells in the log, once, of standing with the pantographs up and no voltage (eu07/maszyna#421)
+    void report_power_stall( bool const Poweravailable, double const Pantographpressure );
+    ai_power::reporter m_powerstall; // the reports of report_power_stall()
     void close_line_breaker();
     bool ReleaseEngine();
     void Doors( bool const Open, int const Side = 0 );

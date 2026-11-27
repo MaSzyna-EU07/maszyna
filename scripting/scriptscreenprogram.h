@@ -39,16 +39,14 @@ constexpr std::size_t max_log_line{1024}; // bytes of the text, a longer one is 
 // the largest file a screen reads: its script or module, a file below its folder
 constexpr std::uintmax_t max_screen_file{16 * 1024 * 1024};
 // the memory a Lua screen may hold: its Lua heap, and the pixels of its images, fonts and sprites. checked with a full
-// collection, so its garbage doesn't count; between the collections it may take the screen up to twice this
+// collection, so its garbage doesn't count; between the collections it may take the screen up to twice this, which
+// the screen's allocator refuses to go over as each block is asked for
 constexpr std::size_t max_screen_memory{128 * 1024 * 1024};
 
-// true when the Lua screens count their memory in an allocator of their own, which refuses what goes over
-// max_screen_memory as it is asked for: LuaJIT 2.1 in its GC64 mode, a 32-bit build. LuaJIT 2.0 on x64 (the game's on
-// Windows) and 2.1 on x64 without GC64 take no allocator; there the memory is checked by the instruction hook every
-// so many instructions, and before what makes images and large strings in one call (string.rep, string.format,
-// table.concat, string.gsub), but not at the concatenation operator: one concatenation of large strings is made
-// whole, as far as LuaJIT's own heap goes (2 GB on x64), and the screen is stopped at the next check
-bool lua_screen_memory_allocator();
+// for the unit tests, which fill the memory of a screen and stay small: the memory a Lua screen made from now on may
+// hold in place of max_screen_memory, and the most any Lua screen held since it was set (its heap and its objects)
+void set_lua_screen_memory_limit(std::size_t Bytes);
+std::size_t lua_screen_memory_peak();
 
 struct pending_command
 {

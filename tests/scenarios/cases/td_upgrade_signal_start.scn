@@ -1,0 +1,492 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// a line of its own, away from the tracks of td.scn: 600 m level, then 2500 m up a gradient of 10 per mille,
+// under an overhead wire. the train starts on the level with its head 10 m before the W4 of Gora and runs on the
+// timetable {{timetable}} (no stop; a freight train leaves Gora at once) up to the signal hu_sem1 1000 m up the gradient, at stop until 10:42,
+// where it stops with the whole train on the gradient, then on to the signal hu_sem2 at stop 2300 m up the
+// gradient. the line goes on 200 m past it
+node -1 0 hu_00 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -600.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 -500.0 0.0
+0
+endtrack
+node -1 0 hu_01 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -500.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 -400.0 0.0
+0
+endtrack
+node -1 0 hu_02 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -400.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 -300.0 0.0
+0
+endtrack
+node -1 0 hu_03 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -300.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 -200.0 0.0
+0
+endtrack
+node -1 0 hu_04 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -200.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 -100.0 0.0
+0
+endtrack
+node -1 0 hu_05 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -100.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 0.0 0.0
+0
+event2 gora#1_stopinfo
+endtrack
+node -1 0 hu_06 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 0.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 61.00 100.0 0.0
+0
+endtrack
+node -1 0 hu_07 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 61.00 100.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 62.00 200.0 0.0
+0
+endtrack
+node -1 0 hu_08 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 62.00 200.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 63.00 300.0 0.0
+0
+endtrack
+node -1 0 hu_09 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 63.00 300.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 64.00 400.0 0.0
+0
+endtrack
+node -1 0 hu_10 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 64.00 400.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 65.00 500.0 0.0
+0
+endtrack
+node -1 0 hu_11 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 65.00 500.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 66.00 600.0 0.0
+0
+endtrack
+node -1 0 hu_12 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 66.00 600.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 67.00 700.0 0.0
+0
+endtrack
+node -1 0 hu_13 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 67.00 700.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 68.00 800.0 0.0
+0
+endtrack
+node -1 0 hu_14 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 68.00 800.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 69.00 900.0 0.0
+0
+endtrack
+node -1 0 hu_15 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 69.00 900.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 70.00 1000.0 0.0
+0
+event2 hu_sem1_info
+endtrack
+node -1 0 hu_16 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 70.00 1000.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 71.00 1100.0 0.0
+0
+endtrack
+node -1 0 hu_17 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 71.00 1100.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 72.00 1200.0 0.0
+0
+endtrack
+node -1 0 hu_18 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 72.00 1200.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 73.00 1300.0 0.0
+0
+endtrack
+node -1 0 hu_19 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 73.00 1300.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 74.00 1400.0 0.0
+0
+endtrack
+node -1 0 hu_20 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 74.00 1400.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 75.00 1500.0 0.0
+0
+endtrack
+node -1 0 hu_21 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 75.00 1500.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 76.00 1600.0 0.0
+0
+endtrack
+node -1 0 hu_22 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 76.00 1600.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 77.00 1700.0 0.0
+0
+endtrack
+node -1 0 hu_23 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 77.00 1700.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 78.00 1800.0 0.0
+0
+endtrack
+node -1 0 hu_24 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 78.00 1800.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 79.00 1900.0 0.0
+0
+endtrack
+node -1 0 hu_25 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 79.00 1900.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 80.00 2000.0 0.0
+0
+endtrack
+node -1 0 hu_26 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 80.00 2000.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 81.00 2100.0 0.0
+0
+endtrack
+node -1 0 hu_27 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 81.00 2100.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 82.00 2200.0 0.0
+0
+endtrack
+node -1 0 hu_28 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 82.00 2200.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 83.00 2300.0 0.0
+0
+event2 hu_sem2_info
+endtrack
+node -1 0 hu_29 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 83.00 2300.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 84.00 2400.0 0.0
+0
+endtrack
+node -1 0 hu_30 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 84.00 2400.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 85.00 2500.0 0.0
+0
+endtrack
+// the overhead wire along the whole line, as td.scn has it: 5.6 m above the rail, the carrier 1.7 m higher, fed by
+// a substation of its own
+node -1 0 hu_pwr tractionpowersource -3000.0 60.00 0.0 3400 0 0.01 2000 1.0 3 60.0 end
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -600.0
+-3000.0 65.60 -500.0
+-3000.0 67.30 -600.0
+-3000.0 67.30 -500.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -500.0
+-3000.0 65.60 -400.0
+-3000.0 67.30 -500.0
+-3000.0 67.30 -400.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -400.0
+-3000.0 65.60 -300.0
+-3000.0 67.30 -400.0
+-3000.0 67.30 -300.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -300.0
+-3000.0 65.60 -200.0
+-3000.0 67.30 -300.0
+-3000.0 67.30 -200.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -200.0
+-3000.0 65.60 -100.0
+-3000.0 67.30 -200.0
+-3000.0 67.30 -100.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -100.0
+-3000.0 65.60 0.0
+-3000.0 67.30 -100.0
+-3000.0 67.30 0.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 0.0
+-3000.0 66.60 100.0
+-3000.0 67.30 0.0
+-3000.0 68.30 100.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 66.60 100.0
+-3000.0 67.60 200.0
+-3000.0 68.30 100.0
+-3000.0 69.30 200.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 67.60 200.0
+-3000.0 68.60 300.0
+-3000.0 69.30 200.0
+-3000.0 70.30 300.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 68.60 300.0
+-3000.0 69.60 400.0
+-3000.0 70.30 300.0
+-3000.0 71.30 400.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 69.60 400.0
+-3000.0 70.60 500.0
+-3000.0 71.30 400.0
+-3000.0 72.30 500.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 70.60 500.0
+-3000.0 71.60 600.0
+-3000.0 72.30 500.0
+-3000.0 73.30 600.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 71.60 600.0
+-3000.0 72.60 700.0
+-3000.0 73.30 600.0
+-3000.0 74.30 700.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 72.60 700.0
+-3000.0 73.60 800.0
+-3000.0 74.30 700.0
+-3000.0 75.30 800.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 73.60 800.0
+-3000.0 74.60 900.0
+-3000.0 75.30 800.0
+-3000.0 76.30 900.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 74.60 900.0
+-3000.0 75.60 1000.0
+-3000.0 76.30 900.0
+-3000.0 77.30 1000.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 75.60 1000.0
+-3000.0 76.60 1100.0
+-3000.0 77.30 1000.0
+-3000.0 78.30 1100.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 76.60 1100.0
+-3000.0 77.60 1200.0
+-3000.0 78.30 1100.0
+-3000.0 79.30 1200.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 77.60 1200.0
+-3000.0 78.60 1300.0
+-3000.0 79.30 1200.0
+-3000.0 80.30 1300.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 78.60 1300.0
+-3000.0 79.60 1400.0
+-3000.0 80.30 1300.0
+-3000.0 81.30 1400.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 79.60 1400.0
+-3000.0 80.60 1500.0
+-3000.0 81.30 1400.0
+-3000.0 82.30 1500.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 80.60 1500.0
+-3000.0 81.60 1600.0
+-3000.0 82.30 1500.0
+-3000.0 83.30 1600.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 81.60 1600.0
+-3000.0 82.60 1700.0
+-3000.0 83.30 1600.0
+-3000.0 84.30 1700.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 82.60 1700.0
+-3000.0 83.60 1800.0
+-3000.0 84.30 1700.0
+-3000.0 85.30 1800.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 83.60 1800.0
+-3000.0 84.60 1900.0
+-3000.0 85.30 1800.0
+-3000.0 86.30 1900.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 84.60 1900.0
+-3000.0 85.60 2000.0
+-3000.0 86.30 1900.0
+-3000.0 87.30 2000.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 85.60 2000.0
+-3000.0 86.60 2100.0
+-3000.0 87.30 2000.0
+-3000.0 88.30 2100.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 86.60 2100.0
+-3000.0 87.60 2200.0
+-3000.0 88.30 2100.0
+-3000.0 89.30 2200.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 87.60 2200.0
+-3000.0 88.60 2300.0
+-3000.0 89.30 2200.0
+-3000.0 90.30 2300.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 88.60 2300.0
+-3000.0 89.60 2400.0
+-3000.0 90.30 2300.0
+-3000.0 91.30 2400.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction hu_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 89.60 2400.0
+-3000.0 90.60 2500.0
+-3000.0 91.30 2400.0
+-3000.0 92.30 2500.0
+0.4 4.0 3 0.04 vis
+endtraction
+// the W4 of the stations of the timetable
+include ip/pkp/w4n.inc gora#1 -2997.3 60.00 -90.0 180 0 0 -10 202 end
+// a signal at stop: what the AI reads of one, a memory cell with SetVelocity 0 0 and the event that reads it
+node -1 0 hu_sem1_mem memcell -2997.3 78.00 1000.0 SetVelocity 0.0 0.0 none endmemcell
+event hu_sem1_info getvalues 5.0 hu_sem1_mem endevent
+// cleared at 10:42: the memory cell lets the train go at the line speed
+event hu_sem1_go updatevalues 0.0 hu_sem1_mem SetVelocity 100 100 endevent
+node -1 0 hu_sem1_launcher eventlauncher 0 0 0 -1 none 1042 hu_sem1_go end
+// a signal at stop: what the AI reads of one, a memory cell with SetVelocity 0 0 and the event that reads it
+node -1 0 hu_sem2_mem memcell -2997.3 91.00 2300.0 SetVelocity 0.0 0.0 none endmemcell
+event hu_sem2_info getvalues 5.0 hu_sem2_mem endevent
+
+trainset {{timetable}} hu_05 0.0 0.1
+{{consist}}
+endtrainset

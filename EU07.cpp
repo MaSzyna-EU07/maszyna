@@ -22,6 +22,7 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "simulation/simulationtest.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/crashdump.h"
 #include "utilities/crashsignals.h"
 #include "utilities/physicslog.h"
 #include "version_info.h"
@@ -37,71 +38,22 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #else
 #include <sys/resource.h>
 #endif
-#ifdef WITHDUMPGEN
-#ifdef _WIN32
-#include <Windows.h>
-#include <DbgHelp.h>
-#endif
-#endif
 
 #ifdef _MSC_VER
+#ifdef EU07_CPU_PREFLIGHT
+// checks the processor before the C runtime starts, see utilities/cpu_preflight.cpp
+#pragma comment(linker, "/subsystem:windows /ENTRY:eu07_preflight_entry")
+#else
 #pragma comment(linker, "/subsystem:windows /ENTRY:mainCRTStartup")
+#endif
 #endif
 
 void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic);
 int export_btf_standalone(std::string in, std::string out);
 int generate_nodebank_previews(int Argc, char *Argv[]);
 
-#include <ctime>
 #include <string>
-#include <sstream>
-#include <iomanip>
 #include <utilities/Globals.h>
-
-#ifdef _WIN32
-#pragma comment(lib, "Dbghelp.lib")
-
-LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
-{
-	// Get current local time
-	SYSTEMTIME st;
-	GetLocalTime(&st);
-
-	// Format: crash_YYYY-MM-DD_HH-MM-SS.dmp
-	std::ostringstream oss;
-	oss << "crash_" << std::setw(4) << std::setfill('0') << st.wYear << "-" << std::setw(2) << std::setfill('0') << st.wMonth << "-" << std::setw(2) << std::setfill('0') << st.wDay << "_"
-	    << std::setw(2) << std::setfill('0') << st.wHour << "-" << std::setw(2) << std::setfill('0') << st.wMinute << "-" << std::setw(2) << std::setfill('0') << st.wSecond << ".dmp";
-
-	std::string filename = oss.str();
-
-	HANDLE hFile = CreateFileA(filename.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (hFile != INVALID_HANDLE_VALUE)
-	{
-		MINIDUMP_EXCEPTION_INFORMATION dumpInfo;
-		dumpInfo.ThreadId = GetCurrentThreadId();
-		dumpInfo.ExceptionPointers = ExceptionInfo;
-		dumpInfo.ClientPointers = FALSE;
-
-		// a small dump by default: the stacks with the memory they point to, the threads with their process and thread
-		// blocks (the command line with the scenery and the vehicle), the modules, the handles and the modules' data
-		// (Global among them). all the memory of the simulator, as large as the memory it took, only with
-		// "crashdump.full yes" in eu07.ini
-		auto const dumpflags{Global.CrashDumpFull ? MiniDumpWithFullMemory : MiniDumpWithDataSegs};
-		MINIDUMP_TYPE dumpType = MINIDUMP_TYPE(dumpflags | MiniDumpWithProcessThreadData | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
-		                                       MiniDumpWithFullMemoryInfo | MiniDumpWithTokenInformation);
-
-		// in test mode nobody is there to close the box, and the run would wait for it until killed
-		if (false == Global.test.enabled)
-			MessageBoxA(nullptr, "Simulator crash occured :(\n", "Simulator crashed :(", MB_ICONERROR);
-		MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, dumpType, &dumpInfo, nullptr, nullptr);
-
-		CloseHandle(hFile);
-	}
-
-	return EXCEPTION_EXECUTE_HANDLER;
-}
-
-#endif
 
 namespace
 {
@@ -175,11 +127,7 @@ void raise_open_files_limit()
 int main(int argc, char *argv[])
 {
 	raise_open_files_limit();
-#ifdef WITHDUMPGEN
-#ifdef _WIN32
-	SetUnhandledExceptionFilter(CrashHandler);
-#endif
-#endif
+	crashdump_install();
 	// on Linux, where no dump is written, the stack of a crash in the log and on the standard error
 	crash_signals::install(VERSION_INFO);
 	// init start timestamp
@@ -264,7 +212,7 @@ int main(int argc, char *argv[])
 		}
 #else
 		// elsewhere one not caught here ends the simulator through std::terminate, with no word in the log. on
-		// Windows it is left to CrashHandler, whose dump shows where it was thrown
+		// Windows it is left to the crash report (utilities/crashdump.cpp), whose dump shows where it was thrown
 		catch (std::exception const &Error)
 		{
 			ErrorLog("Critical error: " + std::string(Error.what()));

@@ -1,0 +1,31 @@
+{
+  "description": "As eu07_td_crew_add, with a Traxx (E186, p160dc) standing ready to depart (trainset velocity 0.1) with nobody in it: its brake handle, one with a time chamber (MHZ_6P), in the holding position and the brake pipe and the control reservoir at running pressure. The AI driver put in cab A 20 s after the start gets the locomotive ready, puts the handle to running and leaves through the exit signal.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_crew.scn",
+  "vars": {
+    "trainsets": [
+      "trainset none tdo_n1734 0.0 0.1",
+      "node -1 0 {{vehicle}} dynamic pkp/e186_v2 146_226-6 p160dc 0 nobody 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "crew": [
+      "event autotest_crew_put putvalues 0 none 0 0 0 Crew:{{vehicle}} 1 0 endevent",
+      "event autotest_crew_on multiple 20 none autotest_crew_put autotest_crew_waits endevent",
+      "node -1 0 autotest_crew_on_launcher eventlauncher 0 0 0 -1 none 1034 autotest_crew_on end"
+    ]
+  },
+  "track_events": {
+    "tdo_n1734": "event0 autotest_wake"
+  },
+  "duration": 300,
+  "timeout": 600,
+  "checks": [
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_traxx_td_crew_add\\] an AI driver takes cab A" },
+    { "type": "driver_changes", "vehicle": "{{vehicle}}", "to": "ai", "after": 15, "before": 30 },
+    { "type": "starts", "min_speed": 20, "within": 240 },
+    { "type": "moves", "vehicle": "{{vehicle}}", "direction": "front", "min_speed": 20 },
+    { "type": "log_lacks", "pattern": "derailed" },
+    { "type": "log_lacks", "pattern": "collided" }
+  ]
+}

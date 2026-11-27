@@ -739,11 +739,8 @@ editor_orthophoto::service_info editor_orthophoto::describe(std::string const &S
 
 bool editor_orthophoto::can_download()
 {
-#if defined(_WIN32) || defined(EU07_WITH_CURL)
-	return true;
-#else
-	return false;
-#endif
+	// on Linux, whether the system has libcurl as well
+	return editor_http::available();
 }
 
 std::string editor_orthophoto::cache_directory()
