@@ -25,7 +25,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include "rendering/geometrybank.h"
 
+#include <algorithm>
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -66,6 +68,28 @@ bool decode_vertices(unsigned char const *Data, std::size_t Count, int Format, g
 void decode_indices(unsigned char const *Data, std::size_t Count, int Size, gfx::basic_index *Indices);
 // appends the indices in the narrowest width able to hold them, returns the width (0 if there are none)
 int encode_indices(gfx::basic_index const *Indices, std::size_t Count, std::string &Output);
+
+// the same bits in every component: -0.0 differs from 0.0 and a NaN equals a NaN with the same payload
+template <glm::length_t Length, glm::qualifier Qualifier>
+bool same_bits(glm::vec<Length, float, Qualifier> const &Left, glm::vec<Length, float, Qualifier> const &Right)
+{
+	for (glm::length_t i = 0; i < Length; ++i)
+		if (std::bit_cast<std::uint32_t>(Left[i]) != std::bit_cast<std::uint32_t>(Right[i]))
+			return false;
+	return true;
+}
+inline bool same_bits(gfx::basic_vertex const &Left, gfx::basic_vertex const &Right)
+{
+	return same_bits(Left.position, Right.position) && same_bits(Left.normal, Right.normal) && same_bits(Left.texture, Right.texture) &&
+	       same_bits(Left.tangent, Right.tangent);
+}
+inline bool same_bits(gfx::vertex_userdata const &Left, gfx::vertex_userdata const &Right) { return same_bits(Left.data, Right.data); }
+// the arrays have the same size and their elements the same bits
+template <typename Type>
+bool same_bits(std::vector<Type> const &Left, std::vector<Type> const &Right)
+{
+	return Left.size() == Right.size() && std::equal(Left.begin(), Left.end(), Right.begin(), [](Type const &L, Type const &R) { return same_bits(L, R); });
+}
 
 // how the geometry of a sub-model is stored, one record of the GRF0 chunk
 struct geometry_record {

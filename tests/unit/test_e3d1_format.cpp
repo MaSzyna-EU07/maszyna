@@ -39,8 +39,7 @@ struct geometry {
 
 bool same(geometry const &Left, geometry const &Right)
 {
-	return Left.vertices.size() == Right.vertices.size() && Left.indices == Right.indices && Left.userdata.size() == Right.userdata.size() &&
-	       (Left.vertices.empty() || std::memcmp(Left.vertices.data(), Right.vertices.data(), Left.vertices.size() * sizeof(gfx::basic_vertex)) == 0);
+	return e3d::same_bits(Left.vertices, Right.vertices) && Left.indices == Right.indices && Left.userdata.size() == Right.userdata.size();
 }
 
 // the geometry of every sub-model of an E3D0 file, the way TModel3d::deserialize() cuts it out of the VNT and IDX chunks

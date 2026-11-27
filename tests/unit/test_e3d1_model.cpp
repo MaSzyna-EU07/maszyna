@@ -128,7 +128,7 @@ gfx::index_array const &indices_of(TSubModel const &Submodel)
 
 bool same_vertices(gfx::vertex_array const &Left, gfx::vertex_array const &Right)
 {
-	return Left.size() == Right.size() && (Left.empty() || std::memcmp(Left.data(), Right.data(), Left.size() * sizeof(gfx::basic_vertex)) == 0);
+	return e3d::same_bits(Left, Right);
 }
 
 std::vector<part> const twin_bogies{{"root", 0, 0}, {"bogie1", 300, 1}, {"bogie2", 300, 1}, {"lamp", 10, 2}};

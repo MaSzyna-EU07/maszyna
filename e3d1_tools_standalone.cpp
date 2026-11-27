@@ -285,11 +285,11 @@ int e3d1_verify_standalone(int Argc, char *Argv[])
 					auto const &ib{geometry(sb, [](gfx::geometry_handle const &H) -> gfx::index_array const & { return GfxRenderer->Indices(H); })};
 					auto const &ua{geometry(sa, [](gfx::geometry_handle const &H) -> gfx::userdata_array const & { return GfxRenderer->UserData(H); })};
 					auto const &ub{geometry(sb, [](gfx::geometry_handle const &H) -> gfx::userdata_array const & { return GfxRenderer->UserData(H); })};
-					if (va.size() != vb.size() || (false == va.empty() && std::memcmp(va.data(), vb.data(), va.size() * sizeof(gfx::basic_vertex)) != 0))
+					if (false == e3d::same_bits(va, vb))
 						problem = "vertices of sub-model " + std::to_string(i) + " (" + sa.pName + ")";
 					else if (ia != ib)
 						problem = "indices of sub-model " + std::to_string(i) + " (" + sa.pName + ")";
-					else if (ua.size() != ub.size() || (false == ua.empty() && std::memcmp(ua.data(), ub.data(), ua.size() * sizeof(gfx::vertex_userdata)) != 0))
+					else if (false == e3d::same_bits(ua, ub))
 						problem = "user data of sub-model " + std::to_string(i) + " (" + sa.pName + ")";
 					else if (sa.pName != sb.pName || sa.eType != sb.eType || sa.iFlags != sb.iFlags || sa.m_geometry.vertex_count != sb.m_geometry.vertex_count ||
 					         sa.m_geometry.index_count != sb.m_geometry.index_count || sa.f4Diffuse != sb.f4Diffuse || sa.m_materialname != sb.m_materialname ||
