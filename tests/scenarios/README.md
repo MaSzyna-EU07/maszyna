@@ -37,8 +37,10 @@ With `--test` the simulator:
   test mode are applied again after it,
 - runs the simulation as fast as it can in fixed steps of 0.03 s of simulation time per
   frame (three 10 ms physics steps), whatever the real time, the time speed or the machine,
-- seeds its random numbers with a fixed seed unless `-seed` or `randomseed` gives one, so two
-  runs of a scenery come out the same (the physicslogs of two runs are byte for byte equal),
+- seeds its random numbers with a fixed seed unless `-seed` or `randomseed` gives one, so,
+  with the fixed step above, two runs of a scenery come out the same (the physicslogs of two
+  runs are byte for byte equal; a seed without the fixed step isn't enough, see
+  [A seed alone doesn't make a run repeatable](#a-seed-alone-doesnt-make-a-run-repeatable)),
 - quits when the test ends, and says how it ended in the exit code and in a `test: ...`
   line on stdout and in the log. A command line it can't take, a start that fails, or an
   exception thrown by the simulator (of any type, on Linux too) ends the same way, with the
@@ -148,7 +150,29 @@ Python 3.10+, no extra packages. Options:
   it runs alone, after the others.
 - `--seed N` (a number or a word) runs the cases with another seed of the simulator's random
   numbers (`randomseed`) than the fixed one of the test mode, for a bug that shows up only
-  sometimes: run the case with a few seeds.
+  sometimes: run the case with a few seeds. A seed repeats a run only in the test mode, see
+  below.
+
+### A seed alone doesn't make a run repeatable
+
+The same seed gives the same run only when every frame lasts the same simulation time. Each
+frame the simulator splits the time since the last one into physics steps of at most 10 ms
+(`driver_mode::update()`); outside the test mode that time comes from the wall clock (times
+`timespeed`), so the number and the length of the steps follow the frame rate, and with them
+the speeds, the pressures and the moments the AI decides things. Two runs of one scenery with
+one seed then drift apart, the more so on a busy machine.
+
+- The test mode (`--test`, what `run.py` runs by default) sets a fixed step itself: 0.03 s of
+  simulation time per frame, three 10 ms steps, whatever the wall clock
+  (`Timer::set_fixed_step()` in `driver_mode::enter()`). A case run twice with the same
+  `--seed`, or with none, comes out the same. This is the way to repeat a run.
+- `--watch` doesn't use the test mode: it runs on the wall clock, so a watched run isn't
+  repeatable, seed or not. Use it to look at a case, not to repeat one.
+- Outside the test mode (`--watch`, or the simulator started by hand with `-seed`) the setting
+  `deltaoverride N` makes every frame last 1/N s of simulation time, whatever the wall clock
+  and `timespeed` (`Timer::set_delta_override()`). It goes in `eu07.ini`, a `-ini` file or a
+  case's `ini` list. In the test mode it takes the place of the 0.03 s step. Whether a watched
+  run with it repeats byte for byte hasn't been checked.
 
 Exit code is 0 when every case passed, or failed as its `xfail` mark says it does (`XFAIL` in
 the summary); a case marked `xfail` that passes (`XPASS`) fails the run, so that the mark gets
@@ -215,7 +239,7 @@ to `logs/`.
 | `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire). Optional when the case keeps the scenery's trainsets |
 | `vars` | values for `{{name}}` in the fragment; a list becomes one line per item |
 | `timetable` | a timetable file in `cases/` for a trainset of the fragment, for a train whose timetable no scenery of the game has: copied to the game's `scenery/` dir as `autotest_<case>.txt` for the run and removed after it; the fragment names it `{{timetable}}` |
-| `vehicle_variants` | vehicles of the case's own, made from those of the game, e.g. with a `.fiz` key the game's data doesn't have yet: a list of `{ "name": ..., "from": "<dir>/<type>", "replace": [[old, new], ...] }`. For the run the vehicle's `.fiz`, with the literal replacements (an `old` it doesn't have is an error), and its `.mmd` are copied beside it in the game's `dynamic/` dir as `autotest_<case>_<name>` and removed after it; the fragment names the type `{{variant_<name>}}`, e.g. `dynamic pkp/et42_v2 112e-014-a {{variant_a}} ...`. The copy of the `.mmd` has the name of the vehicle it is made from in place of `(p2)`, the type name the simulator hands it, which some pass on to the include that names the model |
+| `vehicle_variants` | vehicles of the case's own, made from those of the game, e.g. with a `.fiz` key the game's data doesn't have yet: a list of `{ "name": ..., "from": "<dir>/<type>", "replace": [[old, new], ...] }`. For the run the vehicle's `.fiz`, with the literal replacements (an `old` it doesn't have is an error), and its `.mmd` are copied beside it in the game's `dynamic/` dir as `autotest_<case>_<name>` and removed after it; the fragment names the type `{{variant_<name>}}`, e.g. `dynamic pkp/et42_v2 112e-014-a {{variant_a}} ...`. The copy of the `.mmd` has the name of the vehicle it is made from in place of `(p2)`, the type name the simulator hands it, which some pass on to the include that names the model. An optional `"fiz_from": "<dir>/<file>"` copies that file instead of the vehicle's own `.fiz`, named in full, e.g. `pkp/e6act_v2/e6acta.fiz.inc` for a vehicle whose `.fiz` only includes it (`e6actad.fiz`); the `.mmd` still comes from `from`. Keys for a section of the included file can't go after the include on a line of their own: a second `Power:` line loads the power source anew |
 | `expect` | the result the test mode should end with: `pass`, `fail`, `signal_passed_at_danger`, `timeout`, `standstill` or `error`, or `wall_timeout` for the timeout of the real time watchdog (the timeout code with a verdict saying it was the real time; a case expecting `timeout` fails on it). Default `timeout` for a case with `duration`, else `pass` |
 | `duration` | seconds of simulation to record: the test timeout of the run (`--test-timeout`) |
 | `timeout` | wall-clock seconds before giving up, loading included: the simulator's `--test-wall-timeout` (default 600) |
@@ -274,6 +298,18 @@ starts on the level at the W4 of Gora, stops at the W4 of Dol 1500 m down the gr
 `gr_sem`, a signal at stop 1100 m further down (a memory cell with `SetVelocity 0 0` and the event that reads it, no
 model), about 1590 m and 2690 m from the start. The three trains are the light EU07, the SN61 alone and the EU07 with
 three coaches.
+
+`e6actad_genset_td_timetable` (fragment `td_timetable_genset.scn`) is the timetable run of a dual-mode vehicle on its
+genset (eu07/maszyna#536): an E6ACTad, the Dragon 2 "last mile" with a 520 kW diesel generator set. The game data has no
+genset for it yet, so the case makes its own E6ACTad (`vehicle_variants`, `{{variant_g6}}`): the `.mmd` of `e6actad`, and
+as its `.fiz` the `e6acta.fiz.inc` that `e6actad.fiz` includes (`fiz_from`), with `GensetStart=Manual` added to the
+`Cntrl.` line and `GensetPower=520 GensetVoltage=3000 GensetIdleRPM=700 GensetMaxRPM=1800 GensetStartTime=8
+GensetSpinUpTime=3 GensetPmaxRatio=0.85` to the `Power:` line. `event0` of the start track gives the standing vehicle, once,
+`PutValues` `MainSwitch 0`, `TractionMode 1` (the selector on the genset) and `GensetSwitch 1`, a second apart, as the
+vehicle holds one command at a time. The AI knows nothing of the genset: it closes the line breaker once the genset runs
+and drives the timetable on it, at most 520 kW x 0.85 = 442 kW at the wheels (`traction_power`).
+`e6actad_catenary_td_timetable` is the same variant without the events: it stays on the catenary and takes several
+times that, which shows the check tells the two apart.
 
 ### Heavy trains
 
@@ -343,6 +379,21 @@ with no overhead wire, 400 m off the line of td.scn (every track of td.scn is un
 an ET21 and its AI driver on it. The pantographs go up and find no wire, so the locomotive can't
 start: the driver has to say so in the log, once, naming the locomotive and where it stands, and
 not mistake it for a wire without voltage. It ends on the standstill.
+
+The `eu07_td_off_track_*` cases run with `physics.derailment new`, where a derailed vehicle leaves the track and
+moves on the ground by itself (`vehicle/derailmotion.h`); they check what the black box records of it with
+`leaves_track`, and the log has a line of each vehicle off the track every second (`derailment: ... off the track`).
+`td_off_track.scn` keeps an EU07 with an AI driver standing on track 1 of Stacja1 to log its physics, and has the train
+of the case, without a driver, run at `vars.velocity` km/h from `vars.offset` m past point 1 of `vars.track`:
+`eu07_td_off_track_buckle_fast` (133 km/h, `tdo_n222` buckled 600 mm over 8 m from the start with the `buckle`
+keyword of the track) and `eu07_td_off_track_overturn` (190 km/h, over the overturning speed of the R 600 m curve)
+from `tdo_n157`, `eu07_td_off_track_end` off the end of a track of its own (`vars.track_nodes`).
+`eu07_td_off_track_buckle` is `td_buckle_event.scn` with an EU07 and three coaches on the timetable, at the 46 km/h
+of the AI. The `eu07_td_off_track_curve_*` cases have an EU07 overturn at 150 km/h on a track of R 300 m of their own,
+on level ground, on an embankment 4 m high and in a cutting, made of triangle strips in the fragment
+(`td_off_track_curve_*.scn`, written by `make_off_track_curves.py`: a curve of R 300 m from (-300, 400) about the
+centre (-600, 400), the cross section swept along it every 0.03 rad; the banks of the cutting rise 4 m at 1:1.5, then
+on at 1:5).
 
 `eu07_td_cold_connect` (fragment `td_cold_connect.scn`) has an EU07 with a hand brake
 (`4E-ZEZ_GREY`; the plain `4e` has none) standing cold on track 1 of Stacja1 (trainset velocity 0,
@@ -499,6 +550,34 @@ back on (`LineContactorsHeldByLocalConverterSwitch()`, the part of #276 in `dete
 the `converteron` hint), is in the cab only: no command of a scenery or of the train's cables sets
 `ConverterAllowLocal`, and nobody sits in a cab in the test mode, so the switch is always on in a case.
 
+The `eu07_td_switch_*` cases (fragment `td_switch_thrown.scn`, the review of #289, point 2b) throw a switch of
+Stacja1 by an event under an EU07 with three coaches and check that the train keeps to the rails (`on_track`) and that
+the AI keeps to the route it is really on. Both switches of the station have their points towards the line and the
+way to track 2 straight (position 0), to track 1 curved (position 1); the ends of the two ways are 1.9 m apart, the
+tracks 4.6 m. `zwr01` at the west end is run through facing by a train running into the station, `zwr02` at the east
+end trailing by one leaving it. The throw is an event set off once, by the rear axle of the locomotive running onto a
+track (`event1`/`event2` of it, which only the vehicle with the driver sets off) or by a launcher 5 s after the start;
+a driver that stands cold gets its order (`vars.order`) from `event0` of its track, after the throw where the train
+stands over the switch. On track 1 a signal at stop of the case's own stands at z 1100: the train has to stop before
+it (`event0` of `tdo_n1725` passes the test, running onto `tdo_n1734` fails it); on track 2 the exit signal `stacja1_k`
+at stop. What they showed on `staging` of 2026-11-22 (f15ea405), where an axle on a switch keeps the way it ran onto
+(the segment it took when it got onto the switch) but leaves the switch by the way it is set to now, and the AI does
+not scan its route again for a switch that changed behind the head of the train:
+
+| case | throw | result |
+| --- | --- | --- |
+| `eu07_td_switch_facing_control` | none, set to track 1 from the start | passes: stops before the signal of track 1 |
+| `eu07_td_switch_thrown_facing_head` | `zwr01` to track 1 with the locomotive on the switch | `xfail`: the locomotive jumps sideways at the end of the switch (0.78 m off the track in the black box), the whole train goes to track 1, and the AI, still on the route of track 2, runs past the signal of track 1 at 40 km/h |
+| `eu07_td_switch_thrown_facing_behind` | `zwr01` to track 1 with the locomotive just past it | `xfail`: the locomotive runs on along track 2 and the coaches coupled to it along track 1, side by side, for 900 m |
+| `eu07_td_switch_thrown_standing_facing` | `zwr01` to track 1 under the standing train, which then leaves facing | `xfail`: the second coach runs with a bogie on each track, its body 2.3 m off both; the AI, which scans from the last vehicle, reads the signals of track 1 while it runs on track 2 (a signal passed at danger, `stacja1_j`) |
+| `eu07_td_switch_thrown_standing_trailing` | `zwr02` to track 1 under the standing train, which then leaves trailing | passes: the first wheels coming from track 2 push the switch back (as through any switch set against them from the frog end) |
+| `eu07_td_switch_thrown_trailing` | `zwr02` to track 2 under the coaches of the timetable train leaving track 1 | passes: the switch is pushed back, the train stops at Przystanek after 1402 m |
+
+Nothing derails in any of them with `physics.derailment monitor` (the default; the monitor reported nothing either),
+and the three `xfail` cases run with `physics.derailment new` came out the same to the metre: the criteria of
+derailment look at the curve, the cant and the speed of a vehicle, not at its bogies being on two tracks. Nor does the
+coupler between a locomotive and a coach 4.6 m beside it break.
+
 ### Cases on a mission of a scenery
 
 The cases made from players' reports (eu07/maszyna#421, #506, #524, #525) run a whole mission
@@ -576,6 +655,10 @@ the row instead, logged by builds from this branch on.
   after moving off, moves no more than `max_distance` metres, e.g. no creeping on locked wheels.
 - `ends_moving` `min_speed`: the last row of the physicslog is at `min_speed` or faster, e.g.
   the test ended without waiting for the train to stop.
+- `traction_power` `max_kw`, optional `min_peak_kw` (*vehicle speed*): the power at the wheels, the
+  traction force times the vehicle speed, never goes above `max_kw` and, given `min_peak_kw`, reaches
+  it at least once; e.g. a dual-mode vehicle running on the power of its genset. The traction force
+  column is in N, whatever the header says.
 - `keeps_moving` `moving_speed`, `min_speed`, `until_distance`, optional `from_distance` (*vehicle speed*): once at
   `moving_speed`, the speed stays at or above `min_speed` between the two distances (metres travelled, from the vehicle
   speed), e.g. a heavy train doesn't come to a stand on a descent before a restriction. Reports the lowest speed.
@@ -614,6 +697,35 @@ the row instead, logged by builds from this branch on.
   it stays at or above `at_least`, e.g. no power lost under an insulator.
 - `master_controller` `from_distance`, `to_distance`, `at_most`: the master controller stays at or below the
   position between the two distances, e.g. at 0 where the scenery tells the driver to coast.
+- `leaves_track` `vehicle`, optional `cause` (`flange climbed`, `overturned`, `end of track`, `pulled off`,
+  `collision`), `min_offset`, `max_offset`, `min_distance`, `max_distance`, `lying`: with
+  `physics.derailment new` the black box has the vehicle leave the track and come to rest off it; at rest its
+  distance from the axis of the track (either side) and the distance it went on the ground are within the
+  bounds, and it lies on its side, or not, as `lying` says.
+- `consist_folds` `vehicles` (the names of the train front to back, comma separated), `min_bend`, optional
+  `min_folds` (1), `alternate`, `both_sides`: with `physics.derailment new` the train came to rest folded up off
+  the track: at least `min_folds` of the bends between neighbours at rest (the angle between their headings in the
+  black box, either way along) are `min_bend` degrees or more; with `alternate` neighbouring bends of that size turn
+  opposite ways (a zigzag), with `both_sides` some of the vehicles rest on either side of the track. A vehicle that
+  stayed on the rails has no bend with its neighbours.
+- `no_overlap` `max_transient`, `max_at_rest` (a check on the log): with `physics.derailment new` the bodies of the
+  vehicles off the track and of those near them don't go into each other. The simulator logs every second the most
+  any two of them overlapped by (`derailment: the bodies overlap by up to ... m (which two, how they are related)
+  over the last second, ... m now`), and once more when all vehicles off the track are at rest (`, all at rest`); the
+  most on the way is at most `max_transient` m, the overlap at rest at most `max_at_rest` m.
+
+- `on_track` `vehicles`, optional `max_offset` (0.75 m), `max_detour` (5 m): every vehicle whose name starts with
+  `vehicles` (e.g. `{{vehicle}}`, the train of the case) keeps to the rails in the black box, in each of its states:
+  its middle is within `max_offset` of the line of a track (level distance, the map of the tracks of the black box),
+  and of two vehicles coupled to each other the way along the tracks from one to the other (through the ends of the
+  tracks that meet) is no more than `max_detour` longer than the straight line between them. A vehicle with its
+  bogies on two tracks that part, or thrown sideways, is off the line; a coach running on beside the locomotive it is
+  coupled to, on the next track, has a way to it hundreds of metres long. A coach on a curve of 300 m, through the
+  S of a switch, was up to 0.38 m off. The middle of a vehicle is the middle of the chord between its pivots, so on
+  a curve of radius R a vehicle running right is a^2 / 8R off the track, a being the distance of the pivots: a 19.5 m
+  coach 0.59 m at R 80, 0.79 m at R 60. The default suits curves down to about R 65 for such a coach; a case with
+  tighter curves sets more. The black box lists a vehicle once a second, so a jump between two lists shows up only
+  as it is at the next one.
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the

@@ -1,0 +1,46 @@
+{
+  "description": "physics.derailment new: an EU07 with three coaches and no driver runs at 190 km/h into the curve of R 600 m of td.scn (tdo_n213, tdo_n222), cant 65 mm: over the overturning speed (about 165 km/h) it overturns out of the curve, falls on its side and slides off the track to a stop; the coaches go over as well.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_off_track.scn",
+  "vars": {
+    "track": "tdo_n157",
+    "offset": "60",
+    "velocity": "190",
+    "track_nodes": "",
+    "consist": [
+      "node -1 0 {{vehicle}}_off dynamic pkp\\4e_v1 4e-004 4e 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_off_w1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_off_w2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608011-6 BDHPUMN_NG_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_off_w3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic"
+    ]
+  },
+  "ini": [
+    "gfxrenderer null",
+    "physics.derailment new",
+    "couplerphysics all"
+  ],
+  "expect": "timeout",
+  "duration": 60,
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "log_contains",
+      "pattern": "derailment: autotest_\\S+_off leaves the track"
+    },
+    {
+      "type": "leaves_track",
+      "vehicle": "{{vehicle}}_off",
+      "cause": "overturned",
+      "min_offset": 50,
+      "min_distance": 250,
+      "max_distance": 420,
+      "lying": true
+    },
+    {
+      "type": "no_overlap",
+      "max_transient": 0.2,
+      "max_at_rest": 0.05
+    }
+  ]
+}
