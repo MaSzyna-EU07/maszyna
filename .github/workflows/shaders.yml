@@ -15,6 +15,7 @@ on:
       - 'shaders/**'
       - 'gl/**'
       - 'rendering/common/**'
+      - 'rendering/vulkan14/vulkan14bindings.h'
       - 'ci_shadervalidator/**'
       - '.github/workflows/shaders.yml'
   pull_request:
@@ -23,6 +24,7 @@ on:
       - 'shaders/**'
       - 'gl/**'
       - 'rendering/common/**'
+      - 'rendering/vulkan14/vulkan14bindings.h'
       - 'ci_shadervalidator/**'
       - '.github/workflows/shaders.yml'
 

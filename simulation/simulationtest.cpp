@@ -90,8 +90,10 @@ void apply_test_mode_settings()
 	Global.iMultiplayer = 0;
 	Global.exec_on_exit.clear();
 	// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
-	if (!Global.random_seed)
+	if (false == Global.random_seed_given) {
 		Global.random_seed = seed_of("test");
+		Global.random_seed_given = true;
+	}
 	// the real time limit, which the scenery may set too
 	test().watch_wall_clock(wall_clock_limit(Global.test.wall_timeout, Global.test.timeout));
 }

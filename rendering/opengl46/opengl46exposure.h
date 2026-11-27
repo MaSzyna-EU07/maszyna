@@ -47,7 +47,8 @@ class opengl46_exposure
 	opengl46_exposure(const opengl46_exposure &) = delete;
 	opengl46_exposure &operator=(const opengl46_exposure &) = delete;
 
-	// creates the programs and the buffer. throws gl::shader_exception
+	// creates the buffer and the programs. a shader which doesn't compile is logged, and gfx.postfx.autoexposure or
+	// gfx.postfx.bloom switched off
 	void init();
 	// binds the buffer the tonemapping reads; bindings are context state, so done in every context
 	void bind();

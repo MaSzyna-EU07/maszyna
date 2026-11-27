@@ -287,9 +287,15 @@ bool continues( carve_rail const &A, carve_rail const &B ) {
     if( A.track == B.track ) {
         return false;
     }
+    // the knuckle and the point of an obtuse crossing, whose ends lie within the reach at a slip centre, go on from each other only
+    // nearly straight (less than 2.6 degrees apart; 1:9 is 6.4); the rails at any other joint also where it's kinked by up to 8 degrees,
+    // as tracks laid by hand often are, so their heads aren't planed there
+    auto const obtuse = []( carve_rail const &Rail ) {
+        return std::ranges::any_of( Rail.parts, []( carve_part const &Part ) { return Part.obtuse[ 0 ] || Part.obtuse[ 1 ]; } ); };
+    auto const straight { ( obtuse( A ) || obtuse( B ) ) ? 0.999 : 0.99 };
     for( int a = 0; a < 2; ++a ) {
         for( int b = 0; b < 2; ++b ) {
-            if( glm::length( plan( A.ends[ a ] - B.ends[ b ] ) ) < 0.05 && std::abs( glm::dot( A.directions[ a ], B.directions[ b ] ) ) > 0.999 ) {
+            if( glm::length( plan( A.ends[ a ] - B.ends[ b ] ) ) < 0.05 && std::abs( glm::dot( A.directions[ a ], B.directions[ b ] ) ) > straight ) {
                 return true;
             }
         }

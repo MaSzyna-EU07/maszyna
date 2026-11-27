@@ -67,10 +67,23 @@ enum class shader_components : int
 	sRGB_A = 0x8C42
 };
 
+// what a unit shows when the material gives no texture for it, as the optional fourth argument of #pragma texture names it: a
+// single texel of that colour. none: the material has to give the texture. the texels hold only 0 and 255, which read the
+// same whether the unit takes them as sRGB or not
+enum class shader_texture_default
+{
+	none,
+	black,
+	white,
+	red,
+	yellow
+};
+
 struct shader_texture_entry
 {
 	std::size_t id;
 	shader_components components;
+	shader_texture_default fallback{shader_texture_default::none};
 };
 
 enum class shader_param_default
@@ -157,8 +170,8 @@ shader_source preprocess_shader(shader_api Api, std::string const &Name, std::st
                                 std::string const &Basedir = {});
 
 // the SPIR-V binary of a shader from the directory of the binaries of its api. empty when there's none, when the manifest of the
-// binaries says the binary was compiled from other sources than those there now, or when the file isn't SPIR-V; Reason says
-// which (empty when there's simply no binary)
+// binaries says the binary was compiled from other sources than those there now, when the manifest doesn't list it while its
+// source is there, or when the file isn't SPIR-V; Reason says which (empty when there's simply no binary)
 std::vector<std::uint32_t> load_shader_binary(shader_source const &Source, std::string &Reason);
 
 // the ids of the specialization constants of a SPIR-V module (OpDecorate ... SpecId)

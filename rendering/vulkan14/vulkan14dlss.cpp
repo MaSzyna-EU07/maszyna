@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
 #include <system_error>
 
 #if defined(WITH_DLSS) && !defined(_WIN32)
@@ -132,6 +133,9 @@ std::filesystem::path program_directory()
 
 struct dlss::state
 {
+	// ngx isn't to be called by two threads at once: the evaluation of dlss and the frame generation may be replayed in chunks of the
+	// frame recorded by different workers
+	std::mutex ngx;
 	// ngx: where it writes its logs, where it looks for the libraries besides the directory of the program
 	std::wstring data_path;
 	std::vector<std::wstring> paths;
@@ -318,6 +322,7 @@ struct dlss::state
 	static void record(VkCommandBuffer const Buffer, void *const Data)
 	{
 		auto &self{*static_cast<state *>(Data)};
+		std::scoped_lock const lock{self.ngx};
 		if (self.failed || (self.parameters == nullptr))
 		{
 			self.clear_output(Buffer);
@@ -444,6 +449,7 @@ struct dlss::state
 	static void record_generation(VkCommandBuffer const Buffer, void *const Data)
 	{
 		auto &self{*static_cast<state *>(Data)};
+		std::scoped_lock const lock{self.ngx};
 		if (self.generation_failed || (self.generation_parameters == nullptr) || self.generated.empty())
 		{
 			self.copy_backbuffer(Buffer);

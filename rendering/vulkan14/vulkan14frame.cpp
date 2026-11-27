@@ -331,16 +331,27 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	VkExtent2D const extent{static_cast<std::uint32_t>(std::max(Width, 1)), static_cast<std::uint32_t>(std::max(Height, 1))};
 	// the images after the upscaling of dlss have the size of the window, the others that of the scene
 	VkExtent2D const outputextent{Dlss ? VkExtent2D{static_cast<std::uint32_t>(std::max(OutputWidth, 1)), static_cast<std::uint32_t>(std::max(OutputHeight, 1))} : extent};
-	if ((Targets.extent.width == extent.width) && (Targets.extent.height == extent.height) && (Targets.output_extent.width == outputextent.width) && (Targets.output_extent.height == outputextent.height) &&
-	    (Targets.samples == samples) && (Targets.motion == motion) && (Targets.taa == Taa) && (Targets.dlss == Dlss) && (Targets.aberration == aberration) && (Targets.srgb == Srgb) && (Targets.reflections == Reflections) && Targets.output)
+	auto const unchanged{(Targets.extent.width == extent.width) && (Targets.extent.height == extent.height) && (Targets.output_extent.width == outputextent.width) && (Targets.output_extent.height == outputextent.height) &&
+	                (Targets.samples == samples) && (Targets.motion == motion) && (Targets.taa == Taa) && (Targets.dlss == Dlss) && (Targets.aberration == aberration) && (Targets.srgb == Srgb) && (Targets.reflections == Reflections)};
+	if (unchanged && Targets.output)
 	{
 		return true;
 	}
-	Deletions.push(Value, [old = std::move(Targets)]() {});
+	// the same images couldn't be made a moment ago (no memory for them): tried again after a while, not with every frame
+	auto const now{std::chrono::steady_clock::now()};
+	auto const failedbefore{unchanged && Targets.failed};
+	if (failedbefore && (now - Targets.failed_at < std::chrono::seconds{1}))
+	{
+		return false;
+	}
 	auto const oldformats{Targets.formats};
 	auto const oldoutput{Targets.output_formats};
 	auto const oldpost{Targets.post_formats};
 	auto const olddepth{Targets.depth_formats};
+	// the ambient occlusion made once stays with the images made anew for another reason: it can be switched on again in the debug
+	// window only where its images are
+	auto const hadocclusion{bool(Targets.ssao)};
+	Deletions.push(Value, [old = std::move(Targets)]() {});
 	Targets = vk14::viewport_targets{};
 	Targets.extent = extent;
 	Targets.output_extent = outputextent;
@@ -425,7 +436,7 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 		     make(Targets.dlss_output, hdr, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | historysource, VK_SAMPLE_COUNT_1_BIT, "dlss output", outputextent);
 	}
 	// the ambient occlusion, half the size, when it's on
-	if (ok && (Global.gfx_postfx_ao != 0))
+	if (ok && ((Global.gfx_postfx_ao != 0) || hadocclusion))
 	{
 		auto makehalf = [&](std::shared_ptr<vk14::image> &Image, char const *Name) {
 			vk14::image_desc desc;
@@ -486,8 +497,28 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	}
 	if (false == ok)
 	{
-		vk14::log_error("the images of a viewport of " + std::to_string(extent.width) + "x" + std::to_string(extent.height) + " can't be made");
-		Targets.output.reset();
+		if (false == failedbefore)
+		{
+			vk14::log_error("the images of a viewport of " + std::to_string(extent.width) + "x" + std::to_string(extent.height) + " can't be made, trying again every second");
+		}
+		// what was made of them goes: the viewport isn't drawn without all of them
+		Deletions.push(Value, [partial = std::move(Targets)]() {});
+		Targets = vk14::viewport_targets{};
+		Targets.extent = extent;
+		Targets.output_extent = outputextent;
+		Targets.dlss = Dlss;
+		Targets.samples = samples;
+		Targets.motion = motion;
+		Targets.taa = Taa;
+		Targets.aberration = aberration;
+		Targets.srgb = Srgb;
+		Targets.reflections = Reflections;
+		Targets.formats = oldformats;
+		Targets.output_formats = oldoutput;
+		Targets.post_formats = oldpost;
+		Targets.depth_formats = olddepth;
+		Targets.failed = true;
+		Targets.failed_at = now;
 		return false;
 	}
 	Targets.formats.colour = {hdr, motion ? velocity : VK_FORMAT_UNDEFINED};
@@ -585,6 +616,7 @@ bool vulkan14_renderer::Render()
 	m_draw->instances_cache.reset(&scene.instances.ring, vk14::instance_ring_part);
 	m_draw->draws_window = {};
 	m_draw->instances_window = {};
+	m_draw->instances_lost = false;
 	// the draws which aren't instanced read the identity at the start of the window from the first draw of the frame on
 	open_instance_window();
 	// the occlusion queries of the lamps the slot made the last time
@@ -644,9 +676,22 @@ bool vulkan14_renderer::Render()
 		{
 			texture->apply_pending();
 		}
+		// the copies of the textures made are spread over the frames when many come at once: those the frame has no budget left for
+		// wait for the next one, before the ones made meanwhile
+		ctx.pending.upload_budget = vk14::pending_textures::upload_budget_frame;
+		std::vector<vk14::vulkan14_texture *> waiting;
 		for (auto *texture : made)
 		{
 			texture->publish();
+			if (texture->made_waiting())
+			{
+				waiting.push_back(texture);
+			}
+		}
+		if (false == waiting.empty())
+		{
+			std::scoped_lock const lock{ctx.pending.mutex};
+			ctx.pending.made.insert(ctx.pending.made.begin(), waiting.begin(), waiting.end());
 		}
 	}
 
@@ -851,11 +896,13 @@ bool vulkan14_renderer::Render()
 	if (drawscene)
 	{
 		render_scene();
-		if (m_pickcontrolswanted && simulation::Train)
+		// nothing is picked in a main window which is minimized: its scene wasn't drawn
+		auto const picking{(false == ctx.windows.empty()) && (false == ctx.windows.front()->minimized())};
+		if (picking && m_pickcontrolswanted && simulation::Train)
 		{
 			render_picking(rendermode::pickcontrols);
 		}
-		if (m_picknodewanted)
+		if (picking && m_picknodewanted)
 		{
 			render_picking(rendermode::pickscenery);
 		}
@@ -1030,6 +1077,15 @@ bool vulkan14_renderer::Render()
 			report_device_lost(failure);
 			return false;
 		}
+		if (job.skipped)
+		{
+			// the frame was left out: its images aren't presented (SwapBuffers())
+			for (auto *window : ctx.acquired)
+			{
+				window->drop_images();
+			}
+			ctx.acquired.clear();
+		}
 		frame.done = ctx.timelinevalue = value;
 	}
 
@@ -1089,6 +1145,11 @@ void vulkan14_renderer::render_scene()
 	}
 	for (std::size_t i = 0; i < m_viewports.size(); ++i)
 	{
+		if (auto const &viewport{m_viewports[i]}; (viewport.window < ctx.windows.size()) && ctx.windows[viewport.window]->minimized())
+		{
+			// nothing of it is shown, and a window without a size has no projection to draw with
+			continue;
+		}
 		if (false == make_viewport_targets(i))
 		{
 			continue;
@@ -1294,7 +1355,8 @@ void vulkan14_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 		{
 			float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
 			// setup virtual screen
-			glm::vec2 screen_h = glm::vec2(Global.window_size) / 2.0f;
+			// a minimized window has no size: its projection would be made of nothing but NaN
+			glm::vec2 screen_h = glm::vec2(glm::max(Global.window_size, glm::ivec2{1})) / 2.0f;
 			float const dist = screen_h.y / glm::tan(fovy / 2.0f);
 			Viewport.projection.pa = glm::vec3(-screen_h.x, -screen_h.y, -dist);
 			Viewport.projection.pb = glm::vec3(screen_h.x, -screen_h.y, -dist);
@@ -1645,6 +1707,12 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	}
 	auto const clustered{clusters && Global.gfx_lights_clustered && (scene.clusters.params.valid != 0)};
 	update_lights(simulation::Lights, true, clustered);
+	if (false == clustered)
+	{
+		// the lights of the view for the kernels of its clouds and its fog, which run before its rendering begins: without the clusters
+		// update_lights() leaves the header to the first draw, and the kernels would read the one of an earlier pass
+		upload_light_header();
+	}
 	ctx.passes.end_pass();
 
 	// the clouds of the view and the fog volume, which take the lights of the clusters and the shadow map of the pass
@@ -1806,6 +1874,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	}
 	commands->end_rendering();
 	end_draws();
+	resolve_colour(Index);
 	if (m_contactshadows || m_ssractive || m_aolighting || m_cabprobelit)
 	{
 		// the depth they read is of this view only, and so is the probe of the cab
@@ -2018,7 +2087,9 @@ void vulkan14_renderer::setup_screen_reflections(std::size_t const Index, bool c
 // the ray traced reflections, of the main view only (as the screen space ones, which they fill in)
 bool vulkan14_renderer::raytracing_wanted(viewport_config const &Viewport) const
 {
-	if ((false == m_raytracingon) || (false == bool(m_context->scene.raytracing)) || (false == Viewport.main) || Global.bWireFrame || Global.gfx_skippipeline)
+	// not while the set of the frame has no structure to trace through (ray_tracing::begin_frame() without memory for it)
+	if ((false == m_raytracingon) || (false == bool(m_context->scene.raytracing)) || (false == m_context->scene.raytracing->traceable(m_context->slot)) || (false == Viewport.main) || Global.bWireFrame ||
+	    Global.gfx_skippipeline)
 	{
 		return false;
 	}
@@ -2109,8 +2180,10 @@ void vulkan14_renderer::gather_ray_draw(gfx::geometry_handle const &Geometry)
 		{
 			return 0;
 		}
-		auto &texture{m_context->textures->mark_as_used(Texture)};
-		return ((texture.create() && (m_context->images.find(texture.get_id()) != nullptr)) ? texture.get_id() : 0);
+		// made by the background threads as the ones of the draws are (gfx.vulkan.asyncresources; made now without them): what the rays
+		// hit goes without its texture till it's there, the frame doesn't wait for the files of everything within their range
+		auto &texture{static_cast<vk14::vulkan14_texture &>(m_context->textures->mark_as_used(Texture))};
+		return ((texture.request_background() && (m_context->images.find(texture.get_id()) != nullptr)) ? texture.get_id() : 0);
 	};
 	if ((draw.program != nullptr) && ((draw.program == m_rtterrain[0]) || (draw.program == m_rtterrain[1])))
 	{
@@ -2221,6 +2294,39 @@ void vulkan14_renderer::store_ssr_history(std::size_t const Index, vk14::image &
 	m_ssr.end_frame();
 }
 
+// the colour and the velocity of a viewport drawn with more than one sample resolved to the images the post-processing reads, once
+// its colour pass is over: a rendering of them with nothing drawn, which resolves them when it ends
+void vulkan14_renderer::resolve_colour(std::size_t const Index)
+{
+	auto &targets{m_context->scene.targets[Index]};
+	if (targets.samples == VK_SAMPLE_COUNT_1_BIT)
+	{
+		return;
+	}
+	VkClearValue const none{};
+	std::array<VkRenderingAttachmentInfo, 2> colours{};
+	colours[0] = attachment_info(targets.msaa_colour->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false, none);
+	colours[0].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+	colours[0].resolveImageView = targets.colour->view();
+	colours[0].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	if (targets.motion)
+	{
+		colours[1] = attachment_info(targets.msaa_motion->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false, none);
+		colours[1].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+		colours[1].resolveImageView = targets.motion_image->view();
+		colours[1].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	}
+	VkRenderingInfo rendering{};
+	rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	rendering.renderArea = {{0, 0}, targets.extent};
+	rendering.layerCount = 1;
+	rendering.colorAttachmentCount = targets.formats.colours;
+	rendering.pColorAttachments = colours.data();
+	// the images are in the layouts the colour pass left them in (colour_target_uses())
+	m_commands->begin_rendering(&rendering);
+	m_commands->end_rendering();
+}
+
 // the rendering of the colour of a viewport: begun with the images cleared, or again after the depth under the cursor was read
 void vulkan14_renderer::begin_colour_rendering(std::size_t const Index, bool const Clear)
 {
@@ -2232,27 +2338,19 @@ void vulkan14_renderer::begin_colour_rendering(std::size_t const Index, bool con
 	VkClearValue depthclear{};
 	depthclear.depthStencil = {0.f, 0};
 	std::array<VkRenderingAttachmentInfo, 2> colours{};
+	// with more than one sample the colour and the velocity are resolved once, when the pass is over (resolve_colour()): the
+	// rendering is ended and begun again several times in a pass (the depth of the scene, the culling, the particles), and nothing
+	// reads the resolved images till it's over
 	colours[0] = attachment_info((msaa ? targets.msaa_colour : targets.colour)->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, Clear, colourclear);
-	if (msaa)
-	{
-		colours[0].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-		colours[0].resolveImageView = targets.colour->view();
-		colours[0].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	}
 	if (targets.motion)
 	{
 		colours[1] = attachment_info((msaa ? targets.msaa_motion : targets.motion_image)->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, Clear, colourclear);
-		if (msaa)
-		{
-			colours[1].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-			colours[1].resolveImageView = targets.motion_image->view();
-			colours[1].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		}
 	}
 	auto depth{attachment_info((msaa ? targets.msaa_depth : targets.depth)->view(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, Clear, depthclear)};
 	if (msaa)
 	{
-		// the depth of the first sample, for the motion blur and the cursor of the editor
+		// the depth of the first sample, for the motion blur and the cursor of the editor; resolved each time the rendering ends, what
+		// reads it in the middle of the pass (the depth pyramid of the culling, the particles) takes it from there
 		depth.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
 		depth.resolveImageView = targets.depth->view();
 		depth.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
@@ -2432,7 +2530,9 @@ bool vulkan14_renderer::render_reflections(viewport_config &Viewport)
 	{
 		// no update in progress, check whether it's time for another one
 		auto const timestamp{Timer::GetRenderTime()};
-		if ((timestamp - m_environmentupdatetime < Global.reflectiontune.update_interval) && (glm::length2(m_renderpass.pass_camera.position() - m_environmentupdatelocation) < sq(1000.0)))
+		// the first one doesn't wait: the map holds nothing till then
+		if (m_environmentready && (timestamp - m_environmentupdatetime < Global.reflectiontune.update_interval) &&
+		    (glm::length2(m_renderpass.pass_camera.position() - m_environmentupdatelocation) < sq(1000.0)))
 		{
 			return false;
 		}
@@ -4341,6 +4441,7 @@ scene::basic_node const *vulkan14_renderer::Pick_Node() const
 
 void vulkan14_renderer::Forget_Node(scene::basic_node const *Node)
 {
+	m_locallights.forget(Node);
 	if (m_picksceneryitem == Node)
 	{
 		m_picksceneryitem = nullptr;

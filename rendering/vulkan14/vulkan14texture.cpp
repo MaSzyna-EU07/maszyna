@@ -17,6 +17,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 
 #include <cstring>
+#include <exception>
+#include <memory>
 #include <optional>
 #include <span>
 
@@ -82,6 +84,25 @@ bool texels_pass_alpha_test(texture_format const &Format, alpha_source const &So
 		return false;
 	}
 }
+
+// a job of a texture given to the background threads: when it's let go of without having been run, the state of the texture goes back
+// to the one given, so nothing waits for the job
+struct job_ticket
+{
+	job_ticket(std::atomic<int> &State, int const Idle) : state{State}, idle{Idle} {}
+	job_ticket(job_ticket const &) = delete;
+	job_ticket &operator=(job_ticket const &) = delete;
+	~job_ticket()
+	{
+		if (false == taken)
+		{
+			state = idle;
+		}
+	}
+	std::atomic<int> &state;
+	int idle;
+	std::atomic<bool> taken{false};
+};
 
 } // namespace
 
@@ -582,7 +603,8 @@ bool vulkan14_texture::claim()
 				// what a background thread made is taken over by the thread of the renderer
 				return false;
 			}
-			publish();
+			// the draw waits for the texture: whatever the copies of the frame come to
+			publish(true);
 			continue;
 		}
 		if (state != job_none)
@@ -676,9 +698,25 @@ bool vulkan14_texture::request_background()
 		return false;
 	}
 	++m_resources.pending->late_count;
-	// the texture outlives the job: its destruction waits for it (the background threads are stopped before the bank goes, too)
-	m_resources.background->add([this]() {
-		auto const result{make(true)};
+	// the texture outlives the job: its destruction waits for it (the background threads are stopped before the bank goes, too). a job
+	// the threads let go of without running it (they were stopped with it in their queue) leaves the texture as it was before it
+	auto const ticket{std::make_shared<job_ticket>(m_job, job_none)};
+	m_resources.background->add([this, ticket]() {
+		ticket->taken = true;
+		auto result{make_result::failed};
+		try
+		{
+			result = make(true);
+		}
+		catch (std::exception const &Error)
+		{
+			// counted as made, without an image: nothing waits for a job which never ends
+			log_error("the texture " + name + " couldn't be made: " + Error.what());
+			m_madeimage.reset();
+			m_madeupload = uploader::prepared{};
+			m_madestaged = false;
+			on_failed();
+		}
 		m_madefailed = (result == make_result::failed);
 		m_madeempty = (result == make_result::none);
 		std::lock_guard<std::mutex> lock(m_resources.pending->mutex);
@@ -688,12 +726,23 @@ bool vulkan14_texture::request_background()
 	return false;
 }
 
-void vulkan14_texture::publish()
+void vulkan14_texture::publish(bool const Force)
 {
 	int expected{job_done};
 	if (false == m_job.compare_exchange_strong(expected, job_making))
 	{
 		return;
+	}
+	if ((false == Force) && (m_madeimage != nullptr) && m_madestaged && (m_resources.pending != nullptr))
+	{
+		// the copy of the staging buffer goes with the uploads of a frame; the first of a frame whatever its size
+		auto &budget{m_resources.pending->upload_budget};
+		if (budget <= 0)
+		{
+			m_job = job_done;
+			return;
+		}
+		budget -= static_cast<std::int64_t>(m_madeupload.staging ? m_madeupload.staging->size() : 0);
 	}
 	if (m_madeimage != nullptr)
 	{
@@ -782,6 +831,11 @@ vulkan14_texture::make_result vulkan14_texture::make(bool const Background)
 			}
 			levels.push_back({offset, {width, height, 1}});
 			offset += levelsize;
+			if ((width == 1) && (height == 1))
+			{
+				// the last level an image of the size has, whatever the count the file gives
+				break;
+			}
 			width = std::max(width / 2, 1u);
 			height = std::max(height / 2, 1u);
 		}
@@ -792,6 +846,12 @@ vulkan14_texture::make_result vulkan14_texture::make(bool const Background)
 		if (format.expand_rgb)
 		{
 			auto const pixels{static_cast<std::size_t>(data_width) * data_height};
+			if (data.size() < pixels * 3)
+			{
+				// a file cut short: not read past what it holds
+				ErrorLog("Bad texture: \"" + name + "\" holds less data than its size needs", logtype::texture);
+				return failed();
+			}
 			expanded.resize(pixels * 4);
 			for (std::size_t i = 0; i < pixels; ++i)
 			{

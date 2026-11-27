@@ -32,7 +32,8 @@ class opengl46_shadow_fit : public gfx::shadow_fit
 	opengl46_shadow_fit(const opengl46_shadow_fit &) = delete;
 	opengl46_shadow_fit &operator=(const opengl46_shadow_fit &) = delete;
 
-	// creates the programs and the buffer. throws gl::shader_exception
+	// creates the programs and the buffer. without the programs (a shader which doesn't compile) nothing is measured: logged,
+	// and gfx.shadow.sdsm switched off
 	void init();
 	// measures the depth of the view: Depth, its resolved depth texture of Width x Height pixels, or 0 to resolve the depth
 	// attachment of Source, the multisampled framebuffer, into a texture of its own. Frame: the frame of the renderer.

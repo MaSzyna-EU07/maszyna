@@ -148,6 +148,8 @@ state_manager::update( double const Deltatime, int Iterationcount ) {
     simulation::Roadpoints.update( totaltime );
     Timer::subsystem.sim_roads.stop();
     simulation::Vehicles.update( Deltatime, Iterationcount );
+    // the tracks the heat buckles, by itself or under the trains just moved
+    TTrack::update_buckling( totaltime );
 }
 
 void
@@ -436,12 +438,10 @@ void state_manager::process_commands() {
 			}
 
 			while (vehicle) {
-				vehicle->MoverParameters->DamageFlag = 0;
-				vehicle->MoverParameters->EngDmgFlag = 0;
+				// no damage, back on the rails with the state of the derailment cleared
+				vehicle->MoverParameters->repair_damage();
 				vehicle->MoverParameters->V = 0.000001; // HACK: force vehicle position re-calculation
 				vehicle->MoverParameters->DistCounter = 0.0;
-				vehicle->MoverParameters->WheelFlat = 0.0;
-				vehicle->MoverParameters->AlarmChainFlag = false;
 				vehicle->MoverParameters->OffsetTrackH = 0.0;
 				vehicle->MoverParameters->OffsetTrackV = 0.0;
 

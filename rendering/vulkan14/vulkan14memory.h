@@ -297,6 +297,9 @@ class ring_cache
 	// index from Base); empty, with nothing taken, otherwise. the part held may lie below Base: a large slice which got a part of its
 	// own opened the window above it
 	ring_slice allocate_before(VkDeviceSize Size, VkDeviceSize Alignment, VkDeviceSize Base, VkDeviceSize Limit);
+	// the same as allocate(), with a slice which lies at Base or above it (Base: the offset of a slice the ring gave earlier in the
+	// frame, the start of a window). a part held which lies below Base is let go for a new one: the ring gives its parts in rising order
+	ring_slice allocate_after(VkDeviceSize Size, VkDeviceSize Alignment, VkDeviceSize Base);
 
   private:
 	// where the next slice aligned to Alignment would begin in the part held, as an offset in the buffer

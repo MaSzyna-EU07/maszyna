@@ -9,8 +9,18 @@ void ui::vehicles_bank::scan_textures()
 		if (f->path().filename() != "textures.txt")
 			continue;
 
+		auto const folder{std::filesystem::relative(f->path().parent_path(), "dynamic/", error)};
+		try {
+			// the vehicles are kept by narrow names. on Windows a folder named with a character the code page lacks
+			// can't be given one and would throw at the first vehicle; the game couldn't load it by that name anyway
+			[[maybe_unused]] auto const name{folder.generic_string()};
+		}
+		catch (std::system_error const &) {
+			continue;
+		}
+		ctx_path = folder;
+
 		std::fstream stream(f->path(), std::ios_base::binary | std::ios_base::in);
-		ctx_path = std::filesystem::relative(f->path().parent_path(), "dynamic/", error);
 
 		std::string line;
 		while (std::getline(stream, line))

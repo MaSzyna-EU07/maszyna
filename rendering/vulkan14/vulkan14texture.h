@@ -164,6 +164,10 @@ struct pending_textures
 	// the textures made by the background threads since the start, and how many draws went without one
 	std::atomic<std::size_t> made_count{0};
 	std::atomic<std::size_t> late_count{0};
+	// the bytes of the staging buffers of the textures the background threads made which the frame still takes over (publish()): when
+	// many of them come at once their copies to the gpu are spread over the frames. the thread of the renderer only
+	static constexpr std::int64_t upload_budget_frame{64ll * 1024 * 1024};
+	std::int64_t upload_budget{upload_budget_frame};
 };
 
 // what the images of the renderer need from it
@@ -207,8 +211,14 @@ struct vulkan14_texture : public texture_source
 	// the texture for a draw of the walks: true when it's made, otherwise it's made by the background threads (or made now, without
 	// them) and the draw goes without it
 	bool request_background();
-	// the thread of the renderer takes over what a background thread made of the texture
-	void publish();
+	// the thread of the renderer takes over what a background thread made of the texture. unless Force, one with a copy to the gpu
+	// to make is left for a later frame when the copies of the frame reached their budget (pending_textures::upload_budget)
+	void publish(bool Force = false);
+	// made by a background thread and not taken over yet
+	bool made_waiting() const
+	{
+		return m_job == job_done;
+	}
 	void release() override;
 	// as the opengl textures give it: one not made yet has no id of 0, which the materials take for a texture which is missing
 	size_t get_id() const override

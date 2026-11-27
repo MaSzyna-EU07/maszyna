@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodecatenary.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
+#include "editor/editorCatenaryFile.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 
@@ -398,6 +399,27 @@ bool grouped_items(std::vector<std::string> const &Names, int &Chosen, std::func
 // the states of the wires in the panel, and as they're written in the entries
 char const *const kStates[] = {"new", "worn", "tarnished"};
 int const kStateValues[] = {0, 2, 1};
+
+// the chain the other way round: what is at its ends (the anchors, the holders of the middle anchor's rope) changes ends with the list
+void reverse_chain(catenary::chain &Chain)
+{
+	std::ranges::reverse(Chain.suspensions);
+	std::swap(Chain.anchor_start, Chain.anchor_end);
+	std::swap(Chain.anchor_start_contact, Chain.anchor_end_contact);
+	std::swap(Chain.middle_heights[0], Chain.middle_heights[1]);
+}
+
+// the new entries can go into the file: a scenery file (layer), a catenary file the scenery includes already, or a new one
+// whose name the directive including it can carry
+bool file_takes_entries(std::string const &File)
+{
+	if (catenary_scene_file_inline(File))
+		return true;
+	auto const files{catenary_scene_files()};
+	auto const fresh{catenary_scene_new_files()};
+	auto const included{std::ranges::find(files, File) != files.end() && std::ranges::find(fresh, File) == fresh.end()};
+	return included || catenary_file_name_valid(File);
+}
 
 } // namespace
 
@@ -1626,8 +1648,12 @@ void catenary_editor::catenary_apply(catenary_spot const &Spot)
 	std::copy(std::begin(current->spread), std::end(current->spread), data.spread);
 	// dragging a slider changes it many times: all of that is taken back at once
 	auto const &last{tool.undo.empty() ? catenary_change{} : tool.undo.back()};
-	if (tool.undo.empty() || last.chain || last.index != index || last.removed || false == last.before.has_value())
+	if (tool.undo.empty() || last.group != tool.slider_group || tool.slider != 1 || last.chain || last.index != index || last.removed || false == last.before.has_value())
+	{
 		tool.undo.push_back({++tool.group, false, index, *current, std::nullopt, false});
+		tool.slider_group = tool.group;
+		tool.slider = 1;
+	}
 	catenary_scene_update(index, data);
 	tool.spots[index] = Spot;
 	tool.spots[index].data = data;
@@ -2123,6 +2149,11 @@ void catenary_editor::catenary_place(catenary_spot const &Spot)
 	chain_insert insert;
 	auto const inserting{catenary_insert_at(Spot, insert)};
 	std::string const file{inserting ? catenary_chain_file(static_cast<std::size_t>(insert.chain)) : std::string{tool.file}};
+	if (false == inserting && false == file_takes_entries(file))
+	{
+		tool.status = STR("The name of the catenary file can't have spaces, ';', quotes, ':' or \"..\" in it, nor start with a slash: the directive including it couldn't read it");
+		return;
+	}
 	data.name = catenary_scene_new_name(file);
 	// a drop on a gantry takes the texture of the gantry
 	if (auto const *gantry{tool.gantry_selected >= 0 ? catenary_gantry_get(static_cast<std::size_t>(tool.gantry_selected)) : nullptr}; gantry != nullptr && data.pole_type != tool.poles[std::clamp(tool.pole, 0, static_cast<int>(tool.poles.size()) - 1)])
@@ -2674,13 +2705,23 @@ void catenary_editor::catenary_connect(std::size_t const To)
 		// From's chain with From last, then To (and To's chain from To on)
 		auto changed{*chaina};
 		if (pa == 0 && changed.suspensions.size() > 1)
-			std::reverse(changed.suspensions.begin(), changed.suspensions.end());
+			reverse_chain(changed);
 		if (chainb != nullptr)
 		{
-			auto other{chainb->suspensions};
+			auto other{*chainb};
 			if (pb != 0)
-				std::reverse(other.begin(), other.end());
-			changed.suspensions.insert(changed.suspensions.end(), other.begin(), other.end());
+				reverse_chain(other);
+			changed.suspensions.insert(changed.suspensions.end(), other.suspensions.begin(), other.suspensions.end());
+			// the joined ends are inside the chain now: it ends where To's chain ended, with what that end had
+			changed.anchor_end = other.anchor_end;
+			changed.anchor_end_contact = other.anchor_end_contact;
+			changed.messenger_from.insert(changed.messenger_from.end(), other.messenger_from.begin(), other.messenger_from.end());
+			if (changed.middle.empty() && false == other.middle.empty())
+			{
+				changed.middle = other.middle;
+				changed.middle_device = other.middle_device;
+				std::copy(std::begin(other.middle_heights), std::end(other.middle_heights), changed.middle_heights);
+			}
 			tool.undo.push_back({tool.group, true, static_cast<std::size_t>(cb), std::nullopt, *chainb, false});
 			catenary_chain_remove(static_cast<std::size_t>(cb));
 		}
@@ -2857,6 +2898,11 @@ void catenary_editor::catenary_press(track_intent const &Intent)
 			return;
 		catenary::gantry gantry;
 		std::string const file{tool.file};
+		if (false == file_takes_entries(file))
+		{
+			tool.status = STR("The name of the catenary file can't have spaces, ';', quotes, ':' or \"..\" in it, nor start with a slash: the directive including it couldn't read it");
+			return;
+		}
 		gantry.name = catenary_scene_new_gantry_name(file);
 		gantry.beam = beam;
 		gantry.high = tool.gantry_high;
@@ -2992,8 +3038,12 @@ void catenary_editor::catenary_chain_apply()
 	if (false == tool.networks.empty())
 		changed.type = tool.networks[std::clamp(tool.network, 0, static_cast<int>(tool.networks.size()) - 1)];
 	auto const &last{tool.undo.empty() ? catenary_change{} : tool.undo.back()};
-	if (tool.undo.empty() || false == last.chain || last.index != index || false == last.chain_before.has_value())
+	if (tool.undo.empty() || last.group != tool.slider_group || tool.slider != 2 || false == last.chain || last.index != index || false == last.chain_before.has_value())
+	{
 		tool.undo.push_back({++tool.group, true, index, std::nullopt, *chain, false});
+		tool.slider_group = tool.group;
+		tool.slider = 2;
+	}
 	catenary_chain_update(index, changed);
 }
 
@@ -4292,6 +4342,8 @@ void catenary_editor::render_catenary_cantilever_ui()
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip("%s", STR_C("The catenary file follows the active layer again"));
 		}
+		if (tool.file[0] != '\0' && false == file_takes_entries(tool.file))
+			ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", STR_C("The name of the catenary file can't have spaces, ';', quotes, ':' or \"..\" in it, nor start with a slash: the directive including it couldn't read it"));
 		{
 			// where it ends up: straight in the file of a layer, or a catenary file of its own and the layer whose file includes it
 			if (catenary_scene_file_inline(tool.file))
@@ -5017,10 +5069,12 @@ void catenary_editor::render_catenary_ui()
 				// both together, and each by itself no more than 0.20 m from the other
 				auto const heighten = [&](catenary::gantry const &Changed) {
 					auto const &last{tool.undo.empty() ? catenary_change{} : tool.undo.back()};
-					if (tool.undo.empty() || false == last.gantry || last.index != static_cast<std::size_t>(tool.gantry_selected) || false == last.gantry_before.has_value())
+					if (tool.undo.empty() || last.group != tool.slider_group || tool.slider != 3 || false == last.gantry || last.index != static_cast<std::size_t>(tool.gantry_selected) || false == last.gantry_before.has_value())
 					{
 						catenary_change change;
 						change.group = ++tool.group;
+						tool.slider_group = tool.group;
+						tool.slider = 3;
 						change.gantry = true;
 						change.index = static_cast<std::size_t>(tool.gantry_selected);
 						change.gantry_before = *gantry;
@@ -5734,9 +5788,11 @@ void catenary_editor::catenary_gantry_reshape(std::string const &Beam, double co
 	}
 	auto const &last{tool.undo.empty() ? catenary_change{} : tool.undo.back()};
 	// turning in small steps is taken back at once
-	if (Turn == 0.0 || tool.undo.empty() || false == last.gantry || last.index != selected || false == last.gantry_before.has_value())
+	if (Turn == 0.0 || tool.undo.empty() || last.group != tool.slider_group || tool.slider != 4 || false == last.gantry || last.index != selected || false == last.gantry_before.has_value())
 	{
 		++tool.group;
+		tool.slider_group = Turn == 0.0 ? 0 : tool.group;
+		tool.slider = 4;
 		// the selected span last: the next small turn finds it at the top of the undo and joins this group
 		for (auto move{moves.rbegin()}; move != moves.rend(); ++move)
 		{

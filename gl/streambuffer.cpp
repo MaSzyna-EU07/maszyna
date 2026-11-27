@@ -3,13 +3,13 @@
 
 #include <algorithm>
 #include <cstring>
-#include <string>
+#include <format>
 
 #include "utilities/Logs.h"
 
 namespace
 {
-// a single frame isn't given more than this; past it the frame waits for the gpu to finish everything and starts the buffer over
+// a buffer of a frame doesn't grow past this; a frame which streams more goes on in further buffers of this size
 constexpr GLsizeiptr STREAM_SIZE_MAX = 256 * 1024 * 1024;
 constexpr GLbitfield STREAM_MAP_FLAGS = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
 
@@ -159,25 +159,21 @@ GLintptr gl::frame_stream::reserve(GLsizeiptr Size)
 	{
 		auto const needed{m_start + align_up(Size, m_alignment)};
 		auto const size{needed > STREAM_SIZE_MAX ? needed : std::min(std::max(needed, 2 * current->size), STREAM_SIZE_MAX)};
-		if (size > current->size)
+		if (size <= current->size)
 		{
-			// a bigger buffer for the rest of the frame, starting after its header again. the fence of the slot (if any) was
-			// waited for when the frame took the slot over, the old buffer is only read by this frame, which may still bind it
-			// for what it wrote there (a recorded draw drawn later), so it's kept, mapped, until the slot is taken over again
-			m_retired[m_slot].push_back(current->buffer);
-			current->buffer = 0;
-			current->data = nullptr;
-			current->size = 0;
-			create(*current, size);
-			++m_grows;
+			// the frame wrote as much as a buffer may hold. what it wrote may still be bound by draws it makes later, so it isn't
+			// written over: the rest of the frame goes to another buffer of the same size
+			ErrorLog(std::format("Bad buffer: a frame streamed more than {} MiB, another buffer is made for it", STREAM_SIZE_MAX / (1024 * 1024)));
 		}
-		else
-		{
-			// the frame wrote as much as a buffer may hold: start it over once the gpu read all of it
-			ErrorLog("Bad buffer: a frame streamed more than " + std::to_string(STREAM_SIZE_MAX / (1024 * 1024)) + " MiB, waiting for the gpu");
-			glFinish();
-			++m_waits;
-		}
+		// a new buffer for the rest of the frame, starting after its header again. the fence of the slot (if any) was waited for
+		// when the frame took the slot over, the old buffer is only read by this frame, which may still bind it for what it
+		// wrote there (a recorded draw drawn later), so it's kept, mapped, until the slot is taken over again
+		m_retired[m_slot].push_back(current->buffer);
+		current->buffer = 0;
+		current->data = nullptr;
+		current->size = 0;
+		create(*current, size);
+		++m_grows;
 		offset = m_start;
 	}
 	m_fill = offset + Size;

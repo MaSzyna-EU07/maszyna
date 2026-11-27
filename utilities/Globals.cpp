@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationenvironment.h"
 #include "vehicle/Driver.h"
 #include "utilities/Logs.h"
+#include "utilities/inionlysettings.h"
 #include "utilities/utilities.h"
 #include "world/catenary_span.h"
 #include "Console.h"
@@ -291,6 +292,65 @@ bool global_settings::ConfigParseAudio(cParser& Parser, const std::string& token
         return true;
     }
 
+    return ConfigParseAudioDevice(Parser, token);
+}
+
+bool global_settings::ConfigParseAudioDevice(cParser& Parser, const std::string& token)
+{
+    if (token == "sound.outputmode")
+    {
+        AudioOutputMode = Parser.getToken<std::string>(true);
+        return true;
+    }
+
+    if (token == "sound.hrtf")
+    {
+        AudioHrtf = Parser.getToken<std::string>(true);
+        return true;
+    }
+
+    if (token == "sound.hrtf.profile")
+    {
+        AudioHrtfProfile = Parser.getToken<std::string>(false);
+        return true;
+    }
+
+    if (token == "sound.resampler")
+    {
+        AudioResampler = Parser.getToken<std::string>(false);
+        return true;
+    }
+
+    if (token == "sound.limiter")
+    {
+        AudioLimiter = Parser.getToken<std::string>(true);
+        return true;
+    }
+
+    if (token == "sound.frequency")
+    {
+        ParseOneClamped(Parser, AudioFrequency, 0, 192000);
+        return true;
+    }
+
+    if (token == "sound.doppler")
+    {
+        ParseOneClamped(Parser, AudioDoppler, 0.f, 10.f);
+        return true;
+    }
+
+    if (token == "sound.efx.lowpass")
+    {
+        ParseOne(Parser, AudioLowpass);
+        return true;
+    }
+
+    if (token == "sound.efx.airabsorption")
+    {
+        ParseOneClamped(Parser, AudioAirAbsorption, 0.f, 10.f);
+        return true;
+    }
+
     return false;
 }
 
@@ -405,7 +465,8 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
         else if (GfxRenderer == "vulkan14")
             GfxRenderer = "vulkan";
 
-        if ((GfxRenderer != "default") && (GfxRenderer != "vulkan"))
+        // "null" draws nothing and loads no textures, for the test runs
+        if ((GfxRenderer != "default") && (GfxRenderer != "vulkan") && (GfxRenderer != "null"))
         {
             // the legacy OpenGL 2.1 renderer ("legacy", "simple" and other values) and the NVRHI renderer ("experimental") were removed
             WriteLog("eu07.ini: gfxrenderer \"" + GfxRenderer + "\" is no longer supported, using \"default\"");
@@ -524,6 +585,13 @@ bool global_settings::ConfigParseInput(cParser& Parser, const std::string& token
         return true;
     }
 
+    if (token == "consistviews")
+    {
+        // no: [Shift]+[F4] cycles through the four views of the train it had before the views of its vehicles
+        ParseOne(Parser, ConsistViews);
+        return true;
+    }
+
     if (token == "input.gamepad")
     {
         ParseOne(Parser, InputGamepad);
@@ -623,6 +691,14 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
     if (token == "physicslog.trains")
     {
         ParseOne(Parser, WriteTrainLogFlag);
+        return true;
+    }
+
+    // the saved odometer states of the vehicles not run for this many days are dropped, 0 = never (vehicle/odometer.h)
+    if (token == "odometer.expiry")
+    {
+        ParseOne(Parser, odometer_expiry);
+        odometer_expiry = std::max(0, odometer_expiry);
         return true;
     }
 
@@ -1077,7 +1153,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
     {
         std::string text;
         ParseOne(Parser, text);
-        Global.random_seed = seed_of(text);
+        // nothing after the key gives no seed; anything else does, 0 too
+        if (auto const seed{seed_given(text)})
+        {
+            Global.random_seed = *seed;
+            Global.random_seed_given = true;
+        }
         return true;
     }
 
@@ -1099,6 +1180,20 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "physics.trackbuckling")
+    {
+        // off, scenery: the buckles of the scenery and its events, auto: also by the temperature of the rails
+        std::string mode;
+        ParseOne(Parser, mode, 1);
+        if (mode == "off" || mode == "no")
+            track_buckling = track_buckling_mode::off;
+        else if (mode == "auto")
+            track_buckling = track_buckling_mode::automatic;
+        else
+            track_buckling = track_buckling_mode::scenery;
+        return true;
+    }
+
     if (token == "couplerphysics")
     {
         // yes: the player's train and the trains it closes in on, all: every train
@@ -1106,6 +1201,32 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         ParseOne(Parser, scope, 1);
         coupler_physics_all = scope == "all";
         coupler_physics = coupler_physics_all || scope == "yes" || scope == "true" || scope == "1";
+        return true;
+    }
+
+    if (token == "physics.derailment")
+    {
+        // new: the physical criteria (McZapkie/derailment.h), old: the legacy draw, off: no derailment from the speed,
+        // monitor: the legacy draw, and the criteria to the log
+        std::string model;
+        ParseOne(Parser, model, 1);
+        derailment = derailment_model_of(model);
+        return true;
+    }
+
+    if (token == "physics.trackcheck")
+    {
+        ParseOne(Parser, track_check, 1);
+        return true;
+    }
+
+    if (token == "physics.collisions")
+    {
+        // new: the crush of the ends past the buffers (McZapkie/collision.h), old: the legacy rule, monitor: the legacy
+        // rule, and the crush to the log
+        std::string model;
+        ParseOne(Parser, model, 1);
+        collisions = collision_model_of(model);
         return true;
     }
 
@@ -1180,6 +1301,15 @@ bool global_settings::ConfigParseScriptScreens(cParser& Parser, std::string_view
     if (token == "luascreens.enabled")
     {
         ParseOne(Parser, luascreens_enabled, 1);
+        return true;
+    }
+
+    // the scenery scripts (lua in the .scn) with all of LuaJIT's libraries, for a scenery that needs io, ffi or
+    // require: they then reach files and programs as the player does. from eu07.ini only: a config block of the
+    // scenery doesn't change it (utilities/inionlysettings.h)
+    if (token == "lua.fulllibraries")
+    {
+        ParseOne(Parser, lua_fulllibraries, 1);
         return true;
     }
 
@@ -1682,8 +1812,10 @@ bool global_settings::ConfigParseDebug(cParser& Parser, const std::string& token
     return false;
 }
 
-void global_settings::ConfigParse(cParser& Parser)
+void global_settings::ConfigParse(cParser& Parser, config_source const Source)
 {
+    // what a scenery doesn't change, kept before its keys are read
+    std::optional<ini_only_settings> const inionly{Source == config_source::scenery ? std::make_optional<ini_only_settings>(*this) : std::nullopt};
     std::string token;
 
     do
@@ -1740,6 +1872,15 @@ void global_settings::ConfigParse(cParser& Parser)
         // WriteLog(std::format("Unknown config token: {}", token), logtype::warning, false);
 
     } while (true);
+
+    if (inionly.has_value())
+    {
+        // put back before FinalizeConfig() acts on them (feedbackmode)
+        for (auto const key : inionly->restore(*this))
+        {
+            ErrorLog("scenery config: \"" + std::string(key) + "\" is read from eu07.ini only, ignored");
+        }
+    }
 
     FinalizeConfig();
 }
@@ -2498,8 +2639,19 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "fmradio.enabled", fmradio_enabled );
     export_as_text( Output, "fmradio.cleansound", fmradio_cleansound );
     export_as_text( Output, "fmradio.stations", fmradio_stations );
+    export_as_text( Output, "sound.maxsources", audio_max_sources );
+    export_as_text( Output, "sound.outputmode", AudioOutputMode );
+    export_as_text( Output, "sound.hrtf", AudioHrtf );
+    export_as_text( Output, "sound.hrtf.profile", AudioHrtfProfile );
+    export_as_text( Output, "sound.resampler", AudioResampler );
+    export_as_text( Output, "sound.limiter", AudioLimiter );
+    export_as_text( Output, "sound.frequency", AudioFrequency );
+    export_as_text( Output, "sound.doppler", AudioDoppler );
+    export_as_text( Output, "sound.efx.lowpass", AudioLowpass );
+    export_as_text( Output, "sound.efx.airabsorption", AudioAirAbsorption );
     export_as_text( Output, "physicslog", WriteLogFlag );
     export_as_text( Output, "physicslog.trains", WriteTrainLogFlag );
+    export_as_text( Output, "odometer.expiry", odometer_expiry );
     if( BlackBox ) {
         export_as_text( Output, "blackbox", *BlackBox );
     }
@@ -2526,6 +2678,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
         << fMouseXScale << " "
         << fMouseYScale << "\n";
     export_as_text( Output, "mousecontrol", InputMouse );
+    export_as_text( Output, "consistviews", ConsistViews );
     export_as_text( Output, "enabletraction", bEnableTraction );
     export_as_text( Output, "loadtraction", bLoadTraction );
     export_as_text( Output, "friction", fFriction );
@@ -2566,6 +2719,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "scenario.time.offset", ScenarioTimeOffset );
     export_as_text( Output, "scenario.time.current", ScenarioTimeCurrent );
     export_as_text( Output, "scenario.weather.temperature", AirTemperature );
+    export_as_text( Output, "physics.trackbuckling", std::string{
+        track_buckling == track_buckling_mode::off ? "off" :
+        track_buckling == track_buckling_mode::automatic ? "auto" :
+        "scenery" } );
     export_as_text( Output, "ai.trainman", AITrainman );
     export_as_text( Output, "controlcoupling.enginecheck", control_coupling_engine_check );
     std::string couplerphysics { coupler_physics ? "yes" : "no" };
@@ -2573,6 +2730,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
         couplerphysics = "all";
     }
     export_as_text( Output, "couplerphysics", couplerphysics );
+    export_as_text( Output, "physics.derailment", std::string{ name_of( derailment ) } );
+    export_as_text( Output, "physics.trackcheck", track_check );
+    export_as_text( Output, "physics.collisions", std::string{ name_of( collisions ) } );
     export_as_text( Output, "ai.brakesetting.cw1", AIBrakeSettingCw1 );
     export_as_text( Output, "scalespeculars", ScaleSpecularValues );
     export_as_text( Output, "gfxrenderer", GfxRenderer );
@@ -2906,6 +3066,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "python.uploadmain", python_uploadmain );
     export_as_text( Output, "python.mipmaps", python_mipmaps );
     export_as_text( Output, "luascreens.enabled", luascreens_enabled );
+    export_as_text( Output, "lua.fulllibraries", lua_fulllibraries );
     export_as_text( Output, "wasm.enabled", wasm_enabled );
     export_as_text( Output, "screens.cabframes", screens_cabframes );
     export_as_text( Output, "screens.externalframes", screens_externalframes );

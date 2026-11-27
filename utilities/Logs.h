@@ -26,6 +26,9 @@ enum class logtype : unsigned int {
 // writes the log until StopLogService(), and all of it that came before
 void LogService();
 void StopLogService();
+// the settings are read: the log files can be named and written from now on; until then the log service keeps what
+// is logged
+void OpenLogFiles();
 void WriteLog( const char *str, logtype const Type = logtype::generic, bool isError = false );
 void Error( const std::string &asMessage, bool box = false );
 void Error( const char* &asMessage, bool box = false );

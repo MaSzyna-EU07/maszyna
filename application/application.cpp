@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/uilayer.h"
 #include "utilities/Logs.h"
+#include "utilities/logfiles.h"
 #include "world/SleeperWorker.h"
 #include "rendering/screenshot.h"
 #include "utilities/translation.h"
@@ -32,12 +33,15 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/memorystats.h"
 #include "utilities/framepacer.h"
+#include "utilities/hardwareprobe.h"
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "simulation/simulationtest.h"
 #include "utilities/physicslog.h"
 #include <chrono>
+#include <filesystem>
 #include <format>
+#include <fstream>
 #include <mutex>
 #include <set>
 #include <string>
@@ -193,6 +197,56 @@ void glfw_error_callback(int const Code, char const *Description)
 			return;
 	}
 	ErrorLog(message);
+}
+
+#ifdef WITH_CRASHPAD
+// there while the renderer starts (init_gfx()): left behind by a start which crashed in it
+constexpr char const *GFX_START_MARK{"crashdumps/gfx_start.pending"};
+#endif
+
+// the mark of the start of the renderer put down (Starting) or taken away
+void mark_gfx_start(bool const Starting)
+{
+#ifdef WITH_CRASHPAD
+	std::error_code error;
+	if (Starting)
+	{
+		std::ofstream mark(GFX_START_MARK, std::ios::trunc);
+	}
+	else
+	{
+		std::filesystem::remove(GFX_START_MARK, error);
+	}
+#else
+	(void)Starting;
+#endif
+}
+
+// the question about the report of the last crash, asked before the renderer starts when that crash came while it started: the window
+// of the question is drawn by the renderer (run_crashgui()), so a crash in its start, which repeats at every start, would never let it
+// show. a box of the system asks instead, on Windows, where the reports are made
+void ask_crash_report_before_gfx()
+{
+#if defined(WITH_CRASHPAD) && defined(_WIN32)
+	std::error_code error;
+	if ((false == crashreport_is_pending()) || Global.test.enabled || (false == std::filesystem::exists(GFX_START_MARK, error)))
+	{
+		return;
+	}
+	auto const polish{Global.asLang == "pl"};
+	auto const *text{
+		polish ? L"Podczas ostatniego uruchomienia symulator uległ awarii przy uruchamianiu grafiki.\nWysłać raport o błędzie do deweloperów?" :
+		         L"The simulator crashed while starting the graphics during the last launch.\nSend the crash report to the developers?"};
+	auto const *caption{polish ? L"Raportowanie błędów" : L"Crash reporting"};
+	if (::MessageBoxW(nullptr, text, caption, MB_YESNO | MB_ICONERROR) == IDYES)
+	{
+		crashreport_upload_accept();
+	}
+	else
+	{
+		crashreport_upload_reject();
+	}
+#endif
 }
 
 } // namespace
@@ -414,8 +468,10 @@ int eu07_application::init(int Argc, char *Argv[])
 	Global.threads.emplace("LogService", std::move(sLoggingService));
 
 	init_debug();
+	result = init_settings(Argc, Argv);
+	// the log files are named by the settings (multiplelogs), so they are cleared and opened once those are read
 	init_files();
-	if ((result = init_settings(Argc, Argv)) != 0)
+	if (result != 0)
 	{
 		ErrorLog("Failed to initialize settings! Maybe you're missing eu07.ini file?");
 		return result;
@@ -426,7 +482,7 @@ int eu07_application::init(int Argc, char *Argv[])
 	// the run's seed, settled once and kept in Globals: the engines come out of it.
 	// narrowed on purpose - mt19937 and seed_of() both work on 32 bits, and that is
 	// the seed somebody can write down and pass on
-	if (!Global.random_seed)
+	if (false == Global.random_seed_given)
 		Global.random_seed = static_cast<std::uint32_t>(true_random_seed());
 	Global.random_engine.seed(Global.random_seed);
 	Global.local_random_engine.seed(Global.random_seed);
@@ -452,6 +508,9 @@ int eu07_application::init(int Argc, char *Argv[])
 		WriteLog(settingspipe.str());
 	}
 
+	// the cpu, the memory and the graphics adapters, for the bug reports
+	hardware::log_system();
+
 	WriteLog("// startup");
 
 	if ((result = init_glfw()) != 0)
@@ -466,17 +525,23 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
+	ask_crash_report_before_gfx();
+	mark_gfx_start(true);
 	if ((result = init_gfx()) != 0)
 	{
+		// a start which failed, not one which crashed
+		mark_gfx_start(false);
 		ErrorLog("Failed to initialize GFX!");
 		return result;
 	}
 
 	if ((result = init_ui()) != 0)
 	{ // ui now depends on activated renderer
+		mark_gfx_start(false);
 		ErrorLog("Failed to init UI!");
 		return result;
 	}
+	mark_gfx_start(false);
 	if (crashreport_is_pending() && false == Global.test.enabled)
 	{ // run crashgui as early as possible: it's drawn by the renderer
 		if ((result = run_crashgui()) != 0)
@@ -1274,16 +1339,19 @@ void eu07_application::init_console()
 
 void eu07_application::init_files()
 {
-
+	// without multiplelogs the run writes the shared log.txt / errors.txt, and those of the run before go. with it the
+	// run writes files of its own in logs/, and the shared ones are left to whoever ran the game last without it
+	for (auto const &file : stale_log_files(Global.MultipleLogs))
+	{
+		std::error_code error; // not there is fine
+		std::filesystem::remove(file, error);
+	}
 #ifdef _WIN32
-	DeleteFile("log.txt");
-	DeleteFile("errors.txt");
 	CreateDirectory("logs", nullptr);
 #elif __unix__
-	unlink("log.txt");
-	unlink("errors.txt");
 	mkdir("logs", 0750);
 #endif
+	OpenLogFiles();
 }
 namespace fs = std::filesystem;
 
@@ -1366,11 +1434,16 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		else if (token == "-seed")
 		{
 			// a number is the seed; anything else is a word that stands for one. said in the
-			// log as it was given, because that is what gets passed on to somebody else
+			// log as it was given, because that is what gets passed on to somebody else. 0 is a seed
+			// too; an empty word gives none, as randomseed with nothing after it
 			if (i + 1 < Argc)
 			{
-				Global.random_seed = seed_of(Argv[++i]);
-				WriteLog(std::format("seed given on the command line: {} -> {}", Argv[i], Global.random_seed));
+				if (auto const seed{seed_given(Argv[++i])})
+				{
+					Global.random_seed = *seed;
+					Global.random_seed_given = true;
+					WriteLog(std::format("seed given on the command line: {} -> {}", Argv[i], Global.random_seed));
+				}
 			}
 		}
 		else if (token == "--test")
@@ -1417,6 +1490,9 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		}
 		simulation::apply_test_mode_settings();
 	}
+
+	// a renderer this build doesn't have: the values of the removed renderers are taken for "default" as eu07.ini is read
+	// (global_settings::ConfigParse), and a vulkan renderer which can't run here falls back to opengl (select_gfx_backend())
 
 	return 0;
 }

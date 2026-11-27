@@ -89,6 +89,12 @@ class ray_tracing
 	{
 		return (Slot < m_frames.size() ? m_frames[Slot].set : VK_NULL_HANDLE);
 	}
+	// the set of the frame holds a structure and its records, which the rays may be traced through: not when begin_frame() had no
+	// memory for them (the shaders read the set only where the rays are traced)
+	bool traceable(std::uint32_t const Slot) const
+	{
+		return (Slot < m_frames.size()) && (m_frames[Slot].written_top != VK_NULL_HANDLE) && (m_frames[Slot].written_records != VK_NULL_HANDLE);
+	}
 	// a scenery is being loaded, or the geometry is gone: the bottom level structures go
 	void clear(std::uint64_t Value);
 	// for the debug panel: the structures, their memory, the instances of the last frame

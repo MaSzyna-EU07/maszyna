@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "world/Track.h"
 #include "world/TrackRails.h"
+#include "world/TrackCheck.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationenvironment.h"
 #include "scene/scene.h"
@@ -774,6 +775,20 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
                 m_uneven = track_uneven::read_attribute( values, eType == tt_Switch );
             }
         }
+        else if( str == "buckle" ) {
+            // buckle <mm>;<m>;<m>[;<side>]: the track buckled by the heat, see TrackBuckle.h
+            auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
+            if( eType == tt_Normal && iCategoryFlag == 1 ) {
+                m_buckledeclared = track_buckle::read_buckle( values );
+            }
+        }
+        else if( str == "cwr" ) {
+            // cwr <C>;<grade>[;<worked>]: the welded rail, for the buckling by the temperature
+            auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
+            if( eType == tt_Normal && iCategoryFlag == 1 ) {
+                m_cwr = track_buckle::read_cwr( values );
+            }
+        }
         else if( str == "friction" ) {
             // memory cell holding friction value modifiers
             m_friction.first = parser->getToken<std::string>();
@@ -836,8 +851,15 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     // from the scenery is put back after it
     auto const velocity { fVelocity };
     init_segments( true );
+    // the buckle goes along the path made
+    if( Global.track_buckling != global_settings::track_buckling_mode::off && track_buckle::given( m_buckledeclared ) ) {
+        m_buckle = resolve_buckle( m_buckledeclared, 0 );
+        if( false == is_buckled() ) {
+            ErrorLog( "Bad track: \"" + m_name + "\" too short for its buckle" );
+        }
+    }
     // made with no unevenness, which is read with the attributes and goes onto them by making them again
-    if( is_uneven() ) {
+    if( is_uneven() || is_buckled() ) {
         init_segments( false );
     }
     if( SwitchExtension ) {
@@ -893,6 +915,7 @@ void TTrack::init_segments( bool const Initial ) {
     }
     else if( Segment ) {
         Segment->set_uneven( is_uneven() );
+        Segment->set_buckled( is_buckled() );
     }
 
     switch (eType) {
@@ -1284,6 +1307,10 @@ bool TTrack::AddDynamicObject(TDynamicObject *Dynamic)
             }
         }
     }
+    if( Dynamics.empty() ) {
+        // a train comes onto the track, which can buckle under it in the heat
+        buckle_pass_enter( *Dynamic );
+    }
     Dynamics.emplace_back( Dynamic );
     Dynamic->MyTrack = this; // ABu: na ktorym torze jesteśmy
     if( Dynamic->iOverheadMask ) {
@@ -1330,6 +1357,10 @@ bool TTrack::RemoveDynamicObject(TDynamicObject *Dynamic)
                 ++idx;
             }
         }
+    }
+    if( result ) {
+        // the head of a train leaving the track the pass was drawn to buckle
+        buckle_pass_leave();
     }
     if( Global.iMultiplayer ) {
         // jeśli multiplayer
@@ -2919,6 +2950,9 @@ TTrack::export_as_text_( std::ostream &Output ) const {
         Output << "railprofile " << m_profile1.first << ' ';
     }
     Output << track_uneven::write_attribute( m_uneven, eType == tt_Switch );
+    if( eType == tt_Normal && iCategoryFlag == 1 ) {
+        Output << track_buckle::write_buckle( m_buckledeclared ) << track_buckle::write_cwr( m_cwr );
+    }
     if( false == m_friction.first.empty() ) {
         Output << "friction " << m_friction.first << ' ';
     }
@@ -4301,6 +4335,68 @@ path_table::InitTracks() {
     }
 
     TTrack::fetch_default_profiles();
+}
+
+namespace {
+
+// the tightest radius of the curve of a path in the plan [m], from the circles through its design points about 5 m apart
+// (without the unevenness, whose short waves would bend it): the curve the axles of a vehicle follow, whether the track
+// gives the radius or only its control points. 0 for a straight one; a radius over 15 km is taken for one, as
+// TDynamicObject::Update() takes it
+double tightest_radius(TSegment const &Segment) {
+
+    auto const length { Segment.GetLength() };
+    if( length < 0.5 ) {
+        return 0.0;
+    }
+    auto const intervals { std::max( 2, static_cast<int>( std::ceil( length / 5.0 ) ) ) };
+    auto const flat = [&]( int const Index ) {
+        auto const point { Segment.FastGetPoint( static_cast<double>( Index ) / intervals ) };
+        return glm::dvec2 { point.x, point.z }; };
+    auto tightest { 0.0 };
+    for( int index = 1; index < intervals; ++index ) {
+        auto const a { flat( index - 1 ) };
+        auto const b { flat( index ) };
+        auto const c { flat( index + 1 ) };
+        auto const ab { b - a };
+        auto const ac { c - a };
+        auto const area2 { std::abs( ab.x * ac.y - ab.y * ac.x ) };
+        if( area2 < 1e-9 ) {
+            continue;
+        }
+        auto const radius { glm::length( ab ) * glm::length( c - b ) * glm::length( ac ) / ( 2.0 * area2 ) };
+        if( radius < 15000.0 && ( tightest == 0.0 || radius < tightest ) ) {
+            tightest = radius;
+        }
+    }
+    return tightest;
+}
+
+} // namespace
+
+void
+path_table::CheckTracks() const {
+
+    std::vector<track_check::track> tracks;
+    for( auto *path : sequence() ) {
+        if( path == nullptr || ( path->iCategoryFlag & 1 ) == 0 || path->Segment == nullptr ) {
+            continue;
+        }
+        track_check::track track;
+        track.name = path->name();
+        track.velocity = path->VelocityGet();
+        track.plain = ( path->eType == tt_Normal );
+        track.radius = track.plain ? tightest_radius( *path->Segment ) : 0.0;
+        float roll1 { 0.f }, roll2 { 0.f };
+        path->Segment->GetRolls( roll1, roll2 );
+        track.gauge = path->fTrackWidth;
+        auto const spacing { 1000.0 * derailment::contact_spacing( track.gauge ) };
+        track.cant = { spacing * std::sin( roll1 ), spacing * std::sin( roll2 ) };
+        track.damage = path->iDamageFlag;
+        track.uneven = path->m_uneven;
+        tracks.emplace_back( std::move( track ) );
+    }
+    track_check::scan( tracks, []( std::string const &Line ) { WriteLog( Line ); } );
 }
 
 // legacy method, sends list of occupied paths over network

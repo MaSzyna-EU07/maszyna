@@ -273,8 +273,7 @@ bool vulkan14_renderer::context::submit(render_job &Job, char const *&Failure)
 	}
 	if (false == record(frame, Job.uploaded, Job.async))
 	{
-		Failure = "recording a frame";
-		return false;
+		return skip_frame(Job, false, "recording a frame", Failure);
 	}
 	if (Job.async)
 	{
@@ -300,10 +299,15 @@ bool vulkan14_renderer::context::submit(render_job &Job, char const *&Failure)
 		compute.pCommandBufferInfos = &buffer;
 		compute.signalSemaphoreInfoCount = 1;
 		compute.pSignalSemaphoreInfos = &signal;
-		if (!VK14_VERIFY(vkQueueSubmit2(device.compute_queue(), 1, &compute, VK_NULL_HANDLE)))
+		if (auto const result{vkQueueSubmit2(device.compute_queue(), 1, &compute, VK_NULL_HANDLE)}; false == vk14::verify_result(result, "vkQueueSubmit2(compute)", __FILE__, __LINE__))
 		{
-			Failure = "submitting the async compute of a frame";
-			return false;
+			// a failed submit leaves the semaphores as they were: the frame is left out, unless the device is lost
+			if (result == VK_ERROR_DEVICE_LOST)
+			{
+				Failure = "submitting the async compute of a frame";
+				return false;
+			}
+			return skip_frame(Job, false, "submitting the async compute of a frame", Failure);
 		}
 	}
 	// the uploads first, in the same submit: their barriers make them done before the frame uses what they copied
@@ -359,14 +363,64 @@ bool vulkan14_renderer::context::submit(render_job &Job, char const *&Failure)
 	submit.pCommandBufferInfos = commands.data() + (Job.async ? first : 0);
 	submit.signalSemaphoreInfoCount = static_cast<std::uint32_t>(Job.signals.size());
 	submit.pSignalSemaphoreInfos = Job.signals.data();
-	if (!VK14_VERIFY(vkQueueSubmit2(device.graphics_queue(), count, submits.data(), VK_NULL_HANDLE)))
+	if (auto const result{vkQueueSubmit2(device.graphics_queue(), count, submits.data(), VK_NULL_HANDLE)}; false == vk14::verify_result(result, "vkQueueSubmit2", __FILE__, __LINE__))
 	{
-		Failure = "submitting a frame";
-		return false;
+		if (result == VK_ERROR_DEVICE_LOST)
+		{
+			Failure = "submitting a frame";
+			return false;
+		}
+		return skip_frame(Job, Job.async, "submitting a frame", Failure);
 	}
 	if (lowlatency)
 	{
 		main->latency_marker(Job.present_id, VK_LATENCY_MARKER_RENDERSUBMIT_END_NV);
+	}
+	return true;
+}
+
+// the timeline reaches the value of the frame and the semaphores of its images are waited for and signalled as with the frame drawn;
+// the uploads go with it, as what they copy is used by the frames after it. the images of the windows stay acquired, their
+// swapchains are made anew (the main thread drops those it presents itself, Render())
+bool vulkan14_renderer::context::skip_frame(render_job &Job, bool const Compute, char const *What, char const *&Failure)
+{
+	auto waits{Job.waits};
+	if (Compute)
+	{
+		VkSemaphoreSubmitInfo compute{};
+		compute.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+		compute.semaphore = compute_timeline;
+		compute.value = Job.value;
+		compute.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		waits.push_back(compute);
+	}
+	VkCommandBufferSubmitInfo uploadbuffer{};
+	uploadbuffer.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+	uploadbuffer.commandBuffer = Job.target->uploads;
+	VkSubmitInfo2 empty{};
+	empty.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+	empty.waitSemaphoreInfoCount = static_cast<std::uint32_t>(waits.size());
+	empty.pWaitSemaphoreInfos = waits.data();
+	empty.commandBufferInfoCount = (Job.uploaded ? 1 : 0);
+	empty.pCommandBufferInfos = &uploadbuffer;
+	empty.signalSemaphoreInfoCount = static_cast<std::uint32_t>(Job.signals.size());
+	empty.pSignalSemaphoreInfos = Job.signals.data();
+	if (false == VK14_VERIFY(vkQueueSubmit2(device.graphics_queue(), 1, &empty, VK_NULL_HANDLE)))
+	{
+		Failure = What;
+		return false;
+	}
+	for (auto *window : Job.windows)
+	{
+		window->drop_images();
+	}
+	Job.windows.clear();
+	Job.skipped = true;
+	// said the first time, then now and then while it goes on
+	++skipped_frames;
+	if ((skipped_frames % 600) == 1)
+	{
+		vk14::log_error(std::string(What) + " failed, the frame is left out (" + std::to_string(skipped_frames) + " so far)");
 	}
 	return true;
 }
@@ -414,7 +468,8 @@ bool vulkan14_renderer::context::present(std::vector<vk14::swapchain *> const &W
 		info.pImageIndices = &image;
 		auto const result{vkQueuePresentKHR(device.graphics_queue(), &info)};
 		main->presented(result);
-		if ((result == VK_ERROR_DEVICE_LOST) || (result == VK_ERROR_SURFACE_LOST_KHR))
+		// a lost surface is made anew with the swapchain before the next image (swapchain::presented())
+		if (result == VK_ERROR_DEVICE_LOST)
 		{
 			vk14::log_error(std::string("vkQueuePresentKHR failed with ") + vk14::result_string(result));
 			return false;
@@ -463,7 +518,7 @@ bool vulkan14_renderer::context::present(std::vector<vk14::swapchain *> const &W
 	{
 		Windows[i]->presented(results[i]);
 	}
-	if ((result == VK_ERROR_DEVICE_LOST) || (result == VK_ERROR_SURFACE_LOST_KHR))
+	if (result == VK_ERROR_DEVICE_LOST)
 	{
 		vk14::log_error(std::string("vkQueuePresentKHR failed with ") + vk14::result_string(result));
 		return false;
@@ -1171,7 +1226,34 @@ void vulkan14_renderer::Update(double const Deltatime)
 	{
 		update_texture_release();
 	}
+	save_pipeline_cache();
 	update_info();
+}
+
+// the pipeline cache written to the disk by a background thread once pipelines were made since it was written last and the threads
+// have nothing else to do, not more often than every so many seconds: a session which doesn't end as it should (a crash, a lost
+// device, the process killed) keeps what it compiled
+void vulkan14_renderer::save_pipeline_cache()
+{
+	if (!m_context)
+	{
+		return;
+	}
+	auto &ctx{*m_context};
+	if ((false == ctx.background.running()) || (ctx.background.pending() > 0))
+	{
+		return;
+	}
+	auto const count{ctx.pipelines.count()};
+	auto const now{std::chrono::steady_clock::now()};
+	if ((count == m_pipelinessaved) || (now - m_pipelinessavedat < std::chrono::seconds{20}))
+	{
+		return;
+	}
+	m_pipelinessaved = count;
+	m_pipelinessavedat = now;
+	// the library outlives the threads (context::destroy() stops them first)
+	ctx.background.add([&pipelines = ctx.pipelines]() { pipelines.save(); }, false);
 }
 
 void vulkan14_renderer::update_info()
@@ -1193,7 +1275,13 @@ void vulkan14_renderer::update_info()
 	ctx.memory.budget(usage, budget);
 	m_infostats = "device memory: " + vk14::memory_size_string(usage) + " of " + vk14::memory_size_string(budget) + (ctx.device.memory_budget_enabled() ? "" : " (no budget from the driver)") + "\n" + "images: " + std::to_string(ctx.images.size()) +
 	              ", uploaded " + vk14::memory_size_string(ctx.uploads.uploaded()) + ", waiting for the gpu to be deleted: " + std::to_string(ctx.deletions.size()) + "\n" + (ctx.textures ? ctx.textures->info() + "\n" : std::string{}) + ctx.shaders.info() +
-	              "\n" + ctx.pipelines.info() + "\n" + background_info() + "frame ring: " + vk14::memory_size_string(ctx.ring.used()) + " of " + vk14::memory_size_string(ctx.ring.capacity()) + "\n";
+	              "\n" + ctx.pipelines.info() + "\n" + background_info() + "frame ring: " + vk14::memory_size_string(ctx.ring.used()) + " of " + vk14::memory_size_string(ctx.ring.capacity()) + ", of the draws: " +
+	              vk14::memory_size_string(ctx.scene.draws.ring.used()) + " of " + vk14::memory_size_string(ctx.scene.draws.ring.capacity()) + ", of the instances: " +
+	              vk14::memory_size_string(ctx.scene.instances.ring.used()) + " of " + vk14::memory_size_string(ctx.scene.instances.ring.capacity()) + "\n";
+	if (auto const full{ctx.scene.draws.full.load() + ctx.scene.instances.full.load()}; full > 0)
+	{
+		m_infostats += "draws left out of full rings: " + std::to_string(full) + "\n";
+	}
 	for (auto const &window : ctx.windows)
 	{
 		auto const extent{window->extent()};

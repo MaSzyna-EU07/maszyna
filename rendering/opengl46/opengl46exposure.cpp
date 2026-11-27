@@ -13,7 +13,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "model/Texture.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/utilities.h"
+
+#include <format>
 
 namespace
 {
@@ -29,11 +32,7 @@ void opengl46_exposure::init()
 		gl::shader shader(Name);
 		return std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
 	};
-	m_histogram_program = make_compute("exposure_histogram.comp");
-	m_average_program = make_compute("exposure_average.comp");
-	m_bloom_down = std::make_unique<gl::postfx>("bloom_down");
-	m_bloom_up = std::make_unique<gl::postfx>("bloom_up");
-
+	// the tonemapping reads the buffer, also without the passes which work the exposure out
 	m_exposure_ssbo = std::make_unique<gl::ssbo>(sizeof(gl::exposure_data), gl::EXPOSURE_SSBO_BINDING);
 	gl::exposure_data data{};
 	data.adapted_luminance = Global.gfx_postfx_autoexposure_key;
@@ -41,6 +40,31 @@ void opengl46_exposure::init()
 	data.average_luminance = Global.gfx_postfx_autoexposure_key;
 	data.valid = 0;
 	m_exposure_ssbo->update(data);
+
+	try
+	{
+		m_histogram_program = make_compute("exposure_histogram.comp");
+		m_average_program = make_compute("exposure_average.comp");
+	}
+	catch (gl::shader_exception const &e)
+	{
+		ErrorLog(std::format("automatic exposure not available: {}", e.what()));
+		m_histogram_program.reset();
+		m_average_program.reset();
+		Global.gfx_postfx_autoexposure = false;
+	}
+	try
+	{
+		m_bloom_down = std::make_unique<gl::postfx>("bloom_down");
+		m_bloom_up = std::make_unique<gl::postfx>("bloom_up");
+	}
+	catch (gl::shader_exception const &e)
+	{
+		ErrorLog(std::format("bloom not available: {}", e.what()));
+		m_bloom_down.reset();
+		m_bloom_up.reset();
+		Global.gfx_postfx_bloom = false;
+	}
 }
 
 void opengl46_exposure::bind()
@@ -76,6 +100,8 @@ std::unique_ptr<opengl46_exposure::bloom_chain> opengl46_exposure::make_bloom_ch
 
 void opengl46_exposure::measure(opengl_texture &Image, double const Deltatime)
 {
+	if (m_average_program == nullptr)
+		return;
 	float data[4];
 	if (m_readback.pop(data))
 		std::copy(std::begin(data), std::end(data), std::begin(m_readback_data));
@@ -106,6 +132,8 @@ void opengl46_exposure::measure(opengl_texture &Image, double const Deltatime)
 
 opengl_texture *opengl46_exposure::bloom(bloom_chain &Chain, opengl_texture &Image, gl::stream_ubo &Modelubo, gl::model_ubs &Model)
 {
+	if (m_bloom_up == nullptr)
+		return nullptr;
 	m_bloom_timer.begin();
 	// down, the first step from the image itself
 	for (std::size_t level = 0; level < Chain.sizes.size(); ++level)

@@ -86,11 +86,11 @@ int opengl_material::texture_slot( std::string const &Key )
         // named binding, the slot it fills is up to the shader
         key.erase( 0, 1 );
         key.pop_back();
-        if( shader && ( shader->texture_conf.find( key ) != shader->texture_conf.end() ) ) {
+        if( shader && shader->texture_conf.contains( key ) ) {
             return static_cast<int>( shader->texture_conf[ key ].id );
         }
-        auto const lookup { texture_bindings.find( key ) };
-        if( ( shader == nullptr ) && ( lookup != texture_bindings.end() ) ) {
+        if( auto const lookup { texture_bindings.find( key ) };
+            ( shader == nullptr ) && ( lookup != texture_bindings.end() ) ) {
             return lookup->second;
         }
         // ignore unrecognized texture bindings in legacy render mode, it's most likely data for more advanced shaders
@@ -105,6 +105,35 @@ int opengl_material::texture_slot( std::string const &Key )
     is_good = false;
     return -1;
 }
+
+namespace {
+
+// the texture of a single texel which a unit of a material shows when its shader can do without the texture and the material
+// gives none (the fourth argument of #pragma texture). made once for each colour, shared by all the materials
+texture_handle
+default_texture( gfx::shader_texture_default const Default ) {
+
+    struct texel_source {
+        char const *name;
+        std::array<std::uint8_t, 4> texel;
+    };
+    using enum gfx::shader_texture_default;
+    texel_source source { "internal_src:material/default_black", { 0, 0, 0, 255 } };
+    if( Default == white ) { source = { "internal_src:material/default_white", { 255, 255, 255, 255 } }; }
+    else if( Default == red ) { source = { "internal_src:material/default_red", { 255, 0, 0, 255 } }; }
+    else if( Default == yellow ) { source = { "internal_src:material/default_yellow", { 255, 255, 0, 255 } }; }
+
+    auto const handle { GfxRenderer->Fetch_Texture( source.name, true ) };
+    if( handle == null_handle ) { return null_handle; }
+    // a texture just made is the stub of the generated textures, larger than the texel it gets here
+    if( auto &texture { GfxRenderer->Texture( handle ) };
+        ( texture.get_width() != 1 ) || ( texture.get_height() != 1 ) ) {
+        texture.update_from_memory( 1, 1, source.texel.data() );
+    }
+    return handle;
+}
+
+} // namespace
 
 void opengl_material::build_texture_variants( std::vector<variant_binding> const &Bindings, bool const Loadnow )
 {
@@ -266,6 +295,17 @@ void opengl_material::finalize(bool Loadnow)
     for (auto it : shader->texture_conf)
     {
         gfx::shader_texture_entry &entry = it.second;
+        if( ( textures[ entry.id ] == null_handle ) && ( entry.fallback != gfx::shader_texture_default::none ) ) {
+            // a texture the shader can do without: its unit shows a single texel, in the sets of the variants too
+            auto const fallback { default_texture( entry.fallback ) };
+            if( fallback != null_handle ) {
+                textures[ entry.id ] = fallback;
+                for( auto &variant : texture_variants ) {
+                    if( variant[ entry.id ] == null_handle ) { variant[ entry.id ] = fallback; }
+                }
+                continue;
+            }
+        }
         texture_handle handle = textures[entry.id];
         // NOTE: texture validation at this stage relies on forced texture load behaviour during its create() call
         // TODO: move texture id validation to later stage if/when deferred texture loading is implemented
@@ -318,7 +358,7 @@ std::unordered_set<std::string> seasons = {
 
 bool is_season( std::string const &String ) {
 
-    return seasons.find(String) != seasons.end();
+    return seasons.contains(String);
 }
 
 std::unordered_set<std::string> weather = {
@@ -326,7 +366,7 @@ std::unordered_set<std::string> weather = {
 
 bool is_weather( std::string const &String ) {
 
-    return weather.find(String) != weather.end();
+    return weather.contains(String);
 }
 
 // imports member data pair from the config file
@@ -362,7 +402,7 @@ void opengl_material::deserialize_texture_mapping( cParser &Input, std::string c
         value = variants.front();
     }
 
-    auto const [ it, inserted ] { parse_info->tex_mapping.try_emplace( key, parse_info_s::tex_def{ value, Priority, variants } ) };
+    auto const [ it, inserted ] { parse_info->tex_mapping.try_emplace( key, value, Priority, variants ) };
     if( ( false == inserted ) && ( Priority > it->second.priority ) ) {
         it->second = parse_info_s::tex_def{ value, Priority, variants };
     }
@@ -392,7 +432,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
             // skip the opening bracket
             auto const value { Input.getToken<std::string>( true, "\n\r\t ;" ) };
             while( true == deserialize_mapping( Input, Priority + 2, Loadnow ) ) {
-                ; // all work is done in the header
+                // all work is done in the header
             }
         }
         else if( key == Global.Season ) {
@@ -400,7 +440,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
             // skip the opening bracket
             auto const value { Input.getToken<std::string>( true, "\n\r\t ;" ) };
             while( true == deserialize_mapping( Input, Priority + 1, Loadnow ) ) {
-                ; // all work is done in the header
+                // all work is done in the header
             }
         }
 
@@ -480,7 +520,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
                 // unrecognized or ignored token, but comes with attribute block and potential further nesting
                 // go through it and discard the content
                 while( true == deserialize_mapping( Input, -1, Loadnow ) ) {
-                    ; // all work is done in the header
+                    // all work is done in the header
                 }
             }
         }
@@ -492,7 +532,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
             // ignored tokens can come with their own blocks, ignore these recursively
             // go through it and discard the content
             while( true == deserialize_mapping( Input, -1, Loadnow ) ) {
-                ; // all work is done in the header
+                // all work is done in the header
             }
         }
     }

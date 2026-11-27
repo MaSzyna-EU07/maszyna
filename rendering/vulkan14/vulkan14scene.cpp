@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -56,6 +57,25 @@ VkPrimitiveTopology topology_class(VkPrimitiveTopology const Topology)
 	default:
 		return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	}
+}
+
+// the instances of a draw (one when it isn't instanced) within the window of the ring the pass set reads, from its first one on:
+// walk_instances() places at most a window of them, those past it aren't drawn. the instances of a culled pass aren't in the window
+std::uint32_t drawn_instances(std::size_t const Count, std::uint32_t const First, VkDeviceSize const Capacity, bool const Culled)
+{
+	if (Count == 0)
+	{
+		return 1;
+	}
+	if (Culled)
+	{
+		return static_cast<std::uint32_t>(Count);
+	}
+	if (First >= Capacity)
+	{
+		return 0;
+	}
+	return static_cast<std::uint32_t>(std::min<VkDeviceSize>(Count, Capacity - First));
 }
 
 vk14::vertex_layout layout_of(vk14::vertex_kind const Kind)
@@ -1819,7 +1839,7 @@ void vulkan14_renderer::walk_glare_draw(TSubModel *Submodel, gfx::geometry_handl
 {
 	// the point of the light wasn't seen by the occlusion query of the last frame done by the gpu
 	auto const &visible{m_context->scene.glare_visible};
-	auto const lookup{visible.find(Submodel)};
+	auto const lookup{visible.find(vk14::glare_point{Submodel, TSubModel::iInstance})};
 	if ((lookup != visible.end()) && (false == lookup->second))
 	{
 		return;
@@ -1830,7 +1850,9 @@ void vulkan14_renderer::walk_glare_draw(TSubModel *Submodel, gfx::geometry_handl
 void vulkan14_renderer::walk_light_query(TSubModel *Submodel, bool const Begin)
 {
 	auto &draw{*m_draw};
-	if (false == draw.rendering)
+	// the points seen in the view of the colour pass, which draws the glare; the queries of a frame are numbered by the main thread
+	// alone (a walker draws the cab into the shadow maps at the same time)
+	if ((false == draw.rendering) || (m_main != nullptr) || (m_renderpass.draw_mode != rendermode::color))
 	{
 		return;
 	}
@@ -1844,7 +1866,7 @@ void vulkan14_renderer::walk_light_query(TSubModel *Submodel, bool const Begin)
 			return;
 		}
 		draw.query = static_cast<std::uint32_t>(submodels.size());
-		submodels.push_back(Submodel);
+		submodels.push_back(vk14::glare_point{Submodel, TSubModel::iInstance});
 		draw.commands->begin_query(scene.occlusion_pools[m_context->slot], draw.query, 0);
 	}
 	else if (draw.query != ~0u)
@@ -1924,15 +1946,20 @@ std::uint32_t vulkan14_renderer::push_draw_block()
 	auto slice{window.open ? draw.draws_cache.allocate_before(draws.stride, draws.stride, window.base, window.base + draws.window) : vk14::ring_slice{}};
 	if (false == bool(slice))
 	{
-		slice = draw.draws_cache.allocate(draws.stride, draws.stride);
+		// the part of the ring held ran out: the next one lies further on, mostly still within the window, which then stays where it is
+		slice = (window.open ? draw.draws_cache.allocate_after(draws.stride, draws.stride, window.base) : draw.draws_cache.allocate(draws.stride, draws.stride));
 		if (false == bool(slice))
 		{
+			draws.report_full("the blocks of the draws");
 			return ~0u;
 		}
-		// a new window of the blocks, the pass set is bound with its offset
-		window.base = slice.offset;
-		window.open = true;
-		draw.set_dirty = true;
+		if ((false == window.open) || (slice.offset + slice.size > window.base + draws.window))
+		{
+			// a new window of the blocks, the pass set is bound with its offset
+			window.base = slice.offset;
+			window.open = true;
+			draw.set_dirty = true;
+		}
 	}
 	std::memcpy(slice.data, &model_ubs, sizeof(gl::model_ubs));
 	return static_cast<std::uint32_t>((slice.offset - window.base) / draws.stride);
@@ -1956,24 +1983,36 @@ std::uint32_t vulkan14_renderer::walk_instances(glm::mat4 const *Modelviews, std
 	auto slice{window.open ? draw.instances_cache.allocate_before(size, instances.stride, window.base, window.base + instances.window) : vk14::ring_slice{}};
 	if (false == bool(slice))
 	{
-		// a new window, which begins with the identity of the draws which aren't instanced, followed by the instances
-		auto const alignment{m_context->device.caps().limits.minStorageBufferOffsetAlignment};
-		auto const block{draw.instances_cache.allocate(instances.stride + size, std::max<VkDeviceSize>(alignment, instances.stride))};
+		// what's left of the part of the ring held has no room for them: further on in the ring, never below the window (the walk
+		// draws instances it placed earlier after it placed others, Flush_Timbers(): their indices count from the start of the window,
+		// which stays where it is as long as the new ones lie within it). with room for the identity a new window begins with
+		auto const alignment{std::max<VkDeviceSize>(m_context->device.caps().limits.minStorageBufferOffsetAlignment, instances.stride)};
+		auto const block{window.open ? draw.instances_cache.allocate_after(instances.stride + size, alignment, window.base) : draw.instances_cache.allocate(instances.stride + size, alignment)};
 		if (false == bool(block))
 		{
-			// the ring of the frame is full: the instances are drawn where the draws which aren't instanced are
-			window.open = false;
+			// the ring of the frame is full: the instanced draws are left out (draw_chunk())
+			instances.report_full("the instances");
+			draw.instances_lost = true;
 			return 0;
 		}
-		glm::mat4 const one{1.f};
-		std::memcpy(block.data, &one, sizeof(one));
-		window.base = block.offset;
-		window.open = true;
-		draw.set_dirty = true;
-		slice = block;
-		slice.data += instances.stride;
-		slice.offset += instances.stride;
-		slice.size = size;
+		if (window.open && (block.offset + block.size <= window.base + instances.window))
+		{
+			slice = block;
+			slice.size = size;
+		}
+		else
+		{
+			// a new window, which begins with the identity of the draws which aren't instanced, followed by the instances
+			glm::mat4 const one{1.f};
+			std::memcpy(block.data, &one, sizeof(one));
+			window.base = block.offset;
+			window.open = true;
+			draw.set_dirty = true;
+			slice = block;
+			slice.data += instances.stride;
+			slice.offset += instances.stride;
+			slice.size = size;
+		}
 	}
 	std::memcpy(slice.data, Modelviews, static_cast<std::size_t>(size));
 	return static_cast<std::uint32_t>((slice.offset - window.base) / instances.stride);
@@ -2075,6 +2114,19 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 		// the depth of the scene: what the programs of the prepass don't draw, and no points or lines
 		return;
 	}
+	if ((m_current_instance_count > 0) && draw.instances_lost)
+	{
+		// the matrices of the instances aren't in their ring (walk_instances())
+		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
+		return;
+	}
+	auto const instances{drawn_instances(m_current_instance_count, m_current_instance_base, m_context->scene.instances.window / m_context->scene.instances.stride, draw.cull_sets != nullptr)};
+	if (instances == 0)
+	{
+		// all of them past the window of their ring (walk_instances() places at most a window of them)
+		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
+		return;
+	}
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto const commands{draw.commands};
@@ -2125,7 +2177,6 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 		draw.vertices = chunk.vertices;
 		draw.userdata = chunk.userdata;
 	}
-	auto const instances{m_current_instance_count > 0 ? static_cast<std::uint32_t>(m_current_instance_count) : 1u};
 	auto const firstinstance{m_current_instance_count > 0 ? m_current_instance_base : 0u};
 	if (chunk.indices != VK_NULL_HANDLE)
 	{
@@ -2216,10 +2267,23 @@ std::string list_value(std::string const &Field)
 	return result;
 }
 
-std::string pipeline_list_path()
+std::filesystem::path pipeline_list_path()
 {
 	auto const path{user_config_path("cache")};
-	return (path.empty() ? std::string{"cache/vulkan14/pipelines.txt"} : (path / "vulkan14" / "pipelines.txt").string());
+	return (path.empty() ? std::filesystem::path{"cache/vulkan14/pipelines.txt"} : (path / "vulkan14" / "pipelines.txt"));
+}
+
+// what a line of the list of the pipelines may hold: the list is a file of the user's profile, which a crash or an editor can leave
+// with anything in it, and its values go to the making of pipelines by the driver
+bool pipeline_record_valid(vk14::scene_pipeline_record const &Record, std::uint32_t const Vertices, std::uint32_t const Topology)
+{
+	auto const format = [](VkFormat const Format) {
+		// the formats of the core, which the targets of the passes are of
+		return static_cast<std::uint32_t>(Format) <= static_cast<std::uint32_t>(VK_FORMAT_ASTC_12x12_SRGB_BLOCK);
+	};
+	return (Vertices <= static_cast<std::uint32_t>(vk14::vertex_kind::particle_instance)) && (Topology <= static_cast<std::uint32_t>(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN)) &&
+	       (Record.blending <= static_cast<std::uint32_t>(vk14::blend_mode::no_colour)) && format(Record.colour[0]) && format(Record.colour[1]) && format(Record.depth) &&
+	       std::has_single_bit(Record.samples) && (Record.samples <= 8) && (Record.view_mask <= 0x3fu) && (Record.settings < 64u);
 }
 
 // the number of pipelines the list keeps; the oldest go
@@ -2272,8 +2336,6 @@ bool vk14::scene_pipeline_record::parse(std::string const &Line)
 		{
 			values[i] = static_cast<std::uint32_t>(std::stoul(fields[6 + i]));
 		}
-		vertices = static_cast<vertex_kind>(values[0]);
-		topology = static_cast<VkPrimitiveTopology>(values[1]);
 		blending = values[2];
 		colour = {static_cast<VkFormat>(values[3]), static_cast<VkFormat>(values[4])};
 		colours = std::min<std::uint32_t>(values[5], 2);
@@ -2281,6 +2343,12 @@ bool vk14::scene_pipeline_record::parse(std::string const &Line)
 		samples = values[7];
 		view_mask = values[8];
 		settings = values[9];
+		if (false == pipeline_record_valid(*this, values[0], values[1]))
+		{
+			return false;
+		}
+		vertices = static_cast<vertex_kind>(values[0]);
+		topology = static_cast<VkPrimitiveTopology>(values[1]);
 	}
 	catch (std::exception const &)
 	{
@@ -2335,6 +2403,7 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 	else
 	{
 		auto found{false};
+		auto pending{false};
 		{
 			std::lock_guard<std::mutex> lock(Program.mutex);
 			auto const lookup{Program.pipelines.find(key)};
@@ -2343,6 +2412,10 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 				pipeline = lookup->second;
 				found = true;
 			}
+			else
+			{
+				pending = Program.pending.contains(key);
+			}
 		}
 		if (false == found)
 		{
@@ -2350,6 +2423,11 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 			auto const single{(false == motion) && (Targets.colours > 0)};
 			if ((draw.async || (m_main != nullptr)) && Global.gfx_vulkan_asyncresources && ctx.background.running())
 			{
+				if (pending)
+				{
+					// being made by the background threads: the draws go without it till it's there, none of them asks for it again
+					return false;
+				}
 				// made ahead (the list of the last session), or made for another program of the same shaders: taken at once
 				if (false == ctx.find_scene_pipeline(Program, Targets, Blend, primitiveclass, settings, single, pipeline))
 				{
@@ -2690,8 +2768,9 @@ void vulkan14_renderer::context::save_scene_pipelines()
 	}
 	auto const path{pipeline_list_path()};
 	std::error_code error;
-	std::filesystem::create_directories(std::filesystem::path(path).parent_path(), error);
-	auto const temporary{path + ".tmp"};
+	std::filesystem::create_directories(path.parent_path(), error);
+	auto temporary{path};
+	temporary += ".tmp";
 	{
 		std::ofstream file(temporary, std::ios::trunc);
 		if (false == file.is_open())
@@ -2701,6 +2780,13 @@ void vulkan14_renderer::context::save_scene_pipelines()
 		for (auto const &record : records)
 		{
 			file << record.line() << '\n';
+		}
+		// a list which wasn't written whole (a full disk) doesn't take the place of the one there
+		file.close();
+		if (file.fail())
+		{
+			std::filesystem::remove(temporary, error);
+			return;
 		}
 	}
 	std::filesystem::rename(temporary, path, error);
@@ -2795,7 +2881,7 @@ int vulkan14_renderer::prepass_class(material_handle const Material)
 	static std::unordered_set<std::string> const alphatested{"default",           "default_1",           "default_2",    "default_detail",        "default_specgloss",
 	                                                         "detail_normalmap",  "detail_normalmap_specgloss", "normalmap", "normalmap_specgloss", "reflmap",
 	                                                         "reflmap_specgloss", "shadowlessnormalmap", "shadowlessnormalmap_specgloss", "sunlessnormalmap", "sunlessnormalmap_specgloss",
-	                                                         "trackblend",        "trackblend_normalmap", "trackblend_specgloss"};
+	                                                         "trackblend",        "trackblend_normalmap", "trackblend_specgloss", "pbr", "pbr_detail", "pbr_coat"};
 	static std::unordered_set<std::string> const solid{"colored", "default_0", "terrain", "water", "water_specgloss", "invalid"};
 	auto prepassclass{0};
 	for (auto const &program : scene.materials)

@@ -124,6 +124,11 @@ void vulkan14_geometrybank::gpu_vertices(geometry_chunk const &Chunk, std::vecto
 
 bool vulkan14_geometrybank::build()
 {
+	// there was no memory for the buffers a moment ago: tried again after a while, not by every draw of every chunk of the bank
+	if (m_failed && (std::chrono::steady_clock::now() - m_failedat < std::chrono::seconds{1}))
+	{
+		return false;
+	}
 	release_();
 
 	std::vector<gfx::basic_vertex> vertices;
@@ -176,12 +181,18 @@ bool vulkan14_geometrybank::build()
 	}
 	if (false == ok)
 	{
-		log_error("no memory for the geometry of a bank of " + std::to_string(vertices.size()) + " vertices");
+		if (false == m_failed)
+		{
+			log_error("no memory for the geometry of a bank of " + std::to_string(vertices.size()) + " vertices, trying again every second");
+		}
 		release_();
-		// tried again when it's drawn the next time
+		// tried again when it's drawn after a while
 		m_layoutdirty = true;
+		m_failed = true;
+		m_failedat = std::chrono::steady_clock::now();
 		return false;
 	}
+	m_failed = false;
 	return true;
 }
 

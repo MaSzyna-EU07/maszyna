@@ -96,6 +96,18 @@ std::vector<std::uint32_t> read_spirv(std::string const &Path)
 	{
 		return {};
 	}
+	// the instructions after the header of five words follow one another to the very end of the file: a file cut short or damaged
+	// (a full disk, a crash while it was written) isn't given to the driver, the shader is compiled again
+	std::size_t word{5};
+	while (word < words.size())
+	{
+		auto const count{static_cast<std::size_t>(words[word] >> 16)};
+		if ((count == 0) || (count > words.size() - word))
+		{
+			return {};
+		}
+		word += count;
+	}
 	return words;
 }
 
@@ -113,8 +125,11 @@ void write_file(std::string const &Path, void const *Data, std::size_t const Siz
 			return;
 		}
 		file.write(static_cast<char const *>(Data), static_cast<std::streamsize>(Size));
-		if (false == static_cast<bool>(file))
+		// closed before it's looked at: what's still in the buffer of the stream is written then, and may not fit on the disk
+		file.close();
+		if (file.fail())
 		{
+			std::filesystem::remove(temporary, error);
 			return;
 		}
 	}
@@ -427,21 +442,39 @@ void pipeline_library::shutdown()
 		}
 		if (m_cache != VK_NULL_HANDLE)
 		{
-			std::size_t size{0};
-			if (VK14_VERIFY(vkGetPipelineCacheData(device, m_cache, &size, nullptr)) && (size > 0))
-			{
-				std::vector<char> data(size);
-				if (VK14_VERIFY(vkGetPipelineCacheData(device, m_cache, &size, data.data())))
-				{
-					write_file(m_cachepath, data.data(), size);
-				}
-			}
+			save();
 			vkDestroyPipelineCache(device, m_cache, nullptr);
 		}
 	}
 	m_pipelines.clear();
 	m_cache = VK_NULL_HANDLE;
 	m_device = nullptr;
+}
+
+void pipeline_library::save() const
+{
+	if ((m_device == nullptr) || (m_device->handle() == VK_NULL_HANDLE) || (m_cache == VK_NULL_HANDLE))
+	{
+		return;
+	}
+	auto const device{m_device->handle()};
+	std::size_t size{0};
+	if ((false == VK14_VERIFY(vkGetPipelineCacheData(device, m_cache, &size, nullptr))) || (size == 0))
+	{
+		return;
+	}
+	std::vector<char> data(size);
+	// the cache grew between the two calls (another thread made a pipeline): what fits is a cache of its own
+	if (auto const result{vkGetPipelineCacheData(device, m_cache, &size, data.data())}; (result == VK_SUCCESS) || (result == VK_INCOMPLETE))
+	{
+		write_file(m_cachepath, data.data(), size);
+	}
+}
+
+std::size_t pipeline_library::count() const
+{
+	std::scoped_lock const lock{m_mutex};
+	return m_pipelines.size();
 }
 
 std::uint64_t pipeline_library::key_of(pipeline_desc const &Desc) const

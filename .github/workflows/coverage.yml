@@ -47,14 +47,19 @@ jobs:
       # the same packages as the Build workflow: the game is configured as a whole,
       # though only the unit tests and the core library they link are built
       - name: Install build dependencies
+        timeout-minutes: 15
+        uses: ./.github/actions/apt-install
+        with:
+          packages: >-
+            build-essential pkg-config
+            libgl1-mesa-dev libglew-dev libglfw3-dev
+            libpng-dev libopenal-dev libluajit-5.1-dev
+            libserialport-dev libsndfile1-dev
+            libx11-dev libxcursor-dev libxext-dev libxi-dev libxinerama-dev libxrandr-dev
+            libxkbcommon-dev libwayland-dev wayland-protocols
+
+      - name: Install gcovr
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            build-essential \
-            libgl1-mesa-dev libglew-dev libglfw3-dev \
-            libpng-dev libopenal-dev libluajit-5.1-dev \
-            libserialport-dev libsndfile1-dev \
-            xorg-dev libxkbcommon-dev libwayland-dev wayland-protocols
           python3 -m pip install --no-cache-dir --only-binary :all: gcovr==8.3
 
       - name: Build current OpenAL Soft
@@ -78,7 +83,6 @@ jobs:
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DWITH_BETTER_RENDERER=OFF \
             -DWITH_ZMQ=OFF -DWITH_OPENVR=OFF -DUSE_LTO=OFF \
             -DCMAKE_CXX_FLAGS="--coverage -O0 -Wno-attributes -fno-inline-functions-called-once" \
             -DPython3_EXECUTABLE="$(which python3)"
@@ -90,15 +94,14 @@ jobs:
       - name: Run the unit tests
         run: ./build/tests/unit/eu07_unit_tests
 
-      # the game's own sources only: no submodules, no vendored code, not the tests themselves.
-      # betterRenderer/ is left out for its thirdparty/yaml-cpp, which every target of the game links and so builds here
+      # the game's own sources only: no submodules, no vendored code, not the tests themselves
       - name: Coverage report
         run: |
           # a failure of gcovr fails the step, though its output goes through tee
           set -o pipefail
           mkdir -p coverage-report/html
           gcovr --root . build \
-            --exclude 'ref/' --exclude 'imgui/' --exclude 'stb/' --exclude 'betterRenderer/' \
+            --exclude 'ref/' --exclude 'imgui/' --exclude 'stb/' \
             --exclude 'tests/' --exclude 'build/' \
             --gcov-ignore-parse-errors=negative_hits.warn_once_per_file \
             --gcov-ignore-errors=no_working_dir_found \

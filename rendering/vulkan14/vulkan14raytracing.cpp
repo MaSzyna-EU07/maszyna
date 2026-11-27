@@ -42,6 +42,8 @@ std::uint32_t constexpr record_alpha{1};
 std::uint32_t constexpr record_terrain{2};
 // the bottom level structures built in a frame at most, and their triangles: the rest waits for the next frames
 std::uint32_t constexpr builds_per_frame{96};
+// the structures which couldn't be made (no memory for them) a frame gives up after
+std::uint32_t constexpr failures_per_frame{4};
 std::uint64_t constexpr triangles_per_frame{2000000};
 // the instances of the top level structure at most (the records take 24 bits of the custom index)
 std::uint32_t constexpr max_instances{1u << 20};
@@ -429,6 +431,9 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 	std::vector<pending_build> builds;
 	std::uint64_t triangles{0};
 	std::uint32_t waiting{0};
+	// the structures which couldn't be made (no memory for them) count as built: the others like them wait for the next frames, they
+	// aren't all tried in this one
+	std::uint32_t failed{0};
 	VkDeviceSize scratchsize{0};
 	auto const scratchalignment{static_cast<VkDeviceSize>(m_scratchalignment)};
 	// the structure of each draw, looked up once (null: none, the draw is left out); the map keeps its entries in place
@@ -443,7 +448,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 			found[drawindex] = &lookup->second;
 			continue;
 		}
-		if ((builds.size() >= builds_per_frame) || (triangles >= triangles_per_frame))
+		if ((builds.size() + failed >= builds_per_frame) || (triangles >= triangles_per_frame) || (failed >= failures_per_frame))
 		{
 			++waiting;
 			continue;
@@ -470,6 +475,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 			if ((false == generated->create(*m_memory, bytes, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, memory_kind::upload, "ray tracing strip indices")) ||
 			    (generated->mapped() == nullptr))
 			{
+				++failed;
 				continue;
 			}
 			auto *indices{reinterpret_cast<std::uint32_t *>(generated->mapped())};
@@ -506,6 +512,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		auto storage{std::make_shared<buffer>()};
 		if (false == storage->create(*m_memory, sizes.accelerationStructureSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, memory_kind::device, "ray tracing bottom level"))
 		{
+			++failed;
 			continue;
 		}
 		VkAccelerationStructureCreateInfoKHR create{};
@@ -516,6 +523,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		VkAccelerationStructureKHR structure{VK_NULL_HANDLE};
 		if (!VK14_VERIFY(vkCreateAccelerationStructureKHR(handle, &create, nullptr, &structure)))
 		{
+			++failed;
 			continue;
 		}
 		if (lookup != m_bottoms.end())

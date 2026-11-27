@@ -24,7 +24,8 @@ compiles every shader of `ogl46/` (with the variant `MODEL_DRAWS` of the vertex 
     glslc --target-env=opengl4.5 -DMODEL_DRAWS=1 ogl46/vertex.vert -o ogl46bin/vertex.vert.MODEL_DRAWS.spv
     glslc --target-env=vulkan1.4 vk14/imgui.frag -o vk14bin/imgui.frag.spv
 
-A binary made by hand isn't in the manifest, so it is taken without being compared with its source. After a change of a
+A binary made by hand isn't in the manifest, so it is used only where its source isn't there (otherwise the source is compiled
+and the log says so). After a change of a
 source, compile the binaries again (or delete them): a binary older than its source is not used, and the log says so.
 
 ## Writing shaders
@@ -38,6 +39,15 @@ source, compile the binaries again (or delete them): a binary older than its sou
 * The settings of the game (`SHADOWMAP_ENABLED`, `ENVMAP_ENABLED`, `MOTIONBLUR_ENABLED`, `POSTFX_ENABLED`,
   `EXTRAEFFECTS_ENABLED`, `OUTPUT_GAMMA`) are `const bool` (specialization constants in the binaries, `ogl46/settings.glsl`):
   use them in `if`, not in `#if`.
+* A material shader names its textures and parameters with `#pragma texture(name, unit, components)` and
+  `#pragma param(name, location, offset, size, default)`; a `.mat` file sets them as `texture_<name>:` and `param_<name>:`.
+  Every directive of a file and of its includes is read, whatever `#ifdef` it is in. A fourth argument of
+  `#pragma texture` (`black`, `white`, `red`, `yellow`) makes the texture one the material may leave out: the unit then
+  shows a single texel of that colour.
+* The materials of the metallic and roughness workflow are `mat_pbr.frag` and its variants (`mat_pbr_detail.frag`,
+  `mat_pbr_parallax.frag`, `mat_pbr_coat.frag`): `mat_pbr.glsl` declares what they share and says what each texture and
+  parameter is, `mat_pbr_surface.glsl` is their fragment stage, the same file in `ogl46/` and `vk14/`. They define
+  `PBR_SURFACE` (and `PBR_COAT`), which `light_common.glsl` lights as the texturing tools show the surface.
 * The constants of the game (bindings, sizes) are written in `ogl46/common.glsl` and `vk14/common.glsl` for the binaries; the
   game puts its own values before the sources and checks at the start that the files have the same ones (the shader
   validator in `ci_shadervalidator` checks them too).

@@ -7,7 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-// the walk of the scene shared by the renderers (stage N6 of claude/vulkan14-renderer-plan.md): what is drawn in a pass, in
+// the walk of the scene shared by the renderers: what is drawn in a pass, in
 // which order, with which material and transform. the backends get the draws through the walk_* methods, the opengl renderer
 // makes them at once, the vulkan renderer records them. moved out of opengl46renderer.cpp without changes to what it does
 

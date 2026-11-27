@@ -7,7 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-// the walks of the scene made by several threads at once (the stage M2 of claude/vulkan14-renderer-plan.md). only the vulkan renderer
+// the walks of the scene made by several threads at once. only the vulkan renderer
 // opens the window in which they are (gfx.vulkan.parallelpasses); outside of it everything here does nothing, and the opengl renderer
 // never opens it. while it's open:
 // - every thread walking the scene holds the walk lock shared (a pass of a walker from the start to the end, the main thread from the

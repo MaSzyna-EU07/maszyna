@@ -43,7 +43,8 @@ class opengl46_sky
 	opengl46_sky(const opengl46_sky &) = delete;
 	opengl46_sky &operator=(const opengl46_sky &) = delete;
 
-	// creates the buffers, tables and programs. throws gl::shader_exception
+	// creates the buffers, tables and programs. a shader which doesn't compile is logged, and gfx.atmosphere or gfx.envmap.ggx
+	// switched off
 	void init();
 	// binds the buffers the shaders read; bindings are context state, so done in every context
 	void bind();

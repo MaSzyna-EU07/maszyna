@@ -46,6 +46,10 @@ add_executable(${UNIT_TESTS_NAME}
 	# and the weather made of the climate of a place
 	"${CMAKE_SOURCE_DIR}/environment/climate.cpp"
 	"${CMAKE_SOURCE_DIR}/environment/climatestations.cpp"
+	# and what the switch tool tells of the drives of the switches
+	"${CMAKE_SOURCE_DIR}/editor/editorSwitchDrives.cpp"
+	# the camera, for the order of its rotations (test_camera.cpp)
+	"${CMAKE_SOURCE_DIR}/vehicle/Camera.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along
@@ -53,7 +57,7 @@ target_link_libraries(${UNIT_TESTS_NAME} PRIVATE eu07_core)
 # the script screen host, tested with the real runtimes (test_script_screen_host.cpp)
 target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/scriptscreens.cpp")
 if (WITH_LUA)
-	target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/luaprogram.cpp" "${CMAKE_SOURCE_DIR}/stb/stb_image.c")
+	target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/luaprogram.cpp" "${CMAKE_SOURCE_DIR}/scripting/luasandbox.cpp" "${CMAKE_SOURCE_DIR}/stb/stb_image.c")
 endif()
 if (WITH_WASM)
 	target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/wasmprogram.cpp")

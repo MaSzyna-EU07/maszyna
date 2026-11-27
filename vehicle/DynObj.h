@@ -22,8 +22,10 @@ http://mozilla.org/MPL/2.0/.
 #include "audio/sound.h"
 #include "world/Spring.h"
 #include "vehicle/mirrors.h"
+#include "vehicle/doorwings.h"
 #include "scripting/scriptscreenrules.h"
 
+#include <array>
 #include <vector>
 #include <memory>
 
@@ -206,6 +208,7 @@ struct material_data {
 class TDynamicObject { // klasa pojazdu
 
     friend opengl46_renderer;
+    friend class vehicle_table;
 
 public:
     static bool bDynamicRemove; // moved from ground
@@ -312,6 +315,12 @@ private:
     void UpdateDoorRotate(TAnim *pAnim); // animacja drzwi - obrót
     void UpdateDoorFold(TAnim *pAnim); // animacja drzwi - składanie
 	void UpdateDoorPlug(TAnim *pAnim);      // animacja drzwi - odskokowo-przesuwne
+    // a wing with its own kind of animation, given in the .mmd (animdoor:), in place of the one of the .fiz
+    void UpdateDoorWing( TAnim *pAnim, door_wings::wing_spec const &Spec );
+    // sets the update of a door wing animation, for its own kind if the .mmd gives one, otherwise for the .fiz
+    void bind_door_animation( TAnim &Animation );
+    // door wings animated in their own way, from the .mmd (eu07/maszyna#70)
+    std::vector<door_wings::wing_spec> m_doorwings;
 	void UpdatePant(TAnim *pAnim); // animacja pantografu
     void UpdatePlatformTranslate(TAnim *pAnim); // doorstep animation, shift
     void UpdatePlatformRotate(TAnim *pAnim); // doorstep animation, rotate
@@ -657,7 +666,7 @@ private:
     std::string asModel;
 
   private:
-    TDynamicObject *ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int const Direction, int const Mycoupler ) const;
+    TDynamicObject *ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int const Direction, int const Mycoupler, bool const InLine = false ) const;
     void ABuCheckMyTrack();
     // the snow on the track under the axles into Track (the more of the two: the leading one meets it), the places the moving
     // vehicle goes over pushed clear of it (TTrack::snow_at(), physics.snow)
@@ -768,6 +777,61 @@ private:
     bool FastUpdate(double dt);
     void Move(double fDistance);
     void FastMove(double fDistance);
+    // physics.derailment new, the vehicle off the track (vehicle/derailmotion.h): the offset of its body from the axis of
+    // the track at the place nearest to it, to the left of its front positive [m]; 0 while it's on the track
+    double off_track_offset() const;
+    // the gap between the ends of the vehicle and the one at its End, as they meet off the track [m]: negative the
+    // buffers pressed in
+    double off_track_gap( int End ) const;
+private:
+    // the axles moved along their tracks by the distance
+    void move_axles( double Distance );
+    // the vehicle placed on the track by its axles
+    void place_by_axles();
+    // the vehicle leaves the track: its motion on the ground begun, with the terrain around it
+    void begin_off_track();
+    // the vehicle off the track moved on the ground, by the distance along its heading, in the time of the frame
+    void move_off_track( double Distance );
+    // the terrain of the scenery around the vehicle off the track, as far as it may slide, for the ground under it: the
+    // one gathered for another vehicle where it covers that, gathered anew where it doesn't
+    void gather_off_track_terrain();
+    // at rest it keeps only the terrain under it, the rest of what was gathered (shared with others, perhaps) let go
+    void crop_off_track_terrain();
+    // the bed of the track at the axles, the level direction of the track there, and the side the derailment throws the
+    // vehicle to (1 the left of the front, -1 the right, 0 none): out of the curve of the track as designed, into it
+    // where a buckle bends the line the other way more (McZapkie/derailment.h); on a straight track out of the turn of
+    // the path as it lies, a buckle on it
+    derail_motion::formation track_bed() const;
+    glm::dvec3 track_front() const;
+    int outward_side() const;
+    // the couplings of this vehicle off the track pull the vehicles coupled to it off the rails sideways, the step
+    // having travelled the distance
+    void pull_neighbours( double Distance );
+    // the scraping of the vehicle off the track, until it stops, and its state to the log every second
+    void update_off_track( double Deltatime );
+
+    std::shared_ptr<derail_motion::mesh_ground const> m_offtrackterrain; // none in a scenery without terrain
+    glm::dvec2 m_offtrackmin { 0.0 }; // what the terrain was gathered for
+    glm::dvec2 m_offtrackmax { 0.0 };
+    bool m_offtrackcropped { false }; // the terrain cut down to the one under it at rest
+    derail_motion::site m_offtracksite;
+    double m_offtracktime { 0.0 }; // of the frame, for the motion
+    double m_offtracklogdue { 0.0 };
+    double m_offtracktotal { 0.0 }; // the time off the track [s]
+    double m_offtrackgathered { 0.0 }; // the time the terrain was gathered at [s]
+    double m_offtrackslowdue { 0.0 }; // till another warning of a slow frame [s]
+    double m_offtrackupdatedue { 0.0 }; // and of a slow update
+    double m_offtrackaxles { 0.0 }; // the move along the track the axles didn't make yet [m]
+    glm::dvec3 m_offtrackfrom { 0.0 }; // where the body was when its move went into the axles last
+    bool m_offtrackscraping { false }; // the scraping of the vehicle off the track plays, looped
+    // the most triangles of terrain taken around the vehicle off the track
+    static constexpr std::size_t off_track_triangles { 400000 };
+    bool m_offtrackplaced { false }; // placed off the track: placed on it again once it's back on the rails
+    std::array<derailment::stretch, 2> m_pulledoff; // the distance the coupling of an end pulled the vehicle coupled there over the climbing limit
+    derailment::stretch m_struck; // on the rails: the distance a body off the track pushed it sideways over the climbing limit
+    // the model, the axes and the coupling points placed by the motion off the track
+    void place_off_track();
+public:
     void RenderSounds();
     // plays the sounds of the mirrors on the Side, of the occupied cab, starting the Event
     void play_mirror_sounds( side const Side, mirror_moves::event const Event );
@@ -871,8 +935,12 @@ private:
     TDynamicObject * Neighbour(int &dir);
     // updates potential collision sources
     void update_neighbours();
-    // locates potential collision source within specified range, scanning its route in specified direction
-    auto find_vehicle( int const Direction, double const Range ) const -> std::tuple<TDynamicObject *, int, double, bool>;
+    // physics.derailment new: the vehicle and the other one, one of them off the track, are in line, close enough
+    // across to run into each other
+    bool in_line_with( TDynamicObject const &Other ) const;
+    // locates potential collision source within specified range, scanning its route in specified direction. InLine:
+    // physics.derailment new, the scan goes on past a vehicle off the track beside the line (or beside this one off it)
+    auto find_vehicle( int const Direction, double const Range, bool const InLine = false ) const -> std::tuple<TDynamicObject *, int, double, bool>;
     // locates potential vehicle connected with specific coupling type and satisfying supplied predicate
     template <typename Predicate_>
     auto find_vehicle( coupling const Coupling, Predicate_ const Predicate ) -> TDynamicObject *;
@@ -973,6 +1041,13 @@ public:
     // records the odometer states of the vehicles and saves them for the next sessions
     void
         save_odometers();
+    // physics.derailment new: the terrain gathered for a vehicle off the track which covers the rectangle from Min to Max
+    // (x, z), shared by the vehicles which slide over it; none where no vehicle has one. it lives as long as one of them
+    // keeps it
+    std::shared_ptr<derail_motion::mesh_ground const>
+        off_track_terrain( glm::dvec2 const &Min, glm::dvec2 const &Max );
+    void
+        share_off_track_terrain( std::shared_ptr<derail_motion::mesh_ground const> const &Terrain );
 
 private:
     // maintenance; removes from tracks consists with vehicles marked as disabled
@@ -990,8 +1065,24 @@ private:
     // the trains it closes in on
     void
         update_coupler_physics() const;
+    // the air exchange through the brake and main reservoir hoses of the vehicles which stepped their physics, after all of them did
+    void
+        update_brake_pipes( double const Deltatime );
+    // physics.derailment new: the bodies of the vehicles off the track and those near them run into each other instead
+    // of into one another: the impulses of the hits, the bodies moved apart, a vehicle on the rails pushed off them;
+    // what the bodies overlap by goes to the log every second
+    void
+        update_off_track_contacts( double const Deltatime );
 
     double m_odometersavetimer { 0.0 }; // simulation time since the odometers were last saved
+    // the most the bodies overlapped by, of the vehicles of update_off_track_contacts(), since it was logged last [m], and
+    // which ones; till the next line in the log [s]; once all of them came to rest it is logged no more
+    double m_overlapmost { 0.0 };
+    std::string m_overlappair;
+    double m_overlapdue { 1.0 };
+    bool m_overlaplogged { false };
+    std::vector<TMoverParameters *> m_brakepipes; // the vehicles of update_brake_pipes(), kept for the memory
+    std::vector<std::weak_ptr<derail_motion::mesh_ground const>> m_offtrackterrains; // of off_track_terrain()
 };
 
 

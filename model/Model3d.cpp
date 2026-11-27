@@ -24,6 +24,7 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 #include "simulation/simulationtime.h"
 #include "world/mtable.h"
 #include "scene/sn_utils.h"
+#include "utilities/wholefile.h"
 
 #include <bit>
 
@@ -1835,8 +1836,9 @@ void assign_lod_ranges(TSubModel *Root, std::string const &Filename)
 		}
 		auto const nearlimit{limits[std::min(phase.index, limitcount - 1)]};
 		auto farlimit{phase.index + 1 < limitcount ? limits[phase.index + 1] : farthest};
+		// the last phase starting at 400 m or farther (_LOD5 and on) of a small part would have an empty range: it's seen 100 m on
 		if (last)
-			farlimit = vanish;
+			farlimit = std::max(vanish, nearlimit + 100.f);
 		phase.submodel->fSquareMinDist = nearlimit * nearlimit;
 		phase.submodel->fSquareMaxDist = farlimit * farlimit;
 	}
@@ -2837,20 +2839,8 @@ void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 	WriteLog("Loading binary format 3d model data from \"" + FileName + "\"...", logtype::model);
 
 	// the file is read whole in one go and parsed from memory
-	std::unique_ptr<char[]> filedata;
-	std::size_t filesize{0};
-	{
-		std::ifstream input(FileName, std::ios::binary | std::ios::ate);
-		auto const length{input.tellg()};
-		if (length > 0)
-		{
-			filedata.reset(new char[static_cast<std::size_t>(length)]);
-			input.seekg(0);
-			input.read(filedata.get(), length);
-			filesize = static_cast<std::size_t>(input.gcount());
-		}
-	}
-	e3d_memorybuffer buffer(filedata.get(), filedata.get() + filesize);
+	auto const filedata{read_whole_file(FileName)};
+	e3d_memorybuffer buffer(filedata.data.get(), filedata.data.get() + filedata.size);
 	std::istream file(&buffer);
 
 	uint32_t type = sn_utils::ld_uint32(file);

@@ -99,6 +99,7 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
 | `-DCMAKE_BUILD_TYPE=Debug` | Debug build |
 | `-DCMAKE_BUILD_TYPE=Release` | Release build |
 | `-DCMAKE_BUILD_TYPE=RelWithDebInfo` | Release build with debug symbols |
+| `-DUSE_SYSTEM_JSON=ON/OFF` | Use an installed **nlohmann_json** 3.9 or newer (e.g. `nlohmann-json3-dev`, vcpkg `nlohmann-json`) instead of the `ref/json` submodule (default `OFF`) |
 | `-DPython3_ROOT_DIR=<path>` | Root of the **Python 3.14** install on Windows (`python.exe`, `Lib`, `DLLs`) for embed/copy steps; on Linux, optional if CMake picks the wrong interpreter |
 
 > **macOS note:** macOS provides OpenGL only up to 4.1, so the OpenGL 4.6 renderer does not run there.
@@ -226,7 +227,7 @@ If detection still fails, padding the file (with comments) up to ~1 MB may hel
 ## Minimum requirements
 
 -   OS: **Windows 10 64-bit**
--   Processor:  **2 core at least 2 GHz (e.g. Intel Core i3-2100 / AMD Athlon II X2)**
+-   Processor:  **4 cores with AVX2 support (e.g. Intel Core i5-4430 / AMD Ryzen 3 1200)**
 -   RAM:  **6 GB RAM**
 -   Graphics Card:  **supporting OpenGL 4.6 with at least 1GB VRAM**
 -   **150 GB of free disk space**

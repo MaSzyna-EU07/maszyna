@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "utilities/Logs.h"
+#include "utilities/logfiles.h"
 #include "utilities/crashsignals.h"
 
 #include <format>
@@ -83,11 +84,22 @@ std::atomic<bool> &log_stopped()
 	static std::atomic<bool> stopped{false};
 	return stopped;
 }
+// set once the settings are read: the files are named by them (multiplelogs, the scenery)
+std::atomic<bool> &log_files_open()
+{
+	static std::atomic<bool> open{false};
+	return open;
+}
 } // namespace
 
 void StopLogService()
 {
 	log_stopped() = true;
+}
+
+void OpenLogFiles()
+{
+	log_files_open() = true;
 }
 
 
@@ -97,6 +109,13 @@ void LogService()
 	for (bool last{false}; false == last;)
 	{
 		last = log_stopped();
+		// what is logged before the settings are read waits for them, or it would open (and empty) the shared log.txt
+		// of a run that writes its own files in logs/. a start that stops before that writes it anyway
+		if (false == log_files_open() && false == last)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			continue;
+		}
 		{
 			// --- Obsługa InfoStack ---
 			while (!InfoStack.empty())
@@ -115,7 +134,7 @@ void LogService()
 				{
 					if (!output.is_open())
 					{
-						std::string filename = Global.MultipleLogs ? "logs/log (" + filename_scenery() + ") " + filename_date() + ".txt" : "log.txt";
+						std::string const filename { log_file_name(log_file::log, Global.MultipleLogs, filename_scenery(), filename_date()) };
 						output.open(filename, std::ios::trunc);
 						crashdump_set_log_file(crashdump_log_file::log, filename);
 						// the stack of a crash on Linux goes to the end of this file
@@ -155,7 +174,7 @@ void LogService()
 
 				if (!errors.is_open())
 				{
-					std::string filename = Global.MultipleLogs ? "logs/errors (" + filename_scenery() + ") " + filename_date() + ".txt" : "errors.txt";
+					std::string const filename { log_file_name(log_file::errors, Global.MultipleLogs, filename_scenery(), filename_date()) };
 					errors.open(filename, std::ios::trunc);
 					crashdump_set_log_file(crashdump_log_file::errors, filename);
 					errors << "EU07.EXE " + Global.asVersion << "\n";

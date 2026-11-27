@@ -25,8 +25,8 @@ class opengl_camera;
 namespace gfx
 {
 
-// the shadow maps of the lamps (Global.gfx_lights_shadows), the part shared by the renderers (stage P4 of
-// claude/vulkan14-renderer-plan.md): which lamps and headlights get maps, when they are drawn, what the shading reads; the
+// the shadow maps of the lamps (Global.gfx_lights_shadows), the part shared by the renderers:
+// which lamps and headlights get maps, when they are drawn, what the shading reads; the
 // backend (opengl46_local_shadows, the vulkan renderer) keeps the maps and draws to them through the gpu_* methods.
 // - the lights of the occupied cab (gfx::local_lights::cab_lights(): its lamps, the lights of its desk), the brightest
 //   Global.gfx_lights_shadows_cab of them, with the shadows cast by the cab (the model drawn by Render_cab()). the map of a light is

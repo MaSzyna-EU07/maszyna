@@ -66,6 +66,9 @@ std::string read_file(std::string const &Path)
 std::unordered_map<std::string, shader_components> const components_mapping = {
     {"R", shader_components::R}, {"RG", shader_components::RG}, {"RGB", shader_components::RGB}, {"RGBA", shader_components::RGBA}, {"sRGB", shader_components::sRGB}, {"sRGB_A", shader_components::sRGB_A}};
 
+std::unordered_map<std::string, shader_texture_default> const defaulttextures_mapping = {
+    {"black", shader_texture_default::black}, {"white", shader_texture_default::white}, {"red", shader_texture_default::red}, {"yellow", shader_texture_default::yellow}};
+
 std::unordered_map<std::string, shader_param_default> const defaultparams_mapping = {
     {"required", shader_param_default::required}, {"nan", shader_param_default::nan},         {"zero", shader_param_default::zero},         {"one", shader_param_default::one},
     {"ambient", shader_param_default::ambient},   {"diffuse", shader_param_default::diffuse}, {"specular", shader_param_default::specular}, {"glossiness", shader_param_default::glossiness}};
@@ -138,7 +141,7 @@ void parse_texture_entries(std::string &Text, shader_source &Source)
 	while ((start = find_directive(Text, "texture", start, arguments)) != std::string::npos)
 	{
 		auto const args{take_directive(Text, start, arguments)};
-		if (args.size() != 3)
+		if ((args.size() != 3) && (args.size() != 4))
 		{
 			log_error(Source.name, "invalid argument count to #pragma texture");
 			continue;
@@ -160,6 +163,17 @@ void parse_texture_entries(std::string &Text, shader_source &Source)
 			continue;
 		}
 		conf.components = components->second;
+		if (args.size() == 4)
+		{
+			// a texture the material may leave out
+			auto const fallback{defaulttextures_mapping.find(args[3])};
+			if (fallback == defaulttextures_mapping.end())
+			{
+				log_error(Source.name, "unknown texture default: " + args[3]);
+				continue;
+			}
+			conf.fallback = fallback->second;
+		}
 		if (args[0].empty())
 		{
 			log_error(Source.name, "empty name");
@@ -575,6 +589,12 @@ std::vector<std::uint32_t> load_shader_binary(shader_source const &Source, std::
 	std::lock_guard<std::mutex> lock(manifest_mutex);
 	auto const &manifest{manifest_of(directory)};
 	auto const entry{manifest.entries.find(name)};
+	if ((entry == manifest.entries.end()) && Source.has_source)
+	{
+		// nothing vouches for the binary, and the source is there to compile from
+		Reason = name + " isn't in the manifest of " + directory;
+		return {};
+	}
 	if (entry != manifest.entries.end())
 	{
 		auto const sourcedir{shader_source_dir(Source.api)};

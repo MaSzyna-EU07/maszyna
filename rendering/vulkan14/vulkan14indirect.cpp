@@ -108,10 +108,9 @@ vk14::instance_cull &vulkan14_renderer::pass_cull()
 void vulkan14_renderer::ensure_cull()
 {
 	auto &cull{m_context->scene.cull};
-	static bool tried{false};
-	if ((m_main == nullptr) && (Global.gfx_gpucull != 0) && (false == cull.ready) && (false == tried))
+	if ((m_main == nullptr) && (Global.gfx_gpucull != 0) && (false == cull.ready) && (false == cull.tried))
 	{
-		tried = true;
+		cull.tried = true;
 		if (false == init_cull())
 		{
 			ErrorLog("vulkan: the gpu culling of the instances can't be used, the cpu culls them (gfx.gpucull)");
@@ -279,12 +278,42 @@ void vulkan14_renderer::resume_rendering()
 
 // the draws
 
-vk14::scene_program *vulkan14_renderer::multidraw_program(vk14::scene_program &Program)
+namespace
+{
+
+// the variant of a program of the scene for the multi draws (MODEL_DRAWS), null when its shaders can't be made. any thread
+std::shared_ptr<vk14::scene_program> multidraw_variant(vk14::shader_library &Shaders, std::string const &Defines, std::string const &Vertex, std::string const &Fragment, std::string const &Name)
+{
+	try
+	{
+		auto variant{std::make_shared<vk14::scene_program>()};
+		variant->defines = Defines + "#define MODEL_DRAWS\n";
+		variant->vertex = Shaders.get(Vertex, variant->defines);
+		variant->fragment = Shaders.get(Fragment, variant->defines);
+		variant->vertex_name = Vertex;
+		variant->fragment_name = Fragment;
+		variant->vertices = vk14::vertex_kind::scene;
+		variant->name = Name + " (multi draws)";
+		variant->multidraw_tried = true;
+		return variant;
+	}
+	catch (gfx::shader_exception const &Exception)
+	{
+		vk14::log_error(Exception.what());
+	}
+	return nullptr;
+}
+
+} // namespace
+
+vk14::scene_program *vulkan14_renderer::multidraw_program(vk14::scene_program &Program, bool &Pending)
 {
 	// made by one of the threads walking the passes (M2)
 	std::lock_guard<std::mutex> lock(Program.mutex);
+	Pending = false;
 	if (Program.multidraw_tried)
 	{
+		Pending = Program.multidraw_pending;
 		return Program.multidraw.get();
 	}
 	Program.multidraw_tried = true;
@@ -293,23 +322,22 @@ vk14::scene_program *vulkan14_renderer::multidraw_program(vk14::scene_program &P
 		return nullptr;
 	}
 	auto &ctx{*m_context};
-	try
+	if (Global.gfx_vulkan_asyncresources && ctx.background.running())
 	{
-		auto variant{std::make_shared<vk14::scene_program>()};
-		variant->defines = Program.defines + "#define MODEL_DRAWS\n";
-		variant->vertex = ctx.shaders.get(Program.vertex_name, variant->defines);
-		variant->fragment = ctx.shaders.get(Program.fragment_name, variant->defines);
-		variant->vertex_name = Program.vertex_name;
-		variant->fragment_name = Program.fragment_name;
-		variant->vertices = Program.vertices;
-		variant->name = Program.name + " (multi draws)";
-		variant->multidraw_tried = true;
-		Program.multidraw = std::move(variant);
+		// its shaders are compiled by the background threads (gfx.vulkan.asyncresources), the draws left out till they are, as the
+		// ones without their pipeline are: the walk doesn't wait for the compiler, nor do the other threads binding the program for
+		// its lock. the program outlives the threads (stopped first when the scene goes)
+		Program.multidraw_pending = true;
+		Pending = true;
+		ctx.background.add([&shaders = ctx.shaders, program = &Program, defines = Program.defines, vertex = Program.vertex_name, fragment = Program.fragment_name, name = Program.name]() {
+			auto variant{multidraw_variant(shaders, defines, vertex, fragment, name)};
+			std::scoped_lock const made{program->mutex};
+			program->multidraw = std::move(variant);
+			program->multidraw_pending = false;
+		});
+		return nullptr;
 	}
-	catch (gfx::shader_exception const &Exception)
-	{
-		vk14::log_error(Exception.what());
-	}
+	Program.multidraw = multidraw_variant(ctx.shaders, Program.defines, Program.vertex_name, Program.fragment_name, Program.name);
 	return Program.multidraw.get();
 }
 
@@ -363,8 +391,9 @@ bool vulkan14_renderer::draw_indirect(vk14::instance_cull &Cull, command_set con
 		auto slice{(window.open && (size <= draws.window)) ? draw.draws_cache.allocate_before(size, draws.stride, window.base, window.base + draws.window) : vk14::ring_slice{}};
 		if ((false == bool(slice)) && (size <= draws.window))
 		{
-			slice = draw.draws_cache.allocate(size, draws.stride);
-			if (slice)
+			// further on in the ring; the window stays where it is while the blocks lie within it (push_draw_block())
+			slice = (window.open ? draw.draws_cache.allocate_after(size, draws.stride, window.base) : draw.draws_cache.allocate(size, draws.stride));
+			if (slice && ((false == window.open) || (slice.offset + slice.size > window.base + draws.window)))
 			{
 				window.base = slice.offset;
 				window.open = true;
@@ -456,7 +485,8 @@ vulkan14_renderer::indirect_counts vulkan14_renderer::draw_indirect_colour(vk14:
 		}
 		walk_material(m_indirectdraws[index].material, m_indirectdraws[index].submodel);
 		auto *program{draw.program};
-		auto *multidraw{(m_indirectmultidraw && (program != nullptr)) ? multidraw_program(*program) : nullptr};
+		auto pending{false};
+		auto *multidraw{(m_indirectmultidraw && (program != nullptr)) ? multidraw_program(*program, pending) : nullptr};
 		auto last{index + 1};
 		if (multidraw != nullptr)
 		{
@@ -466,7 +496,7 @@ vulkan14_renderer::indirect_counts vulkan14_renderer::draw_indirect_colour(vk14:
 				++last;
 			}
 		}
-		if (program != nullptr)
+		if ((program != nullptr) && (false == pending))
 		{
 			auto const drawcount{static_cast<std::uint32_t>(last - index)};
 			if (draw_indirect(Cull, Set, index, drawcount, (multidraw != nullptr ? *multidraw : *program), (draw.blending ? vk14::blend_mode::scene_alpha : vk14::blend_mode::none)))
@@ -543,7 +573,14 @@ vulkan14_renderer::indirect_counts vulkan14_renderer::draw_indirect_depth(vk14::
 	for (auto prepassclass = 1; prepassclass <= 2; ++prepassclass)
 	{
 		auto &program{prepassclass == 1 ? *scene.prepass : *scene.prepass_alpha};
-		auto *multidraw{m_indirectmultidraw ? multidraw_program(program) : nullptr};
+		auto pending{false};
+		auto *multidraw{m_indirectmultidraw ? multidraw_program(program, pending) : nullptr};
+		if (pending)
+		{
+			// the shaders of its multi draws are being compiled: its draws are left out, the colour pass writes their depth
+			m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
+			continue;
+		}
 		for (std::size_t index = 0; index < count;)
 		{
 			texture_handle texture;
@@ -596,7 +633,14 @@ vulkan14_renderer::indirect_counts vulkan14_renderer::draw_indirect_shadow(vk14:
 		auto const &entry{m_indirectdraws[index]};
 		auto const texture{Indirect_Shadow_Texture(entry.material)};
 		auto &program{m_cubeshadows ? (texture != null_handle ? *scene.cube_alpha_shadow : *scene.cube_shadow) : (texture != null_handle ? *scene.alpha_shadow : *scene.shadow)};
-		auto *multidraw{m_indirectmultidraw ? multidraw_program(program) : nullptr};
+		auto pending{false};
+		auto *multidraw{m_indirectmultidraw ? multidraw_program(program, pending) : nullptr};
+		if (pending)
+		{
+			// the shaders of its multi draws are being compiled: the draw is left out till they're there
+			++index;
+			continue;
+		}
 		auto last{index + 1};
 		if (multidraw != nullptr)
 		{
@@ -626,6 +670,13 @@ void vulkan14_renderer::record_indirect_draws(vk14::instance_cull &Cull, bool co
 {
 	m_indirectcull = &Cull;
 	Walk_Indirect_Draws(Cull, Cascade);
+	if (false == Cull.dispatched())
+	{
+		// the culling didn't run (its buffers or its data of the frame couldn't be had): there are no results to draw its instances
+		// from, and the commands of an earlier frame aren't theirs
+		m_indirectdraws.clear();
+		m_indirectcommands.clear();
+	}
 	auto const orderstart{std::chrono::steady_clock::now()};
 	// with multi draws the draws with the same state follow one another; the order goes into the commands, so it comes first
 	m_indirectmultidraw = Global.gfx_gpucull_multidraw;

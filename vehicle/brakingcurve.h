@@ -40,10 +40,16 @@ struct approach {
 	double offset; // the braking point that far short of it [m]
 	double gravity; // tangential acceleration of the gradient [m/s2], negative uphill
 	double acceleration; // present acceleration of the train [m/s2]
-	bool brake_applied; // the train brake handle is past running
+	bool brake_applied; // the brake the train slows down with is applied (brake_acting)
 	double speedup_horizon; // how long the present acceleration lasts while speeding up [s]
 	double fill_horizon; // how long the brake takes to fill once applied [s]
 };
+
+// whether the train is braking already, for approach::brake_applied: the train brake handle is past running
+// (Trainbrakeposition above 0), or the independent brake is applied (Localbrakeposition above 0). a vehicle that
+// runs alone, a light locomotive or a railcar, brakes with the independent brake and leaves the train brake
+// handle in running
+bool brake_acting(double Trainbrakeposition, double Localbrakeposition);
 
 // acceleration [m/s2] to ask for now, negative to brake. with the worked out table of a pneumatic brake
 // (Pneumatictable) the demand follows the brake: planned from the state the train is in once the brake has

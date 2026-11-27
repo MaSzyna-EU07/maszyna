@@ -1,0 +1,9 @@
+#version 460 core
+#define STAGE_FRAGMENT 1
+// the height of the surface shifts the textures, see mat_pbr.glsl
+#define PBR_PARALLAX
+#pragma param(height_scale, 2, 1, 1, zero)
+
+#pragma texture(heightmap, 4, R)
+layout(binding = 4) uniform sampler2D heightmap;
+#include "mat_pbr.glsl"

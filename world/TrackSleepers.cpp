@@ -79,7 +79,13 @@ double blade_rise( TTrack const &Track ) {
 
 double wing_rise( TTrack const &Track ) {
 
-    return ( lays( Track ) ? timber_model( Track )->slide : 0.0 );
+    if( false == lays( Track ) ) {
+        return 0.0;
+    }
+    // the chairs the blades slide on are those of the model the timbers are laid of: once they're laid, that of the panel the track
+    // shares them with (lay()), which can be another one than its own or the one of eu07.ini
+    auto const *model { Track.m_sleepers3d.timbers };
+    return ( model != nullptr ? model : timber_model( Track ) )->slide;
 }
 
 glm::dvec2 stock_stretch( TTrack const &Track, int const Path, int const Side ) {
@@ -333,6 +339,8 @@ void instance( TTrack &Track, std::vector<beam> &&Beams, bool const Fastened ) {
 void lay( TTrack &Track, bool const Fastened ) {
 
     auto &laid { Track.m_sleepers3d };
+    // what the rails of the track were made with
+    auto const rise { wing_rise( Track ) };
     std::vector<beam> placed;
     if( laid.active && in_background() && timber_model( Track ) != nullptr ) {
         // worked out in the background; till then the track keeps what it has, and tries again
@@ -362,6 +370,14 @@ void lay( TTrack &Track, bool const Fastened ) {
     // the layout of the cluster isn't needed by this track any more, the instances below are what's drawn
     forget_layout( Track );
     instance( Track, std::move( beams ), Fastened );
+    // the rails were made with the blades and the wing rails raised for the chairs of the model the track had then: where the model
+    // of the panel raises them otherwise, they're made again, with it. Made again, they keep that model, so this happens once
+    if( std::abs( wing_rise( Track ) - rise ) > 1e-4 ) {
+        auto &section { simulation::Region->section( Track.location() ) };
+        if( section.m_geometrycreated ) {
+            Track.rebuild_geometry( section.m_geometrybank );
+        }
+    }
 }
 
 void fasten( TTrack &Track ) {

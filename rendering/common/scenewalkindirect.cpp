@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 // the part of the shared walk of the scene which feeds the gpu culling of the instances and records the draws made from its
-// result (stage N6c of claude/vulkan14-renderer-plan.md): the records of the sleepers and of the models drawn on their own, the
+// result: the records of the sleepers and of the models drawn on their own, the
 // queueing of buckets, the walks of the submodel trees of the culled groups and the order of the recorded draws
 
 #include "stdafx.h"

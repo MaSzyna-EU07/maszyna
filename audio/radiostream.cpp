@@ -738,7 +738,7 @@ radio_stream::~radio_stream()
 	{
 		// out of memory while retiring the worker: its thread still stops and is joined by its own destructor below
 	}
-	// NOTE: destructors of retired workers wait for their threads to finish
+	// NOTE: destructors of retired workers wait for their threads to finish, before the buffers and the mutexes go (radiostream.h)
 }
 
 // starts reception of specified stream, dropping current one if there's any

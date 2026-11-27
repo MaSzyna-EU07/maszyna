@@ -93,6 +93,8 @@ struct scene_program : public gfx::shader_program
 	// the variant of the multi draws of the instances drawn from the gpu culling (MODEL_DRAWS), made when it's first needed
 	std::shared_ptr<scene_program> multidraw;
 	bool multidraw_tried{false};
+	// its shaders are being compiled by the background threads, the draws it's for are left out till then
+	bool multidraw_pending{false};
 	vertex_kind vertices{vertex_kind::scene};
 	// the pipelines made, by the key of bind_scene_pipeline(), and the ones the background threads are making (M5). guarded by the
 	// mutex, as are the variants above made when they're first needed: the walks of the passes and the background threads ask for
@@ -194,6 +196,9 @@ struct viewport_targets
 	target_formats formats;
 	target_formats output_formats;
 	bool srgb{true}; // the output encodes the colour (gfx.shadergamma no)
+	// the images couldn't be made for the size and the settings above, and when: tried again after a while (make_targets())
+	bool failed{false};
+	std::chrono::steady_clock::time_point failed_at{};
 };
 
 // the images of the frame generation of dlss (gfx.framegeneration) for the main window, made for its size and its format: the frame
@@ -231,6 +236,15 @@ struct window_ring
 	frame_ring ring;
 	VkDeviceSize window{0}; // the size of the window, bytes
 	VkDeviceSize stride{0};
+	// a frame had more data than the ring takes, and draws were left out: how many times, said in the log the first time (any thread)
+	std::atomic<std::uint64_t> full{0};
+	void report_full(char const *What)
+	{
+		if (full.fetch_add(1) == 0)
+		{
+			log_error(std::string("the ring of ") + What + " of a frame is full (" + memory_size_string(ring.capacity()) + "), the draws it has no room for are left out");
+		}
+	}
 };
 
 // the light clusters (gl::cluster_grid), of the colour pass of each viewport in turn
@@ -357,9 +371,27 @@ struct cull_resources
 	std::vector<std::unique_ptr<instance_cull>> lamps;
 	hiz_pyramid hiz;
 	bool ready{false};
+	// the cullings were tried to be made once (vulkan14_renderer::ensure_cull()), with the renderer they're of
+	bool tried{false};
 	// the cascades of the sun shadows fitted to the depth of the main view (gfx.shadow.sdsm), made when they're first needed
 	shadow_fitter shadowfit;
 	bool shadowfit_tried{false};
+};
+
+// a point of light of a lamp with a glare: the submodel, and the object which draws its model (TSubModel::iInstance: a vehicle, an
+// instance of a model with animations; 0 for the others). each object has its own points seen or hidden
+struct glare_point
+{
+	TSubModel const *submodel{nullptr};
+	std::uintptr_t instance{0};
+	bool operator==(glare_point const &) const = default;
+};
+struct glare_point_hash
+{
+	std::size_t operator()(glare_point const &Point) const noexcept
+	{
+		return std::hash<TSubModel const *>{}(Point.submodel) ^ (std::hash<std::uintptr_t>{}(Point.instance) * 31u);
+	}
 };
 
 // what the scene is drawn with
@@ -494,8 +526,8 @@ struct scene_state
 	// the occlusion queries of the points of light of the lamps, a pool for each frame in flight with the submodels they were made
 	// for; the glare of a lamp is drawn where its point was seen in the frame the gpu was done with last
 	std::vector<VkQueryPool> occlusion_pools;
-	std::vector<std::vector<TSubModel const *>> occlusion_submodels;
-	std::unordered_map<TSubModel const *, bool> glare_visible;
+	std::vector<std::vector<glare_point>> occlusion_submodels;
+	std::unordered_map<glare_point, bool, glare_point_hash> glare_visible;
 	static constexpr std::uint32_t occlusion_queries{1024};
 	// the images of the scene were put in their layouts (the stand-ins cleared)
 	bool images_ready{false};
@@ -644,6 +676,8 @@ struct vulkan14_renderer::context
 		std::uint64_t present_id{0};
 		// when the main thread handed it over to the render thread
 		std::chrono::steady_clock::time_point handed{};
+		// the frame couldn't be recorded or submitted, the device not lost: left out (skip_frame()), its images aren't presented
+		bool skipped{false};
 	};
 	// the render thread and the job it's given
 	std::thread render_thread;
@@ -670,11 +704,17 @@ struct vulkan14_renderer::context
 
 	// the job done; false: Failure says where it failed
 	bool execute(render_job &Job, char const *&Failure);
-	// the part of it before the presents: its command buffers recorded and submitted
+	// the part of it before the presents: its command buffers recorded and submitted. a frame which can't be (out of memory and the
+	// like) is left out, false only when the device is lost
 	bool submit(render_job &Job, char const *&Failure);
+	// the frame which failed at What left out: its uploads (with Compute after the part of the compute queue submitted) and the waits
+	// and the signals of the frame, without the rest of it; false when that can't be submitted either
+	bool skip_frame(render_job &Job, bool Compute, char const *What, char const *&Failure);
+	// the frames left out so far (skip_frame(), the render thread or the main thread without it)
+	std::uint64_t skipped_frames{0};
 	// the windows of the frame submitted last presented, the frames generated for the main window before it (spread over the time
-	// of a frame when there's the render thread to wait); Id: the id of the present of the main window (0: none); false: the device or
-	// a surface is lost
+	// of a frame when there's the render thread to wait); Id: the id of the present of the main window (0: none); false: the device is lost
+	// (a lost surface is made anew by its swapchain)
 	bool present(std::vector<vk14::swapchain *> const &Windows, std::uint64_t Id);
 	// the render thread (gfx.vulkan.renderthread, M4): the frames are recorded, submitted and presented by it while the main
 	// thread goes on with the simulation of the next one. the main thread waits for it to be done before it begins a frame and
@@ -775,6 +815,9 @@ struct vulkan14_renderer::draw_state
 	};
 	ring_window draws_window;
 	ring_window instances_window;
+	// instances had no room in their ring in this frame: the instanced draws are left out till the next one (their matrices aren't
+	// where their indices say)
+	bool instances_lost{false};
 	vk14::ring_cache draws_cache;
 	vk14::ring_cache instances_cache;
 	// the map of a lamp or of headlights the pass draws to (begin_local_shadow_rendering())

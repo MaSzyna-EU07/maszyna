@@ -32,6 +32,7 @@ struct catenary_span {
     std::vector<double> hangergaps;                             // odstępy wieszaków dobrane do rozpiętości; puste = odcinek bez wieszaków
     gfx::geometrybank_handle solidbank;                         // osobny bank na bryły tego przęsła
     catenary_solid solid;                                       // bryły do oglądania z bliska
+    catenary_solid chunks;                                      // fragmenty banku zrobione dla brył, używane ponownie
     bool solidloaded { false };
     std::vector<catenary::solid_vertex> attached;               // bryła dołączona (lina kotwienia), układ scenerii
     std::shared_ptr<catenary::network_definition> own;          // kopia typu z naciągiem z dopisku "tension"
@@ -210,6 +211,27 @@ release( gfx::geometry_handle const &Geometry ) {
     GfxRenderer->Replace( empty, userdata, Geometry, GL_TRIANGLES );
 }
 
+// bryła w fragmencie banku przęsła: fragment zrobiony wcześniej dostaje ją w miejsce dawnej zawartości, nowy powstaje tylko
+// za pierwszym razem. Pusta bryła zostawia fragment pusty; zwraca uchwyt do rysowania, pusty, gdy nie ma czego rysować
+gfx::geometry_handle
+fill_chunk( TTraction &Traction, gfx::geometry_handle &Chunk, std::vector<catenary::solid_vertex> const &Solid ) {
+    if( Solid.empty() ) {
+        release( Chunk );
+        return {};
+    }
+    auto data { vertices( Traction, Solid ) };
+    // the wire where the wind blows it (TTraction::sway_at())
+    Traction.sway_vertices( data, false );
+    gfx::userdata_array userdata;
+    if( Chunk == null_handle ) {
+        Chunk = GfxRenderer->Insert( data, userdata, Traction.m_catenaryspan->solidbank, GL_TRIANGLES );
+    }
+    else {
+        GfxRenderer->Replace( data, userdata, Chunk, GL_TRIANGLES );
+    }
+    return Chunk;
+}
+
 // wygląd metalu: [ metal: miedź, aluminium ][ przewód, osprzęt ][ stan: nowa, przejściowa, zaśniedziała ]
 // osprzęt sieci miedzianej jest z brązu albo mosiądzu
 catenary_metal Metals[ 2 ][ 2 ][ 3 ] {
@@ -370,23 +392,11 @@ catenary_span_solid( TTraction &Traction, glm::dvec3 const &Camera ) {
     if( span.solidbank == null_handle ) {
         span.solidbank = GfxRenderer->Create_Bank();
     }
-    // każde ponowne wczytanie tworzy nowe fragmenty w banku tego przęsła; poprzednie zostały opróżnione przy zwalnianiu
-    gfx::userdata_array userdata;
-    {
-        auto data { vertices( Traction, wires ) };
-        Traction.sway_vertices( data, false );
-        span.solid.wires = GfxRenderer->Insert( data, userdata, span.solidbank, GL_TRIANGLES );
-    }
-    if( false == fittings.empty() ) {
-        auto data { vertices( Traction, fittings ) };
-        Traction.sway_vertices( data, false );
-        span.solid.fittings = GfxRenderer->Insert( data, userdata, span.solidbank, GL_TRIANGLES );
-    }
-    if( false == span.attached.empty() ) {
-        auto data { vertices( Traction, span.attached ) };
-        Traction.sway_vertices( data, false );
-        span.solid.rope = GfxRenderer->Insert( data, userdata, span.solidbank, GL_TRIANGLES );
-    }
+    // ponowne wczytanie wypełnia fragmenty banku zrobione za pierwszym razem (opróżnione przy zwalnianiu), nowe powstają
+    // tylko za pierwszym razem; bank nie rośnie przy każdym podejściu kamery
+    span.solid.wires = fill_chunk( Traction, span.chunks.wires, wires );
+    span.solid.fittings = fill_chunk( Traction, span.chunks.fittings, fittings );
+    span.solid.rope = fill_chunk( Traction, span.chunks.rope, span.attached );
     span.solidloaded = ( span.solid.wires != null_handle );
     return ( span.solidloaded ? span.solid : catenary_solid() );
 }
