@@ -51,6 +51,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/MdlMngr.h"
 #include "model/Model3d.h"
 #include "vehicle/doorwings.h"
+#include "vehicle/driverfigure.h"
 #include "rendering/renderer.h"
 #include "editor/editorTerrainStreamer.hpp"
 #include "application/uitranscripts.h"
@@ -1307,9 +1308,16 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
          && Mechanik != nullptr
          && Mechanik->action() != TAction::actSleep ) {
             // rysowanie figurki mechanika
-			btMechanik1.Turn(MoverParameters->CabOccupied > 0);
-            btMechanik2.Turn( MoverParameters->CabOccupied < 0 );
-            if( MoverParameters->CabOccupied != 0 ) {
+            // a player driving a vehicle with a single desk is seen facing the selected direction of travel, as the AI
+            // is, which changes the cab instead (eu07/maszyna#535)
+            auto const followsdirection {
+                Global.DriverFigureFollowsDirection
+             && SingleDesk
+             && false == Mechanik->AIControllFlag };
+            auto const figure { driver_figure::shown( MoverParameters->CabOccupied, MoverParameters->DirAbsolute, followsdirection ) };
+            btMechanik1.Turn( figure > 0 );
+            btMechanik2.Turn( figure < 0 );
+            if( figure != 0 ) {
                 btnOn = true;
             }
         }
@@ -6106,6 +6114,38 @@ TDynamicObject::radius() const {
     return glm::length( diagonal ) * 0.5f;
 }
 
+namespace {
+
+struct driver_position_key {
+	std::string_view token;
+	std::size_t cab; // 0 for the cab 1, 1 for the cab 2
+	bool sitting;
+};
+
+constexpr std::array<driver_position_key, 4> driver_position_keys{{
+    {"driver1pos:", 0, false}, {"driver1sitpos:", 0, true}, {"driver2pos:", 1, false}, {"driver2sitpos:", 1, true}}};
+
+// driverNpos: and driverNsitpos: of the cabs 1 and 2 of the internaldata: section, kept for the driver figures; any
+// other token is left alone
+void read_driver_position(cParser &Parser, std::string_view const Token, std::array<driver_figure::cab_place, 2> &Cabs) {
+	auto const key{std::ranges::find(driver_position_keys, Token, &driver_position_key::token)};
+	if (key == driver_position_keys.end()) {
+		return;
+	}
+	Parser.getTokens(3, false);
+	glm::vec3 position{0.f};
+	Parser >> position.x >> position.y >> position.z;
+	auto &cab{Cabs[key->cab]};
+	if (key->sitting) {
+		cab.sitting_position = position;
+	}
+	else {
+		cab.position = position;
+	}
+}
+
+} // namespace
+
 // McZapkie-250202
 // wczytywanie pliku z danymi multimedialnymi (dzwieki)
 void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string const &ReplacableSkin ) {
@@ -7635,6 +7675,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
         } // locations:
 
         else if( token == "internaldata:" ) {
+            std::array<driver_figure::cab_place, 2> cabplaces; // the cabs 1 and 2, for the driver figures
             // dalej nie czytaj
             do {
                 // zbieranie informacji o kabinach
@@ -7647,10 +7688,12 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                 else if( token == "cab1model:" ) {
                     parser.getTokens(); parser >> token;
                     if( token != "none" ) { iCabs |= 0x1; }
+                    cabplaces[ 0 ].model = token;
                 }
                 else if( token == "cab2model:" ) {
                     parser.getTokens(); parser >> token;
                     if( token != "none" ) { iCabs |= 0x4; }
+                    cabplaces[ 1 ].model = token;
                 }
                 // engine sounds
                 else if( token == "ignition:" ) {
@@ -7993,8 +8036,13 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                     parser.getTokens();
                     parser >> DestinationSign.background;
                 }
+                else {
+                    read_driver_position( parser, token, cabplaces );
+                }
 
             } while( token != "" );
+
+            SingleDesk = driver_figure::single_desk( JointCabs, cabplaces[ 0 ], cabplaces[ 1 ] );
 
         } // internaldata:
 

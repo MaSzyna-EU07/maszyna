@@ -14313,6 +14313,42 @@ msgstr "Kursor rysowany w obrazie (stream)"
 msgid "The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\nor a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"
 msgstr "Wskaźnik rysowany przez edytor w klatce zamiast systemowego: widać go w streamie\ni w nagraniu okna (Discord, OBS, przechwytywanie systemowe), które pomijają wskaźnik systemu"
 
+msgid "Track names outside of ASCII..."
+msgstr "Nazwy torów spoza ASCII..."
+
+msgid "The tracks whose names have Polish letters or other characters outside of ASCII, and what an ASCII name would collide with; nothing is changed"
+msgstr "Tory, których nazwy mają polskie litery lub inne znaki spoza ASCII, i z czym zderzyłaby się nazwa w ASCII; nic nie jest zmieniane"
+
+msgid "%zu track names have characters outside of ASCII; they work as they are, the list is in Tools"
+msgstr "%zu nazw torów ma znaki spoza ASCII; działają tak jak są, lista jest w menu Narzędzia"
+
+msgid "Track names outside of ASCII"
+msgstr "Nazwy torów spoza ASCII"
+
+msgid "These names work as they are and nothing here changes them. New names given in the editor are ASCII only. To give one of these tracks an ASCII name, rename it in the track properties: the memory cells and the includes which name it go along, the events named after it are listed there. A track named by a parameter of an include (From an include: yes) can't be renamed there: change that parameter in the line of the scenery which puts the include."
+msgstr "Te nazwy działają tak jak są i nic tutaj ich nie zmienia. Nowe nazwy nadawane w edytorze mogą mieć tylko znaki ASCII. Żeby dać któremuś z tych torów nazwę w ASCII, zmień ją we właściwościach toru: komórki pamięci i include'y, które go nazywają, zmienią się razem z nią, a eventy nazwane od niego są tam wypisane. Toru nazwanego parametrem include'a (Z include'a: tak) nie da się tam przemianować: zmień ten parametr w linii scenerii, która wstawia include."
+
+msgid "Check again"
+msgstr "Sprawdź ponownie"
+
+msgid "Tracks: %zu"
+msgstr "Torów: %zu"
+
+msgid "In ASCII"
+msgstr "W ASCII"
+
+msgid "Taken"
+msgstr "Zajęta"
+
+msgid "From an include"
+msgstr "Z include'a"
+
+msgid "In a file the editor writes"
+msgstr "W pliku zapisywanym przez edytor"
+
+msgid "The name can hold ASCII only: no Polish letters or other characters outside of it"
+msgstr "Nazwa może mieć tylko znaki ASCII: bez polskich liter i innych znaków spoza niego"
+
 
 msgid "Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\nIt is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\ntranslucent, it doesn't catch the mouse."
 msgstr "Rysuje zdjęcia jako część sceny, więc tory, modele i teren przed nimi je zasłaniają.\nJest oświetlone jak scena. W pełni kryjące łapie mysz przy wstawianiu jak każda powierzchnia;\nprzezroczyste nie łapie myszy."

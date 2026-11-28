@@ -255,6 +255,7 @@ public:
     TModel3d *mdLowPolyInt; // ABu 010305: wnetrze lowpoly
     std::array<TSubModel *, 3> LowPolyIntCabs {}; // pointers to low fidelity version of individual driver cabs
     bool JointCabs{ false }; // flag for vehicles with multiple virtual 'cabs' sharing location and 3d model(s)
+    bool SingleDesk{ false }; // the joint cabs 1 and 2 are one desk: same model, same driver seat (driver figures, eu07/maszyna#535)
     std::vector<TModel3d *> mdAttachments; // additional models attached to main body
     struct destination_data {
         TSubModel *sign { nullptr }; // submodel mapped with replacable texture -4

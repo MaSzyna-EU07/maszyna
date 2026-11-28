@@ -35,6 +35,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "widgets/map_objects.h"
 
+#include <format>
+
 void
 basic_event::event_conditions::bind( basic_event::node_sequence *Nodes ) {
 
@@ -42,19 +44,25 @@ basic_event::event_conditions::bind( basic_event::node_sequence *Nodes ) {
 }
 
 void
-basic_event::event_conditions::init() {
+basic_event::event_conditions::init( std::string_view const Eventname ) {
 
     tracks.clear();
 
-    if( flags & ( flags::track_busy | flags::track_free ) ) {
-        for( auto &target : *memcompare_cells ) {
-            tracks.emplace_back( simulation::Paths.find( std::get<std::string>( target ) ) );
-            if( tracks.back() == nullptr ) {
-                // legacy compatibility behaviour, instead of disabling the event we disable the memory cell comparison test
-//                m_ignored = true; // deaktywacja
-//                ErrorLog( "Bad event: track \"" + std::get<std::string>( target ) + "\" referenced in event \"" + asName + "\" doesn't exist" );
-                flags &= ~( flags::track_busy | flags::track_free ); // zerowanie flag
-            }
+    if( ( flags & ( flags::track_busy | flags::track_free ) ) == 0 ) {
+        return;
+    }
+    auto const *testname { ( flags & flags::track_free ) != 0 ? "trackfree" : "trackoccupied" };
+    if( memcompare_cells->empty() ) {
+        // the test goes over the targets of the event, so with none it has nothing to test and passes
+        ErrorLog( std::format( "Bad event: \"{}\" has no track to test with {}, so this test passes every time", Eventname, testname ) );
+    }
+    for( auto &target : *memcompare_cells ) {
+        tracks.emplace_back( simulation::Paths.find( std::get<std::string>( target ) ) );
+        if( tracks.back() == nullptr ) {
+            // legacy compatibility behaviour, instead of disabling the event we disable the memory cell comparison test
+//            m_ignored = true; // deaktywacja
+            ErrorLog( std::format( "Bad event: \"{}\" can't test \"{}\" with {}, it isn't a track (an isolated section isn't one either), so this test passes every time", Eventname, std::get<std::string>( target ), testname ) );
+            flags &= ~( flags::track_busy | flags::track_free ); // zerowanie flag
         }
     }
 }
@@ -364,7 +372,7 @@ updatevalues_event::init() {
     init_targets( simulation::Memory, "memory cell" );
     // conditional data
     m_conditions.bind( &m_targets );
-    m_conditions.init();
+    m_conditions.init( m_name );
 }
 
 // event type string
@@ -400,7 +408,7 @@ updatevalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpa
         && false == is_keyword(token) ) {
 
         if( token == "condition" ) {
-            m_conditions.deserialize( Input );
+            m_conditions.deserialize( Input, m_name );
             // NOTE: condition deserialization leaves preloaded next token
         }
     }
@@ -1174,12 +1182,22 @@ multi_event::init() {
     init_targets( simulation::Memory, "memory cell", conditiontchecksmemcell );
     if( m_ignored ) {
         // legacy compatibility behaviour, instead of disabling the event we disable the memory cell comparison test
+        if( conditiontchecksmemcell
+         && std::ranges::any_of( m_targets, []( basic_node const &Target ) { return std::get<scene::basic_node *>( Target ) == nullptr; } ) ) {
+            // init_targets() named the missing cell; say what it does to the event, as it isn't what the scenery asks for
+            // the track and probability tests still apply, only the comparison is off
+            auto const otherconditions { ( m_conditions.flags & ( flags::track_busy | flags::track_free | flags::probability ) ) != 0 };
+            ErrorLog( std::format(
+                "Bad event: \"{}\" compares a memory cell which doesn't exist, so its memcompare test is off{}",
+                m_name,
+                otherconditions ? std::string() : " and it always runs the events before its else" ) );
+        }
         m_conditions.flags &= ~( flags::text | flags::value1 | flags::value2 );
         m_ignored = false;
     }
     // conditional data
     m_conditions.bind( &m_targets );
-    m_conditions.init();
+    m_conditions.init( m_name );
     // child events bindings
     for( auto &childevent : m_children ) {
         std::get<basic_event *>( childevent ) = simulation::Events.FindEvent( std::get<std::string>( childevent ) );
@@ -1247,7 +1265,7 @@ multi_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
         && false == is_keyword(token) ) {
 
         if( token == "condition" ) {
-            m_conditions.deserialize( Input );
+            m_conditions.deserialize( Input, m_name );
             // NOTE: condition block comes last so we can bail out afterwards
             break;
         }
@@ -2449,7 +2467,22 @@ bool
 event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, double delay ) {
 
     if( Event->m_passive )     { return false; } // jeśli może być dodany do kolejki (nie używany w skanowaniu)
-    if( Event->m_inqueue > 0 ) { return false; } // jeśli nie dodany jeszcze do kolejki
+    if( Event->m_inqueue > 0 ) { // jeśli nie dodany jeszcze do kolejki
+        // a call of another train is lost, the event runs once, for whoever queued it first.
+        // logged once per stay in the queue, as a standing vehicle repeats its event0 call every frame,
+        // and not for the other vehicles of the same train, which repeat its eventall0 call
+        if( Owner != Event->m_activator
+         && false == Event->m_lostcalllogged
+         && false == ( Owner != nullptr && Owner->is_connected( Event->m_activator ) ) ) {
+            Event->m_lostcalllogged = true;
+            WriteLog( std::format(
+                "EVENT ALREADY IN QUEUE, NOT ADDED{}: {}{}",
+                Owner ? " by " + Owner->asName : std::string(),
+                Event->m_name,
+                Event->m_activator ? " (queued by " + Event->m_activator->asName + ")" : std::string() ) );
+        }
+        return false;
+    }
 
     // kolejka eventów jest posortowana względem (fStartTime)
     Event->m_activator = Owner;
@@ -2470,6 +2503,8 @@ event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, doub
     if( Event != nullptr
      && false == Event->m_ignored ) {
         // standardowe dodanie do kolejki
+        Event->m_activator = Owner; // a joint event reached above still holds the vehicle of its previous run
+        Event->m_lostcalllogged = false;
         ++Event->m_inqueue; // zabezpieczenie przed podwójnym dodaniem do kolejki
         WriteLog( "EVENT ADDED TO QUEUE" + ( Owner ? " by " + Owner->asName : "" ) + ": " + Event->m_name );
         Event->m_launchtime = delay + std::abs( Event->m_delay ) + Timer::GetTime(); // czas od uruchomienia scenerii
@@ -2544,6 +2579,7 @@ event_manager::CheckQuery() {
             QueryRootEvent->m_launchtime = m_workevent->m_launchtime; // czas musi być ten sam, bo nie jest aktualizowany
             QueryRootEvent->m_activator = m_workevent->m_activator; // pojazd aktywujący
             QueryRootEvent->m_inqueue = 1;
+            QueryRootEvent->m_lostcalllogged = false;
             // w sumie można by go dodać normalnie do kolejki, ale trzeba te połączone posortować wg czasu wykonania
         }
         else // a jak nazwa jest unikalna, to kolejka idzie dalej

@@ -46,6 +46,7 @@ add_executable(${UNIT_TESTS_NAME}
 	# and the weather made of the climate of a place
 	"${CMAKE_SOURCE_DIR}/environment/climate.cpp"
 	"${CMAKE_SOURCE_DIR}/environment/climatestations.cpp"
+	"${CMAKE_SOURCE_DIR}/utilities/asciiname.cpp"
 	# and what the switch tool tells of the drives of the switches
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchDrives.cpp"
 	# the camera, for the order of its rotations (test_camera.cpp)

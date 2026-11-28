@@ -58,6 +58,18 @@ inline void item_tooltip(char const *Text)
 		ImGui::SetTooltip("%s", STR_C(Text));
 }
 
+// the callback of a name field with ImGuiInputTextFlags_CallbackCharFilter: the names the editor gives are plain ASCII
+// (editor_track::name_valid), so a letter outside of it is dropped as it's typed or pasted and never shows in the field.
+// UserData, when given, is a bool set to true once a letter was dropped
+inline int ascii_only_filter(ImGuiInputTextCallbackData *Data)
+{
+	if (Data->EventChar < 0x80)
+		return 0;
+	if (Data->UserData != nullptr)
+		*static_cast<bool *>(Data->UserData) = true;
+	return 1;
+}
+
 // grid points without a height (or another value) take the one of the nearest point which has it (by steps along the grid)
 template <typename Value_> inline void fill_from_nearest(std::vector<Value_> &Heights, std::vector<char> &Found, std::size_t const Side)
 {

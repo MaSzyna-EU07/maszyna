@@ -101,9 +101,11 @@ vk14::vertex_layout layout_of(vk14::vertex_kind const Kind)
 		layout.attributes = {{0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0}, {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, sizeof(glm::vec4)}};
 		break;
 	case vk14::vertex_kind::particle:
-		// position, colour, texture coordinates (opengl46_particles::particle_vertex)
-		layout.bindings = {{0, 36, VK_VERTEX_INPUT_RATE_VERTEX}};
-		layout.attributes = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}, {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 12}, {2, 0, VK_FORMAT_R32G32_SFLOAT, 28}};
+		// position, colour, texture coordinates
+		layout.bindings = {{0, sizeof(vk14::particle_vertex), VK_VERTEX_INPUT_RATE_VERTEX}};
+		layout.attributes = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<std::uint32_t>(offsetof(vk14::particle_vertex, position))},
+		                     {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<std::uint32_t>(offsetof(vk14::particle_vertex, color))},
+		                     {2, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<std::uint32_t>(offsetof(vk14::particle_vertex, texture))}};
 		break;
 	case vk14::vertex_kind::position_uv:
 		layout.bindings = {{0, sizeof(glm::vec3), VK_VERTEX_INPUT_RATE_VERTEX}, {1, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX}};

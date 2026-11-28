@@ -68,6 +68,15 @@ enum class vertex_kind : std::uint8_t
 	particle_instance // three vec4 of gl::particle_draw for each instance, the particles of the gpu
 };
 
+// the vertices of a particle of the smoke of the cpu (vertex_kind::particle, as opengl46_particles has them)
+struct particle_vertex
+{
+	glm::vec3 position;
+	glm::vec4 color;
+	glm::vec2 texture;
+};
+static_assert(sizeof(particle_vertex) == 36, "the layout of the vertices of the particles");
+
 // the push constants of the pipelines of the scene and of the post-processing (shaders/vk14/common.glsl, draw_constants_block)
 struct draw_constants
 {

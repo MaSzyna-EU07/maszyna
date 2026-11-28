@@ -584,7 +584,16 @@ editor_mode::editor_mode() {
 	ui()->set_open_scenery([this]() { m_openscenery_asked = true; });
 	ui()->set_memcell_focus([this](scene::basic_node *Node) { start_focus(Node); });
 	ui()->set_edit_menu([this]() { render_edit_menu(); });
-	ui()->set_tools_menu([this]() { render_track_presets_menu(); });
+	ui()->set_tools_menu([this]() {
+		render_track_presets_menu();
+		if (ImGui::MenuItem(STR_C("Track names outside of ASCII..."), nullptr, m_track_names_open))
+		{
+			check_track_names(false);
+			m_track_names_open = true;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("The tracks whose names have Polish letters or other characters outside of ASCII, and what an ASCII name would collide with; nothing is changed"));
+	});
 	ui()->set_menu_options([this]() {
 		render_object_menu();
 		render_view_menu();
@@ -1715,6 +1724,7 @@ bool editor_mode::update()
     m_gauge.update();
     m_gauge.render_windows();
     m_minimap.render_windows();
+    render_track_names_window();
 
     // roads: trajectories of the lanes, and the tools of the road window
     update_road_tool();
@@ -7609,6 +7619,7 @@ void editor_mode::enter()
     if (Global.editor_session && false == m_opened_at_track)
     {
         m_opened_at_track = true;
+        check_track_names(true);
         auto const saved{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$c")};
         if (false == saved.empty())
         {

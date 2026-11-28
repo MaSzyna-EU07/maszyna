@@ -130,6 +130,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
@@ -137,7 +140,18 @@ jobs:
           echo "event=$event" >> "$GITHUB_OUTPUT"
 
           if [ "$event" != "pull_request" ]; then
-            echo "Branch build, no PR parameters."
+            # A push: the branch comes from the trusted event, not from the artifact. Only
+            # master and staging are pushed to with a build (build.yml); anything else is refused
+            # rather than analysed as a branch of its own.
+            if [ "$RUN_EVENT" != "push" ] || [ "$RUN_REPO" != "$REPO" ]; then
+              echo "::error::branch build that isn't a push to this repository ($RUN_EVENT, $RUN_REPO)"
+              exit 1
+            fi
+            case "$RUN_BRANCH" in
+              master|staging) echo "branch=$RUN_BRANCH" >> "$GITHUB_OUTPUT" ;;
+              *) echo "::error::no analysis for a push to $RUN_BRANCH"; exit 1 ;;
+            esac
+            echo "Branch build of $RUN_BRANCH, no PR parameters."
             exit 0
           fi
 
@@ -189,11 +203,9 @@ jobs:
             --define sonar.pullrequest.branch=${{ steps.meta.outputs.head }}
             --define sonar.pullrequest.base=${{ steps.meta.outputs.base }}
 
-      # No sonar.branch.name here on purpose: branch analysis is a paid feature,
-      # and passing it would push the scanner onto that code path. Omitting it
-      # means this is a plain main-branch analysis, which the Free plan allows.
+      # master is the main branch of the SonarQube Cloud project: no sonar.branch.name.
       - name: SonarQube Cloud scan (main branch)
-        if: steps.meta.outputs.event != 'pull_request'
+        if: steps.meta.outputs.event != 'pull_request' && steps.meta.outputs.branch == 'master'
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -205,6 +217,25 @@ jobs:
             --define sonar.exclusions=${{ env.SONAR_EXCLUSIONS }}
             --define sonar.qualitygate.wait=true
             --define sonar.scm.revision=${{ github.event.workflow_run.head_sha }}
+
+      # staging as a branch of its own next to master, so its issues and its quality gate show
+      # before staging is merged into master. SonarQube Cloud keeps it as a long-lived branch
+      # only if its name matches the project's long-lived branch pattern (Administration >
+      # Branches and Pull Requests); otherwise it is a short-lived one, deleted when inactive.
+      - name: SonarQube Cloud scan (staging)
+        if: steps.meta.outputs.event != 'pull_request' && steps.meta.outputs.branch == 'staging'
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            --define sonar.cfamily.compile-commands=${{ env.BUILD_WRAPPER_OUT_DIR }}/compile_commands.json
+            --define sonar.cfamily.taintAnalysis=false
+            --define sonar.exclusions=${{ env.SONAR_EXCLUSIONS }}
+            --define sonar.qualitygate.wait=true
+            --define sonar.scm.revision=${{ github.event.workflow_run.head_sha }}
+            --define sonar.branch.name=staging
 
       - name: Report success
         if: success()

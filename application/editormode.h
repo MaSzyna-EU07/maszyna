@@ -948,6 +948,20 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool restart_editor(std::string const &Scenery);
 	bool m_openscenery_asked{false};
 	bool m_opened_at_track{false};
+	// the tracks whose names have letters outside of ASCII, listed once the scenery is opened for editing and in a window of their
+	// own: nothing is renamed, the names the scenery has go on working as they did; the editor gives no new name outside of ASCII
+	struct track_name_entry
+	{
+		std::string name; // as it reads (UTF-8)
+		std::string ascii; // the name without the letters outside of ASCII
+		bool clash{false}; // another path has that name already, or another name gives the same
+		bool include{false}; // given by a parameter of an include, which names more than the track with it
+		bool written{true}; // in a file the editor writes
+	};
+	std::vector<track_name_entry> m_track_names;
+	bool m_track_names_open{false};
+	void check_track_names(bool Report);
+	void render_track_names_window();
 	bool m_turntable_included{false};
 	bool turntable_controls(std::vector<std::string> &Rootstatements);
 	bool m_nose_included{false};

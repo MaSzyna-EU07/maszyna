@@ -127,6 +127,7 @@ list(APPEND CMAKE_MODULE_PATH "${VCPKG_INSTALLED_PATH}/share")
 set(SOURCES
 "model/Texture.cpp"
 "utilities/Timer.cpp"
+"utilities/asciiname.cpp"
 "utilities/workerpool.cpp"
 "utilities/memorystats.cpp"
 "world/Track.cpp"
@@ -313,6 +314,7 @@ set(SOURCES
 "application/editormodelineside.cpp"
 "application/editormodevehicle.cpp"
 "application/editormodeselection.cpp"
+"application/editormodetracknames.cpp"
 "application/editormodeviewport.cpp"
 "application/editormodefields.cpp"
 "application/editormodeterrainchunks.cpp"

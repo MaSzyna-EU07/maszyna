@@ -1117,6 +1117,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "driverfigure.followsdirection")
+    {
+        ParseOne(Parser, DriverFigureFollowsDirection, 1, false);
+        return true;
+    }
+
     if (token == "ai.brakesetting.cw1")
     {
         ParseOne(Parser, AIBrakeSettingCw1, 1, false);
@@ -2724,6 +2730,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
         track_buckling == track_buckling_mode::automatic ? "auto" :
         "scenery" } );
     export_as_text( Output, "ai.trainman", AITrainman );
+    export_as_text( Output, "driverfigure.followsdirection", DriverFigureFollowsDirection );
     export_as_text( Output, "controlcoupling.enginecheck", control_coupling_engine_check );
     std::string couplerphysics { coupler_physics ? "yes" : "no" };
     if( coupler_physics_all ) {
