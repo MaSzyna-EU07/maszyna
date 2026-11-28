@@ -406,13 +406,13 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
 
         // cooling shutters
         // NOTE: shutters display _on state when they're closed, _off otherwise
-        if( true == MoverParameters->dizel_heat.water.config.shutters
-         && false == MoverParameters->dizel_heat.zaluzje1 ) {
+        if( true == MoverParameters->diesel.heat.water.config.shutters
+         && false == MoverParameters->diesel.heat.zaluzje1 ) {
             btShutters1.Turn( true );
             btnOn = true;
         }
-        if( true == MoverParameters->dizel_heat.water_aux.config.shutters
-         && false == MoverParameters->dizel_heat.zaluzje2 ) {
+        if( true == MoverParameters->diesel.heat.water_aux.config.shutters
+         && false == MoverParameters->diesel.heat.zaluzje2 ) {
             btShutters2.Turn( true );
             btnOn = true;
         }

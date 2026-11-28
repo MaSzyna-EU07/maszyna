@@ -60,7 +60,7 @@ TEST_CASE("cab: the lamps of the overload relay and the starting resistors, read
 
 TEST_CASE("cab: the engine's idle speed, and the ET42's second controller shown in its dynamic brake") {
 	vehicle sn61{definition::fiz("sn61_v2/sn61")};
-	CHECK(sn61->EngineIdleRPM() == doctest::Approx(sn61->dizel_nmin * 60.0));
+	CHECK(sn61->EngineIdleRPM() == doctest::Approx(sn61->diesel.minRevolutions * 60.0));
 	vehicle su45{definition::fiz("su45_v2/301d")};
 	CHECK(su45->EngineIdleRPM() == doctest::Approx(su45->DElist[su45->MainCtrlNoPowerPos()].RPM));
 	vehicle eu07{definition::fiz("4e_v1/4e")};

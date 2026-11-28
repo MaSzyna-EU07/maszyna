@@ -71,7 +71,7 @@ namespace
 // the radiator fans of a diesel engine follow their demanded revolutions while the engine runs, and run down without it
 void updateRadiatorFans(TMoverParameters &vehicle, double const dt)
 {
-	auto &heat{vehicle.dizel_heat};
+	auto &heat{vehicle.diesel.heat};
 	if (true == vehicle.Mains)
 	{
 		heat.rpmw += static_cast<float>(std::clamp(heat.rpmwz - heat.rpmw, -100.f, 50.f) * dt);
@@ -164,12 +164,12 @@ class DieselMechanicalDrive final : public TractionDrive
 public:
 	double UpdateEnginePower(TMoverParameters &vehicle) const override
 	{
-		vehicle.dizel_Power = vehicle.Mm * vehicle.enrot * (2.0 * M_PI / 1000.0);
-		vehicle.EnginePower = (vehicle.dizel_Mstand + vehicle.Mm) * vehicle.enrot * (2.0 * M_PI / 1000.0);
+		vehicle.diesel.power = vehicle.Mm * vehicle.enrot * (2.0 * M_PI / 1000.0);
+		vehicle.EnginePower = (vehicle.diesel.standingMoment + vehicle.Mm) * vehicle.enrot * (2.0 * M_PI / 1000.0);
 		if (vehicle.MainCtrlPowerPos() > 1)
 		{
 			// dodatkowe opory z powodu sprezarki}
-			//                dmoment -= dizel_Mstand * ( 0.2 * enrot / dizel_nmax ); //yB: skąd to w ogóle się bierze?!
+			//                dmoment -= diesel.standingMoment * ( 0.2 * enrot / diesel.maxRevolutions ); //yB: skąd to w ogóle się bierze?!
 		}
 		return 0.0;
 	}
@@ -188,11 +188,11 @@ public:
 	}
 	double EngineIdleRpm(TMoverParameters const &vehicle) const override
 	{
-		return vehicle.dizel_nmin * 60;
+		return vehicle.diesel.minRevolutions * 60;
 	}
 	double EngineMaxRpm(TMoverParameters const &vehicle) const override
 	{
-		return vehicle.dizel_nmax * 60;
+		return vehicle.diesel.maxRevolutions * 60;
 	}
 };
 

@@ -59,11 +59,11 @@ void TMoverParameters::WaterHeaterCheck(double const /*Timestep*/)
 {
 
 	WaterHeater.is_active = false == WaterHeater.is_damaged && true == (Power24vIsAvailable || Power110vIsAvailable) && true == WaterHeater.is_enabled && true == WaterHeater.breaker &&
-	                        (WaterHeater.is_active || WaterHeater.config.temp_min < 0 || dizel_heat.temperatura1 < WaterHeater.config.temp_min);
+	                        (WaterHeater.is_active || WaterHeater.config.temp_min < 0 || diesel.heat.temperatura1 < WaterHeater.config.temp_min);
 
 	WaterHeater.is_damaged = true == WaterHeater.is_damaged || (true == WaterHeater.is_active && false == WaterPump.is_active);
 
-	if (WaterHeater.config.temp_max > 0 && dizel_heat.temperatura1 > WaterHeater.config.temp_max)
+	if (WaterHeater.config.temp_max > 0 && diesel.heat.temperatura1 > WaterHeater.config.temp_max)
 	{
 		WaterHeater.is_active = false;
 	}
@@ -76,8 +76,8 @@ void TMoverParameters::FuelPumpCheck(double const /*Timestep*/)
 
 	FuelPump.is_active = true == (Power24vIsAvailable || Power110vIsAvailable) && false == FuelPump.is_disabled &&
 	                     (FuelPump.is_active || (FuelPump.start_type == manual                 ? FuelPump.is_enabled :
-	                                             FuelPump.start_type == automatic              ? dizel_startup || Mains :
-	                                             FuelPump.start_type == manualwithautofallback ? FuelPump.is_enabled || dizel_startup || Mains :
+	                                             FuelPump.start_type == automatic              ? diesel.startupRequested || Mains :
+	                                             FuelPump.start_type == manualwithautofallback ? FuelPump.is_enabled || diesel.startupRequested || Mains :
 	                                                                                                      false)); // shouldn't ever get this far but, eh
 }
 
@@ -87,8 +87,8 @@ void TMoverParameters::OilPumpCheck(double const Timestep)
 
 	OilPump.is_active = true == (Power24vIsAvailable || Power110vIsAvailable) && false == Mains && false == OilPump.is_disabled &&
 	                    (OilPump.is_active || (OilPump.start_type == start_t::manual                 ? OilPump.is_enabled :
-	                                           OilPump.start_type == start_t::automatic              ? dizel_startup :
-	                                           OilPump.start_type == start_t::manualwithautofallback ? OilPump.is_enabled || dizel_startup :
+	                                           OilPump.start_type == start_t::automatic              ? diesel.startupRequested :
+	                                           OilPump.start_type == start_t::manualwithautofallback ? OilPump.is_enabled || diesel.startupRequested :
 	                                                                                                   false)); // shouldn't ever get this far but, eh
 
 	auto const minpressure{OilPump.pressure_minimum > 0.f ? OilPump.pressure_minimum : 0.15f}; // arbitrary fallback value
@@ -220,7 +220,7 @@ bool TMoverParameters::WaterHeaterSwitch(bool State, range_t const Notify)
 bool TMoverParameters::WaterCircuitsLinkSwitch(bool State, range_t const Notify)
 {
 
-	if (false == dizel_heat.auxiliary_water_circuit)
+	if (false == diesel.heat.auxiliary_water_circuit)
 	{
 		// can't link the circuits if the vehicle only has one
 		return false;
@@ -341,12 +341,12 @@ double TMoverParameters::UpdateEngineRevolutions(double dt, double &dtrans, doub
 		else
 		{
 			tmp = 0.0;
-			dizel_fill = 0.0;
+			diesel.fill = 0.0;
 		}
 
 		if (enrot != tmp)
 		{
-			enrot = safe_clamp(enrot + dt / dizel_AIM * (enrot < tmp ? 1.0 : -1.0 * dizel_RevolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
+			enrot = safe_clamp(enrot + dt / diesel.shaftInertia * (enrot < tmp ? 1.0 : -1.0 * diesel.revolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
 			              0.0, std::max(tmp, enrot));
 			if (std::abs(tmp - enrot) < 0.001)
 			{
@@ -362,7 +362,7 @@ double TMoverParameters::UpdateEngineRevolutions(double dt, double &dtrans, doub
 		else
 			dtrans = Transmision.Ratio * motor_param(ScndCtrlActualPos).mIsat;
 
-		dmoment = dizel_Momentum(dizel_fill, dtrans * nrot * DirActive, dt); // oblicza tez enrot
+		dmoment = dizel_Momentum(diesel.fill, dtrans * nrot * DirActive, dt); // oblicza tez enrot
 		break;
 	}
 	default:
@@ -390,15 +390,15 @@ double TMoverParameters::DieselElectricTargetRevolutions()
 		// bump engine revolutions up if needed, when heating is on
 		tmp = std::max(tmp, std::min(EngineMaxRPM(), EngineHeatingRPM) / 60.0);
 	}
-	// NOTE: fake dizel_fill calculation for the sake of smoke emitter which uses this parameter to determine smoke opacity
-	dizel_fill = std::clamp(0.2 + 0.35 * (tmp - enrot) + 0.5 * (std::abs(Im) / DElist[MainCtrlPosNo].Imax), 0.05, 1.0);
+	// NOTE: fake diesel.fill calculation for the sake of smoke emitter which uses this parameter to determine smoke opacity
+	diesel.fill = std::clamp(0.2 + 0.35 * (tmp - enrot) + 0.5 * (std::abs(Im) / DElist[MainCtrlPosNo].Imax), 0.05, 1.0);
 	return tmp;
 }
 
 void TMoverParameters::DieselEngineTractionForce(double dt, double const dmoment, double const dtrans)
 {
 	Mw = dmoment * dtrans * Transmision.Efficiency; // dmoment i dtrans policzone przy okazji enginerotation
-	if (hydro_R && hydro_R_Placement == 0)
+	if (retarder.present && retarder.placement == 0)
 		Mw -= dizel_MomentumRetarder(nrot * Transmision.Ratio, dt) * Transmision.Ratio * Transmision.Efficiency;
 	Fw = Mw * 2.0 / WheelDiameter / NPoweredAxles;
 	Ft = Fw * NPoweredAxles; // sila trakcyjna
@@ -692,9 +692,9 @@ void TMoverParameters::apply_dieselelectric_dynamic_brake(double const dt)
 // *************************************************************************************************
 bool TMoverParameters::dizel_EngageSwitch(double state)
 {
-	if (EngineType == TEngineType::DieselEngine && state <= 1 && state >= 0 && state != dizel_engagestate)
+	if (EngineType == TEngineType::DieselEngine && state <= 1 && state >= 0 && state != diesel.clutchState)
 	{
-		dizel_engagestate = state;
+		diesel.clutchState = state;
 		return true;
 	}
 	else
@@ -711,24 +711,24 @@ bool TMoverParameters::dizel_EngageChange(double dt)
 	bool DEC;
 
 	DEC = false;
-	if (dizel_engage - dizel_engagestate > 0)
+	if (diesel.clutchPressure - diesel.clutchState > 0)
 		engagespeed = engagedownspeed;
 	else
 		engagespeed = engageupspeed;
 	if (dt > 0.2)
 		dt = 0.1;
-	if (abs(dizel_engage - dizel_engagestate) < 0.11)
+	if (abs(diesel.clutchPressure - diesel.clutchState) < 0.11)
 	{
-		if (dizel_engage != dizel_engagestate)
+		if (diesel.clutchPressure != diesel.clutchState)
 		{
 			DEC = true;
-			dizel_engage = dizel_engagestate;
+			diesel.clutchPressure = diesel.clutchState;
 		}
 		// else OK:=false; //już jest false
 	}
 	else
 	{
-		dizel_engage = dizel_engage + engagespeed * dt * (dizel_engagestate - dizel_engage);
+		diesel.clutchPressure = diesel.clutchPressure + engagespeed * dt * (diesel.clutchState - diesel.clutchPressure);
 		// OK:=false;
 	}
 	// dizel_EngageChange:=OK;
@@ -765,24 +765,24 @@ bool TMoverParameters::dizel_AutoGearCheck(void)
 bool TMoverParameters::dizel_GearShiftCheck(double const VelUp, double const VelDown)
 {
 	auto OK{false};
-	if (RList[MainCtrlPos].Mn == 0 && !hydro_TC)
+	if (RList[MainCtrlPos].Mn == 0 && !torqueConverter.present)
 	{
-		if (dizel_engagestate > 0)
+		if (diesel.clutchState > 0)
 			dizel_EngageSwitch(0);
 		if (IsMainCtrlNoPowerPos() && ScndCtrlActualPos > 0)
-			dizel_automaticgearstatus = -1;
+			diesel.automaticGearShift = -1;
 	}
 	else
 	{
 		OK = dizel_GearShiftRequest(VelUp, VelDown);
 	}
-	if (dizel_engage < 0.1 && dizel_automaticgearstatus != 0)
+	if (diesel.clutchPressure < 0.1 && diesel.automaticGearShift != 0)
 	{
-		if (dizel_automaticgearstatus == 1)
+		if (diesel.automaticGearShift == 1)
 			ScndCtrlActualPos++;
 		else
 			ScndCtrlActualPos--;
-		dizel_automaticgearstatus = 0;
+		diesel.automaticGearShift = 0;
 		dizel_EngageSwitch(1.0);
 		OK = true;
 	}
@@ -793,14 +793,14 @@ bool TMoverParameters::dizel_GearShiftCheck(double const VelUp, double const Vel
 bool TMoverParameters::dizel_GearShiftRequest(double const VelUp, double const VelDown)
 {
 	auto OK{false};
-	if (motor_param(ScndCtrlActualPos).AutoSwitch && dizel_automaticgearstatus == 0) // sprawdz czy zmienic biegi
+	if (motor_param(ScndCtrlActualPos).AutoSwitch && diesel.automaticGearShift == 0) // sprawdz czy zmienic biegi
 	{
 		if (Vel > VelUp)
 		{
 			// shift up
 			if (ScndCtrlActualPos < ScndCtrlPosNo)
 			{
-				dizel_automaticgearstatus = 1;
+				diesel.automaticGearShift = 1;
 				OK = true;
 			}
 		}
@@ -809,7 +809,7 @@ bool TMoverParameters::dizel_GearShiftRequest(double const VelUp, double const V
 			// shift down
 			if (ScndCtrlActualPos > 0)
 			{
-				dizel_automaticgearstatus = -1;
+				diesel.automaticGearShift = -1;
 				OK = true;
 			}
 		}
@@ -824,7 +824,7 @@ void TMoverParameters::dizel_ClutchCheck()
 	{
 		dizel_ClutchByIntegratedController();
 	}
-	else if (dizel_automaticgearstatus == 0) // ustaw cisnienie w silowniku sprzegla}
+	else if (diesel.automaticGearShift == 0) // ustaw cisnienie w silowniku sprzegla}
 		dizel_ClutchByController();
 	else
 		dizel_EngageSwitch(0.0);
@@ -846,25 +846,25 @@ void TMoverParameters::dizel_ClutchByController()
 		dizel_EngageSwitch(1.0);
 		break;
 	case 3:
-		if (Vel > dizel_minVelfullengage)
+		if (Vel > diesel.fullEngageMinVelocity)
 			dizel_EngageSwitch(1.0);
 		else
 			dizel_EngageSwitch(0.5);
 		break;
 	case 4:
-		if (Vel > dizel_minVelfullengage)
+		if (Vel > diesel.fullEngageMinVelocity)
 			dizel_EngageSwitch(1.0);
 		else
 			dizel_EngageSwitch(0.66);
 		break;
 	case 5:
-		if (Vel > dizel_minVelfullengage)
+		if (Vel > diesel.fullEngageMinVelocity)
 			dizel_EngageSwitch(1.0);
 		else
 			dizel_EngageSwitch(0.35 * (1 + RList[MainCtrlPos].R) * RList[MainCtrlPos].R);
 		break;
 	default:
-		if (hydro_TC && hydro_TC_Fill > 0.01)
+		if (torqueConverter.present && torqueConverter.fill > 0.01)
 			dizel_EngageSwitch(1.0);
 		else
 			dizel_EngageSwitch(0.0);
@@ -874,11 +874,11 @@ void TMoverParameters::dizel_ClutchByController()
 // the clutch of the integrated controller: in with the converter filled or the power asked, half in for the retarder
 void TMoverParameters::dizel_ClutchByIntegratedController()
 {
-	if (dizel_automaticgearstatus == 0)
+	if (diesel.automaticGearShift == 0)
 	{
-		if ((hydro_TC && hydro_TC_Fill > 0.01) || eimic_real > 0.005)
+		if ((torqueConverter.present && torqueConverter.fill > 0.01) || eimic_real > 0.005)
 			dizel_EngageSwitch(1.0);
-		else if (Vel > hydro_R_EngageVel && hydro_R && hydro_R_Fill > 0.01)
+		else if (Vel > retarder.engageVelocity && retarder.present && retarder.fill > 0.01)
 			dizel_EngageSwitch(0.5);
 		else
 			dizel_EngageSwitch(0.0);
@@ -900,7 +900,7 @@ bool TMoverParameters::dizel_StartupCheck()
 		engineisready = false;
 		//        if( FuelPump.start_type == start_t::manual ) {
 		// with manual pump control startup procedure is done only once per starter switch press
-		dizel_startup = false;
+		diesel.startupRequested = false;
 		//        }
 	}
 	// test the oil pump
@@ -910,15 +910,15 @@ bool TMoverParameters::dizel_StartupCheck()
 		if (OilPump.start_type == start_t::manual)
 		{
 			// with manual pump control startup procedure is done only once per starter switch press
-			dizel_startup = false;
+			diesel.startupRequested = false;
 		}
 	}
 	// test the water circuits and water temperature
-	if (true == dizel_heat.PA)
+	if (true == diesel.heat.PA)
 	{
 		engineisready = false;
 		// TBD, TODO: reset startup procedure depending on pump and heater control mode
-		dizel_startup = false;
+		diesel.startupRequested = false;
 	}
 
 	return engineisready;
@@ -936,30 +936,30 @@ bool TMoverParameters::dizel_Update(double dt)
 	OilPumpCheck(dt);
 	FuelPumpCheck(dt);
 	// the engine being started fires once the starter has turned it a while; one stopped meanwhile starts over
-	dizel_FiringCountdown = (Mains ? std::max(0.0, dizel_FiringCountdown - dt) : 0.0);
+	diesel.firingCountdown = (Mains ? std::max(0.0, diesel.firingCountdown - dt) : 0.0);
 
-	if (true == dizel_startup && true == dizel_StartupCheck())
+	if (true == diesel.startupRequested && true == dizel_StartupCheck())
 	{
-		dizel_ignition = true;
+		diesel.ignitionRequested = true;
 	}
 
-	if (true == dizel_ignition && LastSwitchingTime >= InitialCtrlDelay)
+	if (true == diesel.ignitionRequested && LastSwitchingTime >= InitialCtrlDelay)
 	{
 
-		dizel_startup = false;
-		dizel_ignition = false;
+		diesel.startupRequested = false;
+		diesel.ignitionRequested = false;
 		// TODO: split engine and main circuit state indicator in two separate flags
 		LastSwitchingTime = 0;
 		Timer::subsystem.switching.note(Timer::switching_counter::diesel, this, &TypeName, &Name);
 		Mains = true;
-		dizel_spinup = true;
-		dizel_FiringCountdown = dizel_SmokeDelay;
+		diesel.spinningUp = true;
+		diesel.firingCountdown = diesel.smokeDelay;
 		enrot = std::max(enrot,
 		                 0.35 * ( // TODO: dac zaleznie od temperatury i baterii
-		                            EngineType == TEngineType::DieselEngine ? dizel_nmin : DElist[0].RPM / 60.0));
+		                            EngineType == TEngineType::DieselEngine ? diesel.minRevolutions : DElist[0].RPM / 60.0));
 	}
 
-	dizel_spinup = dizel_spinup && Mains && enrot < 0.95 * (EngineType == TEngineType::DieselEngine ? dizel_nmin : DElist[0].RPM / 60.0);
+	diesel.spinningUp = diesel.spinningUp && Mains && enrot < 0.95 * (EngineType == TEngineType::DieselEngine ? diesel.minRevolutions : DElist[0].RPM / 60.0);
 
 	if (true == Mains && false == FuelPump.is_active)
 	{
@@ -976,7 +976,7 @@ bool TMoverParameters::dizel_Update(double dt)
 		dizel_EngageChange(dt);
 		DU = dizel_AutoGearCheck();
 		double const fillspeed{2};
-		dizel_fill = dizel_fill + fillspeed * dt * (dizel_fillcheck(MainCtrlPos, dt) - dizel_fill);
+		diesel.fill = diesel.fill + fillspeed * dt * (dizel_fillcheck(MainCtrlPos, dt) - diesel.fill);
 	}
 
 	dizel_Heat(dt);
@@ -995,7 +995,7 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 	if (true == Mains && MainCtrlPosNo > 0 && true == FuelPump.is_active)
 	{
 
-		if (true == dizel_ignition && LastSwitchingTime >= 0.9 * InitialCtrlDelay)
+		if (true == diesel.ignitionRequested && LastSwitchingTime >= 0.9 * InitialCtrlDelay)
 		{
 			// wzbogacenie przy rozruchu
 			// NOTE: ignition flag is reset before this code is executed
@@ -1011,11 +1011,11 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 			}
 			else
 			{
-				dizel_nreg_max = dizel_nmax;
+				diesel.governorMaxRevolutions = diesel.maxRevolutions;
 				realfill = RList[mcp].R;
 			}
 		}
-		if (dizel_nmax_cutoff > 0)
+		if (diesel.cutoffRevolutions > 0)
 		{
 			realfill = dizel_GovernorFill(mcp, realfill);
 		}
@@ -1029,24 +1029,24 @@ double TMoverParameters::dizel_DigitalFill(double dt)
 {
 	double realfill;
 		realfill = std::max(0.0, std::min(eimic_real, 1 - motor_param(ScndCtrlActualPos).Isat));
-		if (eimic_real > 0.005 && !hydro_TC_Lockup)
+		if (eimic_real > 0.005 && !torqueConverter.lockedUp)
 		{
-			dizel_nreg_min = std::min(dizel_nreg_min + 2.5 * dt, dizel_nmin_hdrive + eimic_real * dizel_nmin_hdrive_factor);
+			diesel.governorMinRevolutions = std::min(diesel.governorMinRevolutions + 2.5 * dt, diesel.hydraulicMinRevolutions + eimic_real * diesel.hydraulicMinRevolutionsFactor);
 		}
 		else
 		{
-			if (Vel < hydro_R_EngageVel && hydro_R && hydro_R_Fill > 0.01)
-				dizel_nreg_min = std::min(dizel_nreg_min + 5.0 * dt, dizel_nmin_retarder);
+			if (Vel < retarder.engageVelocity && retarder.present && retarder.fill > 0.01)
+				diesel.governorMinRevolutions = std::min(diesel.governorMinRevolutions + 5.0 * dt, diesel.retarderRevolutions);
 			else
-				dizel_nreg_min = dizel_nmin;
+				diesel.governorMinRevolutions = diesel.minRevolutions;
 		}
-		if (!dizel_vel2nmax_Table.empty() && !hydro_TC_Lockup)
+		if (!diesel.speedMaxRevolutionsTable.empty() && !torqueConverter.lockedUp)
 		{
-			dizel_nreg_max = std::min(std::min(dizel_nreg_max, enrot) + dizel_nreg_acc * dt, TableInterpolation(dizel_vel2nmax_Table, Vel));
+			diesel.governorMaxRevolutions = std::min(std::min(diesel.governorMaxRevolutions, enrot) + diesel.governorAcceleration * dt, TableInterpolation(diesel.speedMaxRevolutionsTable, Vel));
 		}
 		else
 		{
-			dizel_nreg_max = dizel_nmax;
+			diesel.governorMaxRevolutions = diesel.maxRevolutions;
 		}
 	return realfill;
 }
@@ -1056,12 +1056,12 @@ double TMoverParameters::dizel_GovernorFill(int const mcp, double realfill) cons
 {
 	auto nreg{0.0};
 	if (EIMCtrlType > 0)
-		nreg = eimic_real > 0.005 ? dizel_nreg_max : dizel_nmin;
+		nreg = eimic_real > 0.005 ? diesel.governorMaxRevolutions : diesel.minRevolutions;
 	else
 		nreg = dizel_GovernorRevolutions(mcp, realfill);
 	if (enrot > nreg) // nad predkoscia regulatora zeruj dawke
 		realfill = 0;
-	if (enrot < dizel_nreg_min && RList[mcp].R > 0.001) // jesli ponizej biegu jalowego i niezerowa dawka, to dawaj pelna
+	if (enrot < diesel.governorMinRevolutions && RList[mcp].R > 0.001) // jesli ponizej biegu jalowego i niezerowa dawka, to dawaj pelna
 		realfill = 1;
 	return realfill;
 }
@@ -1075,31 +1075,31 @@ double TMoverParameters::dizel_GovernorRevolutions(int const mcp, double &realfi
 	{
 	case 0:
 	case 1:
-		nreg = dizel_nmin;
+		nreg = diesel.minRevolutions;
 		break;
 	case 2:
-		if (dizel_automaticgearstatus == 0 && true /*(!hydro_TC) || (dizel_engage>dizel_fill)*/)
-			nreg = dizel_nreg_max;
+		if (diesel.automaticGearShift == 0 && true /*(!torqueConverter.present) || (diesel.clutchPressure>diesel.fill)*/)
+			nreg = diesel.governorMaxRevolutions;
 		else
-			nreg = dizel_nmin;
+			nreg = diesel.minRevolutions;
 		break;
 	case 3:
-		if (dizel_automaticgearstatus == 0 && Vel > dizel_minVelfullengage)
-			nreg = dizel_nreg_max;
+		if (diesel.automaticGearShift == 0 && Vel > diesel.fullEngageMinVelocity)
+			nreg = diesel.governorMaxRevolutions;
 		else
-			nreg = dizel_nmin;
+			nreg = diesel.minRevolutions;
 		break;
 	case 4:
-		if (dizel_automaticgearstatus == 0 && Vel > dizel_minVelfullengage)
-			nreg = dizel_nmax;
+		if (diesel.automaticGearShift == 0 && Vel > diesel.fullEngageMinVelocity)
+			nreg = diesel.maxRevolutions;
 		else
-			nreg = dizel_nmin * 0.75 + dizel_nreg_max * 0.25;
+			nreg = diesel.minRevolutions * 0.75 + diesel.governorMaxRevolutions * 0.25;
 		break;
 	case 5:
-		if (Vel > dizel_minVelfullengage)
-			nreg = dizel_nreg_max;
+		if (Vel > diesel.fullEngageMinVelocity)
+			nreg = diesel.governorMaxRevolutions;
 		else
-			nreg = dizel_nmin + 0.8 * (dizel_nreg_max - dizel_nmin) * RList[mcp].R;
+			nreg = diesel.minRevolutions + 0.8 * (diesel.governorMaxRevolutions - diesel.minRevolutions) * RList[mcp].R;
 		break;
 	default:
 		realfill = 0; // sluczaj
@@ -1126,51 +1126,51 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 	n = n * CabActive;
 	if (motor_param(ScndCtrlActualPos).mIsat < 0.001 || DirActive == 0)
 		n = enrot;
-	friction = dizel_engagefriction;
-	hydro_TC_nIn = enrot; // wal wejsciowy przetwornika momentu
-	hydro_TC_nOut = dizel_n_old; // wal wyjsciowy przetwornika momentu
+	friction = diesel.clutchFriction;
+	torqueConverter.revolutionsIn = enrot; // wal wejsciowy przetwornika momentu
+	torqueConverter.revolutionsOut = diesel.previousRevolutions; // wal wyjsciowy przetwornika momentu
 
 	if (enrot > 0)
 	{
-		if (dizel_Momentum_Table.size() > 1)
+		if (diesel.momentTable.size() > 1)
 		{
-			Moment = TableInterpolation(dizel_Momentum_Table, enrot) * Fill - dizel_Mstand;
+			Moment = TableInterpolation(diesel.momentTable, enrot) * Fill - diesel.standingMoment;
 		}
 		else
 		{
-			Moment = (dizel_Mmax - (dizel_Mmax - dizel_Mnmax) * square((enrot - dizel_nMmax) / (dizel_nMmax - dizel_nmax))) * Fill - dizel_Mstand;
+			Moment = (diesel.maxMoment - (diesel.maxMoment - diesel.maxRevolutionsMoment) * square((enrot - diesel.maxMomentRevolutions) / (diesel.maxMomentRevolutions - diesel.maxRevolutions))) * Fill - diesel.standingMoment;
 		}
 		Mm = Moment;
-		dizel_FuelConsumptionActual = dizel_FuelConsumption * enrot * Fill;
-		dizel_FuelConsumptedTotal += dizel_FuelConsumptionActual * dt / 3600.0;
-		if (hydro_R && hydro_R_Placement == 2)
+		diesel.fuelConsumptionActual = diesel.fuelConsumption * enrot * Fill;
+		diesel.fuelConsumedTotal += diesel.fuelConsumptionActual * dt / 3600.0;
+		if (retarder.present && retarder.placement == 2)
 			Moment -= dizel_MomentumRetarder(enrot, dt);
 	}
 	else
 	{
-		Moment = -dizel_Mstand;
+		Moment = -diesel.standingMoment;
 	}
-	if (enrot < dizel_nmin / 10.0 && eAngle < M_PI_2)
+	if (enrot < diesel.minRevolutions / 10.0 && eAngle < M_PI_2)
 	{
 		// wstrzymywanie przy malych obrotach
-		Moment -= dizel_Mstand;
+		Moment -= diesel.standingMoment;
 	}
-	if (true == dizel_spinup)
-		Moment += dizel_Mstand / (0.3 + std::max(0.0, enrot / dizel_nmin)); // rozrusznik
+	if (true == diesel.spinningUp)
+		Moment += diesel.standingMoment / (0.3 + std::max(0.0, enrot / diesel.minRevolutions)); // rozrusznik
 
-	dizel_Torque = Moment;
+	diesel.torque = Moment;
 
 	hydro_TCFillCheck(dt);
 
 	// obliczanie momentow poszczegolnych sprzegiel
 	// sprzeglo glowne (skrzynia biegow)
-	TorqueC = dizel_engageMaxForce * dizel_engage * dizel_engageDia * friction;
+	TorqueC = diesel.clutchMaxForce * diesel.clutchPressure * diesel.clutchDiameter * friction;
 
-	if (hydro_TC) // jesli hydro
+	if (torqueConverter.present) // jesli hydro
 	{
 		hydro_TCTorque();
-		TorqueH = hydro_TC_TorqueOut;
-		TorqueL = hydro_TC_LockupTorque * hydro_TC_LockupRate;
+		TorqueH = torqueConverter.torqueOut;
+		TorqueL = torqueConverter.lockupTorque * torqueConverter.lockupRate;
 	}
 	else
 	{
@@ -1179,34 +1179,34 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 	}
 
 	// sprawdzanie dociskow poszczegolnych sprzegiel
-	if (abs(Moment) > std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) || abs(dizel_n_old - enrot) > 0.1) // slizga sie z powodu roznic predkosci albo przekroczenia momentu
+	if (abs(Moment) > std::min(TorqueC, TorqueL + abs(torqueConverter.torqueIn)) || abs(diesel.previousRevolutions - enrot) > 0.1) // slizga sie z powodu roznic predkosci albo przekroczenia momentu
 	{
-		dizel_engagedeltaomega = enrot - dizel_n_old;
+		diesel.clutchSlip = enrot - diesel.previousRevolutions;
 
 		if (TorqueC > TorqueL)
 		{
 			if (TorqueC > TorqueL + abs(TorqueH))
 			{
-				hydro_TC_nOut = n;
-				gearMoment = TorqueL + abs(TorqueH) * sign(dizel_engagedeltaomega);
-				enMoment = Moment - (TorqueL + abs(hydro_TC_TorqueIn)) * sign(dizel_engagedeltaomega);
+				torqueConverter.revolutionsOut = n;
+				gearMoment = TorqueL + abs(TorqueH) * sign(diesel.clutchSlip);
+				enMoment = Moment - (TorqueL + abs(torqueConverter.torqueIn)) * sign(diesel.clutchSlip);
 			}
 			else
 			{
-				hydro_TC_nOut = enrot - (n - enrot) * (TorqueC - TorqueL) / TorqueH; // slizganie proporcjonalne, zeby przetwornik nadrabial
-				gearMoment = TorqueC * sign(dizel_engagedeltaomega);
+				torqueConverter.revolutionsOut = enrot - (n - enrot) * (TorqueC - TorqueL) / TorqueH; // slizganie proporcjonalne, zeby przetwornik nadrabial
+				gearMoment = TorqueC * sign(diesel.clutchSlip);
 				enMoment = Moment - gearMoment;
 			}
 		}
 		else
 		{
-			hydro_TC_nOut = enrot;
-			gearMoment = TorqueC*sign(dizel_engagedeltaomega);
+			torqueConverter.revolutionsOut = enrot;
+			gearMoment = TorqueC*sign(diesel.clutchSlip);
 			enMoment = Moment - gearMoment;
 		}
-		eps = enMoment / dizel_AIM;
+		eps = enMoment / diesel.shaftInertia;
 		newn = enrot + eps * dt;
-		if ((newn - n) * (enrot - dizel_n_old) < 0 && TorqueC > 0.1) // przejscie przez zero - slizgalo sie i przestało
+		if ((newn - n) * (enrot - diesel.previousRevolutions) < 0 && TorqueC > 0.1) // przejscie przez zero - slizgalo sie i przestało
 			newn = n;
 		if (newn * enrot <= 0 && eps * enrot < 0) // przejscie przez zero obrotow
 			newn = 0;
@@ -1214,16 +1214,16 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 	}
 	else // nie slizga sie (jeszcze)
 	{
-		dizel_engagedeltaomega = 0;
+		diesel.clutchSlip = 0;
 		gearMoment = Moment;
-		double enrot_min = enrot - (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) - Moment) / dizel_AIM * dt;
-		double enrot_max = enrot + (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) + Moment) / dizel_AIM * dt;
+		double enrot_min = enrot - (std::min(TorqueC, TorqueL + abs(torqueConverter.torqueIn)) - Moment) / diesel.shaftInertia * dt;
+		double enrot_max = enrot + (std::min(TorqueC, TorqueL + abs(torqueConverter.torqueIn)) + Moment) / diesel.shaftInertia * dt;
 		enrot = safe_clamp(n, enrot_min, enrot_max);
 	}
-	if (hydro_R && hydro_R_Placement == 1)
-		gearMoment -= dizel_MomentumRetarder(hydro_TC_nOut, dt);
+	if (retarder.present && retarder.placement == 1)
+		gearMoment -= dizel_MomentumRetarder(torqueConverter.revolutionsOut, dt);
 
-	if (enrot <= 0 && false == dizel_spinup)
+	if (enrot <= 0 && false == diesel.spinningUp)
 	{
 		// an engine stalling stops those started together with it, once. one already stopped, from its own switch or
 		// another vehicle's, or not started at all, has nothing to stop: it stays quiet, rather than stop every frame
@@ -1235,7 +1235,7 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 		enrot = 0;
 	}
 
-	dizel_n_old = n; // obecna predkosc katowa na potrzeby kolejnej klatki
+	diesel.previousRevolutions = n; // obecna predkosc katowa na potrzeby kolejnej klatki
 
 	return gearMoment;
 }
@@ -1243,37 +1243,37 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 // the torque converter filled and emptied, and its lockup clutch engaged and released, by the power and the speed
 void TMoverParameters::hydro_TCFillCheck(double dt)
 {
-	if (hydro_TC) // jesli przetwornik momentu
+	if (torqueConverter.present) // jesli przetwornik momentu
 	{
 		// napelnianie przetwornika
 		bool IsPower = EIMCtrlType > 0 ? eimic_real > 0.005 : MainCtrlPowerPos() > 0;
-		if (IsPower && Mains && enrot > dizel_nmin * 0.9)
-			hydro_TC_Fill += hydro_TC_FillRateInc * dt;
+		if (IsPower && Mains && enrot > diesel.minRevolutions * 0.9)
+			torqueConverter.fill += torqueConverter.fillRateIncrease * dt;
 		// oproznianie przetwornika
-		if ((!IsPower && Vel < dizel_maxVelANS) || !Mains || enrot < dizel_nmin * 0.8)
-			hydro_TC_Fill -= hydro_TC_FillRateDec * dt;
+		if ((!IsPower && Vel < diesel.converterReleaseVelocity) || !Mains || enrot < diesel.minRevolutions * 0.8)
+			torqueConverter.fill -= torqueConverter.fillRateDecrease * dt;
 		// obcinanie zakresu
-		hydro_TC_Fill = std::clamp(hydro_TC_Fill, 0.0, 1.0);
+		torqueConverter.fill = std::clamp(torqueConverter.fill, 0.0, 1.0);
 
 		// blokowanie sprzegla blokującego
-		if (Vel > hydro_TC_LockupSpeed && Mains && enrot > 0.9 * dizel_nmin && IsPower)
+		if (Vel > torqueConverter.lockupSpeed && Mains && enrot > 0.9 * diesel.minRevolutions && IsPower)
 		{
-			hydro_TC_Lockup = true;
-			hydro_TC_LockupRate += hydro_TC_FillRateInc * dt;
+			torqueConverter.lockedUp = true;
+			torqueConverter.lockupRate += torqueConverter.fillRateIncrease * dt;
 		}
 		// luzowanie sprzegla blokujacego
-		if (Vel < (IsPower ? hydro_TC_LockupSpeed : hydro_TC_UnlockSpeed) || !Mains || enrot < 0.8 * dizel_nmin)
+		if (Vel < (IsPower ? torqueConverter.lockupSpeed : torqueConverter.unlockSpeed) || !Mains || enrot < 0.8 * diesel.minRevolutions)
 		{
-			hydro_TC_Lockup = false;
-			hydro_TC_LockupRate -= hydro_TC_FillRateDec * dt;
+			torqueConverter.lockedUp = false;
+			torqueConverter.lockupRate -= torqueConverter.fillRateDecrease * dt;
 		}
 		// obcinanie zakresu
-		hydro_TC_LockupRate = std::clamp(hydro_TC_LockupRate, 0.0, 1.0);
+		torqueConverter.lockupRate = std::clamp(torqueConverter.lockupRate, 0.0, 1.0);
 	}
 	else
 	{
-		hydro_TC_Fill = 0.0;
-		hydro_TC_LockupRate = 0.0;
+		torqueConverter.fill = 0.0;
+		torqueConverter.lockupRate = 0.0;
 	}
 }
 
@@ -1281,29 +1281,29 @@ void TMoverParameters::hydro_TCFillCheck(double dt)
 void TMoverParameters::hydro_TCTorque()
 {
 	double HydroTorque = 0;
-	HydroTorque += hydro_TC_nIn * hydro_TC_nIn * hydro_TC_TorqueInIn;
-	HydroTorque += (hydro_TC_nIn - hydro_TC_nOut) * hydro_TC_TorqueInOut;
-	HydroTorque += hydro_TC_nOut * hydro_TC_nOut * hydro_TC_TorqueOutOut;
-	double nOut2In = hydro_TC_nOut / std::max(0.01, hydro_TC_nIn);
-	if (hydro_TC_Table.size() > 1)
+	HydroTorque += torqueConverter.revolutionsIn * torqueConverter.revolutionsIn * torqueConverter.torqueInIn;
+	HydroTorque += (torqueConverter.revolutionsIn - torqueConverter.revolutionsOut) * torqueConverter.torqueInOut;
+	HydroTorque += torqueConverter.revolutionsOut * torqueConverter.revolutionsOut * torqueConverter.torqueOutOut;
+	double nOut2In = torqueConverter.revolutionsOut / std::max(0.01, torqueConverter.revolutionsIn);
+	if (torqueConverter.table.size() > 1)
 	{
-		hydro_TC_TMRatio = TableInterpolation(hydro_TC_Table, nOut2In);
-		hydro_TC_TorqueOut = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
-		hydro_TC_TorqueIn = HydroTorque * hydro_TC_Fill * std::min(1.0, hydro_TC_TMRatio);
+		torqueConverter.torqueRatio = TableInterpolation(torqueConverter.table, nOut2In);
+		torqueConverter.torqueOut = HydroTorque * torqueConverter.fill * torqueConverter.torqueRatio;
+		torqueConverter.torqueIn = HydroTorque * torqueConverter.fill * std::min(1.0, torqueConverter.torqueRatio);
 	}
 	else
 	{
-		if (nOut2In < hydro_TC_CouplingPoint)
+		if (nOut2In < torqueConverter.couplingPoint)
 		{
-			hydro_TC_TMRatio = 1 + (hydro_TC_TMMax - 1) * square(1 - nOut2In / hydro_TC_CouplingPoint);
-			hydro_TC_TorqueIn = HydroTorque * hydro_TC_Fill;
-			hydro_TC_TorqueOut = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
+			torqueConverter.torqueRatio = 1 + (torqueConverter.maxTorqueRatio - 1) * square(1 - nOut2In / torqueConverter.couplingPoint);
+			torqueConverter.torqueIn = HydroTorque * torqueConverter.fill;
+			torqueConverter.torqueOut = HydroTorque * torqueConverter.fill * torqueConverter.torqueRatio;
 		}
 		else
 		{
-			hydro_TC_TMRatio = (1 - nOut2In) / (1 - hydro_TC_CouplingPoint);
-			hydro_TC_TorqueIn = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
-			hydro_TC_TorqueOut = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
+			torqueConverter.torqueRatio = (1 - nOut2In) / (1 - torqueConverter.couplingPoint);
+			torqueConverter.torqueIn = HydroTorque * torqueConverter.fill * torqueConverter.torqueRatio;
+			torqueConverter.torqueOut = HydroTorque * torqueConverter.fill * torqueConverter.torqueRatio;
 		}
 	}
 }
@@ -1311,46 +1311,46 @@ void TMoverParameters::hydro_TCTorque()
 double TMoverParameters::dizel_MomentumRetarder(double n, double dt)
 {
 	double RetarderRequest = Mains ? std::max(0.0, -eimic_real) : 0;
-	if (hydro_R_WithIndividual)
+	if (retarder.withIndividual)
 		RetarderRequest = LocalBrakeRatio();
-	if (Vel < hydro_R_MinVel)
+	if (Vel < retarder.minVelocity)
 		RetarderRequest = 0;
-	if (hydro_R_Placement == 2 && enrot < dizel_nmin)
+	if (retarder.placement == 2 && enrot < diesel.minRevolutions)
 	{
 		RetarderRequest = 0;
 	}
 
-	hydro_R_ClutchActive = !hydro_R_Clutch || RetarderRequest > 0;
-	if (!hydro_R_Clutch || (hydro_R_ClutchActive && hydro_R_ClutchSpeed == 0))
+	retarder.clutchActive = !retarder.hasClutch || RetarderRequest > 0;
+	if (!retarder.hasClutch || (retarder.clutchActive && retarder.clutchSpeed == 0))
 	{
-		hydro_R_n = n * 60;
+		retarder.revolutions = n * 60;
 	}
-	else if (hydro_R_ClutchActive)
+	else if (retarder.clutchActive)
 	{
-		hydro_R_n = sign(n) * std::min(std::abs(hydro_R_n + hydro_R_ClutchSpeed * dt), std::abs(n * 60));
+		retarder.revolutions = sign(n) * std::min(std::abs(retarder.revolutions + retarder.clutchSpeed * dt), std::abs(n * 60));
 	}
 	else
 	{
-		hydro_R_n = 0;
+		retarder.revolutions = 0;
 	}
-	n = hydro_R_n / 60.f;
+	n = retarder.revolutions / 60.f;
 
-	if (hydro_R_Fill < RetarderRequest) // gdy zadane hamowanie
+	if (retarder.fill < RetarderRequest) // gdy zadane hamowanie
 	{
-		hydro_R_Fill = std::min(hydro_R_Fill + hydro_R_FillRateInc * dt, RetarderRequest);
+		retarder.fill = std::min(retarder.fill + retarder.fillRateIncrease * dt, RetarderRequest);
 	}
 	else
 	{
-		hydro_R_Fill = std::max(hydro_R_Fill - hydro_R_FillRateDec * dt, RetarderRequest);
+		retarder.fill = std::max(retarder.fill - retarder.fillRateDecrease * dt, RetarderRequest);
 	}
 
-	double Moment = hydro_R_MaxTorque;
-	if (double pwr = Moment * std::abs(n) * M_PI * 2 * 0.001; pwr > hydro_R_MaxPower)
-		Moment = Moment * hydro_R_MaxPower / pwr;
-	double moment_in = n * n * hydro_R_TorqueInIn;
-	Moment = std::min(moment_in, Moment * hydro_R_Fill);
+	double Moment = retarder.maxTorque;
+	if (double pwr = Moment * std::abs(n) * M_PI * 2 * 0.001; pwr > retarder.maxPower)
+		Moment = Moment * retarder.maxPower / pwr;
+	double moment_in = n * n * retarder.torqueInIn;
+	Moment = std::min(moment_in, Moment * retarder.fill);
 
-	hydro_R_Torque = Moment;
+	retarder.torque = Moment;
 
 	return Moment;
 }
@@ -1360,15 +1360,15 @@ void TMoverParameters::dizel_HeatSet(float const Value)
 {
 
 	// TODO: don't include ambient temperature, pull it from environment data instead
-	dizel_heat.Te = Value;
-	dizel_heat.Ts = Value;
-	dizel_heat.To = Value;
-	dizel_heat.Tsr = Value;
-	dizel_heat.Twy = Value;
-	dizel_heat.Tsr2 = Value;
-	dizel_heat.Twy2 = Value;
-	dizel_heat.temperatura1 = Value;
-	dizel_heat.temperatura2 = Value;
+	diesel.heat.Te = Value;
+	diesel.heat.Ts = Value;
+	diesel.heat.To = Value;
+	diesel.heat.Tsr = Value;
+	diesel.heat.Twy = Value;
+	diesel.heat.Tsr2 = Value;
+	diesel.heat.Twy2 = Value;
+	diesel.heat.temperatura1 = Value;
+	diesel.heat.temperatura2 = Value;
 }
 
 // calculates diesel engine temperature and heat transfers
@@ -1386,7 +1386,7 @@ void TMoverParameters::dizel_Heat(double const dt)
 	auto const gwmin2{400.0};
 	auto const gwmax2{4000.0};
 
-	dizel_heat.Te = Global.AirTemperature;
+	diesel.heat.Te = Global.AirTemperature;
 
 	auto const engineon{(Mains ? 1 : 0)};
 	auto const engineoff{(Mains ? 0 : 1)};
@@ -1399,36 +1399,36 @@ void TMoverParameters::dizel_Heat(double const dt)
 	auto const gw2 = engineon * std::lerp(gwmin2, gwmax2, revolutionsfactor) + waterpump * 1000 + engineoff * 200;
 	auto const gwO = std::lerp(gwmin, gwmax, revolutionsfactor);
 
-	dizel_heat.water.is_cold = dizel_heat.water.config.temp_min > 0 && dizel_heat.temperatura1 < dizel_heat.water.config.temp_min - (Mains ? 5 : 0);
-	dizel_heat.water.is_hot = dizel_heat.water.config.temp_max > 0 && dizel_heat.temperatura1 > dizel_heat.water.config.temp_max - (dizel_heat.water.is_hot ? 8 : 0);
-	dizel_heat.water_aux.is_cold = dizel_heat.water_aux.config.temp_min > 0 && dizel_heat.temperatura2 < dizel_heat.water_aux.config.temp_min - (Mains ? 5 : 0);
-	dizel_heat.water_aux.is_hot = dizel_heat.water_aux.config.temp_max > 0 && dizel_heat.temperatura2 > dizel_heat.water_aux.config.temp_max - (dizel_heat.water_aux.is_hot ? 8 : 0);
-	dizel_heat.oil.is_cold = dizel_heat.oil.config.temp_min > 0 && dizel_heat.To < dizel_heat.oil.config.temp_min - (Mains ? 5 : 0);
-	dizel_heat.oil.is_hot = dizel_heat.oil.config.temp_max > 0 && dizel_heat.To > dizel_heat.oil.config.temp_max - (dizel_heat.oil.is_hot ? 8 : 0);
+	diesel.heat.water.is_cold = diesel.heat.water.config.temp_min > 0 && diesel.heat.temperatura1 < diesel.heat.water.config.temp_min - (Mains ? 5 : 0);
+	diesel.heat.water.is_hot = diesel.heat.water.config.temp_max > 0 && diesel.heat.temperatura1 > diesel.heat.water.config.temp_max - (diesel.heat.water.is_hot ? 8 : 0);
+	diesel.heat.water_aux.is_cold = diesel.heat.water_aux.config.temp_min > 0 && diesel.heat.temperatura2 < diesel.heat.water_aux.config.temp_min - (Mains ? 5 : 0);
+	diesel.heat.water_aux.is_hot = diesel.heat.water_aux.config.temp_max > 0 && diesel.heat.temperatura2 > diesel.heat.water_aux.config.temp_max - (diesel.heat.water_aux.is_hot ? 8 : 0);
+	diesel.heat.oil.is_cold = diesel.heat.oil.config.temp_min > 0 && diesel.heat.To < diesel.heat.oil.config.temp_min - (Mains ? 5 : 0);
+	diesel.heat.oil.is_hot = diesel.heat.oil.config.temp_max > 0 && diesel.heat.To > diesel.heat.oil.config.temp_max - (diesel.heat.oil.is_hot ? 8 : 0);
 	// engine overheat check
-	dizel_heat.engine_is_hot = dizel_heat.engine_max_temp > 0 && dizel_heat.Ts > dizel_heat.engine_max_temp - (dizel_heat.engine_is_hot ? 8 : 0);
+	diesel.heat.engine_is_hot = diesel.heat.engine_max_temp > 0 && diesel.heat.Ts > diesel.heat.engine_max_temp - (diesel.heat.engine_is_hot ? 8 : 0);
 
-	auto const PT = false == dizel_heat.water.is_cold && false == dizel_heat.water.is_hot && false == dizel_heat.water_aux.is_cold && false == dizel_heat.water_aux.is_hot &&
-	                false == dizel_heat.oil.is_cold && false == dizel_heat.oil.is_hot && false == dizel_heat.engine.is_hot /* && ( false == awaria_termostatow ) */
+	auto const PT = false == diesel.heat.water.is_cold && false == diesel.heat.water.is_hot && false == diesel.heat.water_aux.is_cold && false == diesel.heat.water_aux.is_hot &&
+	                false == diesel.heat.oil.is_cold && false == diesel.heat.oil.is_hot && false == diesel.heat.engine.is_hot /* && ( false == awaria_termostatow ) */
 	    /* || PTp */;
 	auto const PPT = false == PT /* && ( false == PPTp ) */;
-	dizel_heat.PA = /* ( ( !zamkniecie or niedomkniecie ) and !WBD ) || */ PPT /* || nurnik || ( woda < 7 ) */;
+	diesel.heat.PA = /* ( ( !zamkniecie or niedomkniecie ) and !WBD ) || */ PPT /* || nurnik || ( woda < 7 ) */;
 
 	// engine heat transfers
-	auto const Ge{engineon * (0.21 * dizel_heat.powerfactor * EnginePower + 12) / 3600};
+	auto const Ge{engineon * (0.21 * diesel.heat.powerfactor * EnginePower + 12) / 3600};
 	// TODO: replace fixed heating power cost with more accurate calculation
-	auto const obciazenie{engineon * (dizel_heat.powerfactor * EnginePower / 950 + (Heating ? HeatingPower : 0) + 70)};
+	auto const obciazenie{engineon * (diesel.heat.powerfactor * EnginePower / 950 + (Heating ? HeatingPower : 0) + 70)};
 	auto const Qd{qs * Ge - obciazenie};
 	// silnik oddaje czesc ciepla do wody chlodzacej, a takze pewna niewielka czesc do otoczenia, modyfikowane przez okienko
-	auto const Qs{(Qd - dizel_heat.kfs * (dizel_heat.Ts - dizel_heat.Tsr) - dizel_heat.kfe * /* ( 0.3 + 0.7 * ( dizel_heat.okienko ? 1 : 0 ) ) * */ (dizel_heat.Ts - dizel_heat.Te))};
+	auto const Qs{(Qd - diesel.heat.kfs * (diesel.heat.Ts - diesel.heat.Tsr) - diesel.heat.kfe * /* ( 0.3 + 0.7 * ( diesel.heat.okienko ? 1 : 0 ) ) * */ (diesel.heat.Ts - diesel.heat.Te))};
 	auto const dTss{Qs / Cs};
-	dizel_heat.Ts += static_cast<float>(dTss * dt);
+	diesel.heat.Ts += static_cast<float>(dTss * dt);
 
 	// oil heat transfers
 	// olej oddaje cieplo do wody gdy krazy przez wymiennik ciepla == wlaczona pompka lub silnik
-	auto const dTo{(dizel_heat.auxiliary_water_circuit ? (dizel_heat.kfo * (dizel_heat.Ts - dizel_heat.To) - dizel_heat.kfo2 * (dizel_heat.To - dizel_heat.Tsr2)) / (gwO * Co) :
-	                                                     (dizel_heat.kfo * (dizel_heat.Ts - dizel_heat.To) - dizel_heat.kfo2 * (dizel_heat.To - dizel_heat.Tsr)) / (gwO * Co))};
-	dizel_heat.To += static_cast<float>(dTo * dt);
+	auto const dTo{(diesel.heat.auxiliary_water_circuit ? (diesel.heat.kfo * (diesel.heat.Ts - diesel.heat.To) - diesel.heat.kfo2 * (diesel.heat.To - diesel.heat.Tsr2)) / (gwO * Co) :
+	                                                     (diesel.heat.kfo * (diesel.heat.Ts - diesel.heat.To) - diesel.heat.kfo2 * (diesel.heat.To - diesel.heat.Tsr)) / (gwO * Co))};
+	diesel.heat.To += static_cast<float>(dTo * dt);
 
 	// heater
 	/*
@@ -1436,54 +1436,54 @@ void TMoverParameters::dizel_Heat(double const dt)
 	        Qp = (float)( podgrzewacz and ( true == WaterPump.is_active ) and ( Twy < 55 ) and ( Twy2 < 55 ) ) * 1000;
 	    else
 	*/
-	auto const Qp = (true == WaterHeater.is_active && true == WaterPump.is_active && dizel_heat.Twy < 60 && dizel_heat.Twy2 < 60 ? 1 : 0) * 1000;
+	auto const Qp = (true == WaterHeater.is_active && true == WaterPump.is_active && diesel.heat.Twy < 60 && diesel.heat.Twy2 < 60 ? 1 : 0) * 1000;
 
 	auto const kurek07{1}; // unknown/unimplemented device TBD, TODO: identify and implement?
 
-	if (true == dizel_heat.auxiliary_water_circuit)
+	if (true == diesel.heat.auxiliary_water_circuit)
 	{
 		// auxiliary water circuit setup
-		dizel_heat.water_aux.is_warm = true == dizel_heat.cooling ||
+		diesel.heat.water_aux.is_warm = true == diesel.heat.cooling ||
 		                               (true == Mains && BatteryVoltage > 0.75 * NominalBatteryVoltage /* && !bezpompy && !awaria_chlodzenia && !WS10 */
-		                                && dizel_heat.water_aux.config.temp_cooling > 0 && dizel_heat.temperatura2 > dizel_heat.water_aux.config.temp_cooling - (dizel_heat.water_aux.is_warm ? 8 : 0));
-		auto const PTC2{(dizel_heat.water_aux.is_warm /*or PTC2p*/ ? 1 : 0)};
-		dizel_heat.rpmwz2 = static_cast<float>(PTC2 * (dizel_heat.fan_speed >= 0 ? rpm * dizel_heat.fan_speed : dizel_heat.fan_speed * -1));
-		dizel_heat.zaluzje2 = dizel_heat.water_aux.config.shutters ? PTC2 == 1 : true; // no shutters is an equivalent to having them open
-		auto const zaluzje2{(dizel_heat.zaluzje2 ? 1 : 0)};
+		                                && diesel.heat.water_aux.config.temp_cooling > 0 && diesel.heat.temperatura2 > diesel.heat.water_aux.config.temp_cooling - (diesel.heat.water_aux.is_warm ? 8 : 0));
+		auto const PTC2{(diesel.heat.water_aux.is_warm /*or PTC2p*/ ? 1 : 0)};
+		diesel.heat.rpmwz2 = static_cast<float>(PTC2 * (diesel.heat.fan_speed >= 0 ? rpm * diesel.heat.fan_speed : diesel.heat.fan_speed * -1));
+		diesel.heat.zaluzje2 = diesel.heat.water_aux.config.shutters ? PTC2 == 1 : true; // no shutters is an equivalent to having them open
+		auto const zaluzje2{(diesel.heat.zaluzje2 ? 1 : 0)};
 		// auxiliary water circuit heat transfer values
-		auto const kf2{kurek07 * (dizel_heat.kw * (0.3 + 0.7 * zaluzje2) * dizel_heat.rpmw2 + dizel_heat.kv * (0.3 + 0.7 * zaluzje2) * Vel / 3.6) + 2};
-		auto const dTs2{dizel_heat.kfo2 * (dizel_heat.To - dizel_heat.Tsr2) / (gw2 * Cw)};
+		auto const kf2{kurek07 * (diesel.heat.kw * (0.3 + 0.7 * zaluzje2) * diesel.heat.rpmw2 + diesel.heat.kv * (0.3 + 0.7 * zaluzje2) * Vel / 3.6) + 2};
+		auto const dTs2{diesel.heat.kfo2 * (diesel.heat.To - diesel.heat.Tsr2) / (gw2 * Cw)};
 		// przy otwartym kurku B ma³y obieg jest dogrzewany przez du¿y - stosujemy przy korzystaniu z podgrzewacza oraz w zimie
-		auto const Qch2{-kf2 * (dizel_heat.Tsr2 - dizel_heat.Te) + 80 * (true == WaterCircuitsLink ? 1 : 0) * (dizel_heat.Twy - dizel_heat.Tsr2)};
+		auto const Qch2{-kf2 * (diesel.heat.Tsr2 - diesel.heat.Te) + 80 * (true == WaterCircuitsLink ? 1 : 0) * (diesel.heat.Twy - diesel.heat.Tsr2)};
 		auto const dTch2{Qch2 / (gw2 * Cw)};
 		// auxiliary water circuit heat transfers finalization
 		// NOTE: since primary circuit doesn't read data from the auxiliary one, we can pretty safely finalize auxiliary updates before touching the primary circuit
-		auto const Twe2{dizel_heat.Twy2 + dTch2 * dt};
-		dizel_heat.Twy2 = static_cast<float>(Twe2 + dTs2 * dt);
-		dizel_heat.Tsr2 = static_cast<float>(0.5 * (dizel_heat.Twy2 + Twe2));
-		dizel_heat.temperatura2 = dizel_heat.Twy2;
+		auto const Twe2{diesel.heat.Twy2 + dTch2 * dt};
+		diesel.heat.Twy2 = static_cast<float>(Twe2 + dTs2 * dt);
+		diesel.heat.Tsr2 = static_cast<float>(0.5 * (diesel.heat.Twy2 + Twe2));
+		diesel.heat.temperatura2 = diesel.heat.Twy2;
 	}
 	// primary water circuit setup
-	dizel_heat.water.is_flowing = dizel_heat.water.config.temp_flow < 0 || dizel_heat.temperatura1 > dizel_heat.water.config.temp_flow - (dizel_heat.water.is_flowing ? 5 : 0);
-	auto const obieg{(dizel_heat.water.is_flowing ? 1 : 0)};
-	dizel_heat.water.is_warm =
-	    true == dizel_heat.cooling || (true == Mains && BatteryVoltage > 0.75 * NominalBatteryVoltage /* && !bezpompy && !awaria_chlodzenia && !WS10 */
-	                                   && dizel_heat.water.config.temp_cooling > 0 && dizel_heat.temperatura1 > dizel_heat.water.config.temp_cooling - (dizel_heat.water.is_warm ? 8 : 0));
-	auto const PTC1{(dizel_heat.water.is_warm /*or PTC1p*/ ? 1 : 0)};
-	dizel_heat.rpmwz = static_cast<float>(PTC1 * (dizel_heat.fan_speed >= 0 ? rpm * dizel_heat.fan_speed : dizel_heat.fan_speed * -1));
-	dizel_heat.zaluzje1 = dizel_heat.water.config.shutters ? PTC1 == 1 : true; // no shutters is an equivalent to having them open
-	auto const zaluzje1{(dizel_heat.zaluzje1 ? 1 : 0)};
+	diesel.heat.water.is_flowing = diesel.heat.water.config.temp_flow < 0 || diesel.heat.temperatura1 > diesel.heat.water.config.temp_flow - (diesel.heat.water.is_flowing ? 5 : 0);
+	auto const obieg{(diesel.heat.water.is_flowing ? 1 : 0)};
+	diesel.heat.water.is_warm =
+	    true == diesel.heat.cooling || (true == Mains && BatteryVoltage > 0.75 * NominalBatteryVoltage /* && !bezpompy && !awaria_chlodzenia && !WS10 */
+	                                   && diesel.heat.water.config.temp_cooling > 0 && diesel.heat.temperatura1 > diesel.heat.water.config.temp_cooling - (diesel.heat.water.is_warm ? 8 : 0));
+	auto const PTC1{(diesel.heat.water.is_warm /*or PTC1p*/ ? 1 : 0)};
+	diesel.heat.rpmwz = static_cast<float>(PTC1 * (diesel.heat.fan_speed >= 0 ? rpm * diesel.heat.fan_speed : diesel.heat.fan_speed * -1));
+	diesel.heat.zaluzje1 = diesel.heat.water.config.shutters ? PTC1 == 1 : true; // no shutters is an equivalent to having them open
+	auto const zaluzje1{(diesel.heat.zaluzje1 ? 1 : 0)};
 	// primary water circuit heat transfer values
-	auto const kf{obieg * kurek07 * (dizel_heat.kw * (0.3 + 0.7 * zaluzje1) * dizel_heat.rpmw + dizel_heat.kv * (0.3 + 0.7 * zaluzje1) * Vel / 3.6 + 3) + 2};
-	auto const dTs{(dizel_heat.auxiliary_water_circuit ? dizel_heat.kfs * (dizel_heat.Ts - dizel_heat.Tsr) / (gw * Cw) :
-	                                                     (dizel_heat.kfs * (dizel_heat.Ts - dizel_heat.Tsr) + dizel_heat.kfo2 * (dizel_heat.To - dizel_heat.Tsr)) / (gw * Cw))};
-	auto const Qch{-kf * (dizel_heat.Tsr - dizel_heat.Te) + Qp};
+	auto const kf{obieg * kurek07 * (diesel.heat.kw * (0.3 + 0.7 * zaluzje1) * diesel.heat.rpmw + diesel.heat.kv * (0.3 + 0.7 * zaluzje1) * Vel / 3.6 + 3) + 2};
+	auto const dTs{(diesel.heat.auxiliary_water_circuit ? diesel.heat.kfs * (diesel.heat.Ts - diesel.heat.Tsr) / (gw * Cw) :
+	                                                     (diesel.heat.kfs * (diesel.heat.Ts - diesel.heat.Tsr) + diesel.heat.kfo2 * (diesel.heat.To - diesel.heat.Tsr)) / (gw * Cw))};
+	auto const Qch{-kf * (diesel.heat.Tsr - diesel.heat.Te) + Qp};
 	auto const dTch{Qch / (gw * Cw)};
 	// primary water circuit heat transfers finalization
-	auto const Twe{dizel_heat.Twy + dTch * dt};
-	dizel_heat.Twy = static_cast<float>(Twe + dTs * dt);
-	dizel_heat.Tsr = static_cast<float>(0.5 * (dizel_heat.Twy + Twe));
-	dizel_heat.temperatura1 = dizel_heat.Twy;
+	auto const Twe{diesel.heat.Twy + dTch * dt};
+	diesel.heat.Twy = static_cast<float>(Twe + dTs * dt);
+	diesel.heat.Tsr = static_cast<float>(0.5 * (diesel.heat.Twy + Twe));
+	diesel.heat.temperatura1 = diesel.heat.Twy;
 	/*
 	    fuelConsumed = fuelConsumed + ( Ge * 0.5 );
 

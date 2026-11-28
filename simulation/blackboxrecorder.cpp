@@ -87,7 +87,7 @@ std::uint32_t devices_of(TMoverParameters const &Occupied, TMoverParameters cons
 	       on(Occupied.Hamulec != nullptr && Occupied.Hamulec->Releaser(), device::brake_releaser) | on(Controlling.FuelPump.is_active, device::fuel_pump) |
 	       on(Controlling.OilPump.is_active, device::oil_pump) |
 	       on(Controlling.MotorBlowers[end::front].is_active || Controlling.MotorBlowers[end::rear].is_active, device::motor_blowers) |
-	       on(Controlling.dizel_heat.engine_is_hot, device::engine_hot) | on(Controlling.SpeedCtrl && Controlling.SpeedCtrlUnit.IsActive, device::speed_control);
+	       on(Controlling.diesel.heat.engine_is_hot, device::engine_hot) | on(Controlling.SpeedCtrl && Controlling.SpeedCtrlUnit.IsActive, device::speed_control);
 }
 
 std::uint8_t engine_of(TMoverParameters const &Mover) {
@@ -480,17 +480,17 @@ void blackbox_recorder::write_cab() {
 	sample.driver_valve = occupied->Handle != nullptr ? static_cast<float>(occupied->Handle->GetCP()) : 0.0f;
 	sample.feed_pipe = static_cast<float>(occupied->ScndPipePress);
 	sample.oil_pressure = controlling->OilPump.pressure;
-	sample.water_temperature = controlling->dizel_heat.Twy;
-	sample.oil_temperature = controlling->dizel_heat.To;
-	sample.engine_temperature = controlling->dizel_heat.Ts;
+	sample.water_temperature = controlling->diesel.heat.Twy;
+	sample.oil_temperature = controlling->diesel.heat.To;
+	sample.engine_temperature = controlling->diesel.heat.Ts;
 	sample.speed_control_kmh = controlling->SpeedCtrl ? static_cast<float>(controlling->SpeedCtrlUnit.DesiredVelocity) : 0.0f;
 	sample.engine_power = static_cast<float>(controlling->EnginePower);
 	sample.hand_brake = static_cast<std::int8_t>(std::clamp(occupied->ManualBrakePos, -128, 127));
 	sample.brake_mode = static_cast<std::uint8_t>(occupied->BrakeOpModeFlag);
 	sample.horn = static_cast<std::uint8_t>(occupied->WarningSignal);
 	sample.integrated_controller = static_cast<float>(controlling->eimic);
-	sample.clutch = static_cast<float>(controlling->dizel_engagestate);
-	sample.converter_fill = static_cast<float>(controlling->hydro_TC_Fill);
+	sample.clutch = static_cast<float>(controlling->diesel.clutchState);
+	sample.converter_fill = static_cast<float>(controlling->torqueConverter.fill);
 	// the brakes of the whole train: the highest of its cylinders, from the head to the tail
 	auto brakes{occupied->BrakePress};
 	for (auto const *each{owner != nullptr ? owner->Vehicle(end::front) : nullptr}; each != nullptr; each = each->Next())

@@ -900,8 +900,8 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         mover.RventRot * 60,
         std::abs( mover.MotorBlowers[end::front].revolutions ),
         std::abs( mover.MotorBlowers[end::rear].revolutions ),
-        mover.dizel_heat.rpmw,
-        mover.dizel_heat.rpmw2 );
+        mover.diesel.heat.rpmw,
+        mover.diesel.heat.rpmw2 );
 
     std::string textline { m_buffer.data() };
 
@@ -909,11 +909,11 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         std::snprintf(
             m_buffer.data(), m_buffer.size(),
 		    STR_C("\nTemperatures:\n engine: %.2f, oil: %.2f, water: %.2f%c%.2f"),
-            mover.dizel_heat.Ts,
-            mover.dizel_heat.To,
-            mover.dizel_heat.temperatura1,
+            mover.diesel.heat.Ts,
+            mover.diesel.heat.To,
+            mover.diesel.heat.temperatura1,
             mover.WaterCircuitsLink ? '-' : '|',
-            mover.dizel_heat.temperatura2 );
+            mover.diesel.heat.temperatura2 );
         textline += m_buffer.data();
     }
 
@@ -1122,22 +1122,22 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
 
 		double fuel_mean = 0.0;
 		if (mover.DistCounter > 0.5) {
-			fuel_mean = 100 * mover.dizel_FuelConsumptedTotal / mover.DistCounter;
+			fuel_mean = 100 * mover.diesel.fuelConsumedTotal / mover.DistCounter;
 		}
 
         std::string parameterstext = "param       value";
         std::vector< std::pair <std::string, double> > const paramvalues {
 			{ "  rpm: ", mover.enrot * 60.0 },
-			{ "efill: ", mover.dizel_fill },
-            { "etorq: ", mover.dizel_Torque },
-			{ "power: ", mover.dizel_Power },
-			{ "f_act: ", mover.dizel_FuelConsumptionActual },
-			{ "f_tot: ", mover.dizel_FuelConsumptedTotal },
+			{ "efill: ", mover.diesel.fill },
+            { "etorq: ", mover.diesel.torque },
+			{ "power: ", mover.diesel.power },
+			{ "f_act: ", mover.diesel.fuelConsumptionActual },
+			{ "f_tot: ", mover.diesel.fuelConsumedTotal },
 			{ "fmean: ", fuel_mean },
-            { "creal: ", mover.dizel_engage },
-            { "cdesi: ", mover.dizel_engagestate },
-            { "cdelt: ", mover.dizel_engagedeltaomega },
-            { "gears: ", mover.dizel_automaticgearstatus} };
+            { "creal: ", mover.diesel.clutchPressure },
+            { "cdesi: ", mover.diesel.clutchState },
+            { "cdelt: ", mover.diesel.clutchSlip },
+            { "gears: ", mover.diesel.automaticGearShift} };
         for( auto const &[parametername, parametervalue] : paramvalues ) {
             parameterstext += "\n" + parametername + to_string( parametervalue, 2, 9 );
         }
@@ -1145,15 +1145,15 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
 
         parameterstext = "hydro      value";
         std::vector< std::pair <std::string, double> > const hydrovalues {
-            { "hTCnI: ", mover.hydro_TC_nIn },
-            { "hTCnO: ", mover.hydro_TC_nOut },
-            { "hTCTM: ", mover.hydro_TC_TMRatio },
-            { "hTCTI: ", mover.hydro_TC_TorqueIn },
-            { "hTCTO: ", mover.hydro_TC_TorqueOut },
-            { "hTCfl: ", mover.hydro_TC_Fill },
-            { "hRtFl: ", mover.hydro_R_Fill } ,
-			{ " hRtn: ", mover.hydro_R_n } ,
-			{ "hRtTq: ", mover.hydro_R_Torque }
+            { "hTCnI: ", mover.torqueConverter.revolutionsIn },
+            { "hTCnO: ", mover.torqueConverter.revolutionsOut },
+            { "hTCTM: ", mover.torqueConverter.torqueRatio },
+            { "hTCTI: ", mover.torqueConverter.torqueIn },
+            { "hTCTO: ", mover.torqueConverter.torqueOut },
+            { "hTCfl: ", mover.torqueConverter.fill },
+            { "hRtFl: ", mover.retarder.fill } ,
+			{ " hRtn: ", mover.retarder.revolutions } ,
+			{ "hRtTq: ", mover.retarder.torque }
 
 		};
 		for( auto const &[parametername, parametervalue] : hydrovalues ) {

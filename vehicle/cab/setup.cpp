@@ -1880,21 +1880,21 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 		// oil temperature
 		auto &gauge = Cabine[Cabindex].Gauge(-1); // pierwsza wolna gałka
 		gauge.Load(Parser, DynamicObject);
-		gauge.AssignFloat(&mvControlled->dizel_heat.To);
+		gauge.AssignFloat(&mvControlled->diesel.heat.To);
 	}
 	else if (Label == "water1temp:")
 	{
 		// main circuit water temperature
 		auto &gauge = Cabine[Cabindex].Gauge(-1); // pierwsza wolna gałka
 		gauge.Load(Parser, DynamicObject);
-		gauge.AssignFloat(&mvControlled->dizel_heat.temperatura1);
+		gauge.AssignFloat(&mvControlled->diesel.heat.temperatura1);
 	}
 	else if (Label == "water2temp:")
 	{
 		// auxiliary circuit water temperature
 		auto &gauge = Cabine[Cabindex].Gauge(-1); // pierwsza wolna gałka
 		gauge.Load(Parser, DynamicObject);
-		gauge.AssignFloat(&mvControlled->dizel_heat.temperatura2);
+		gauge.AssignFloat(&mvControlled->diesel.heat.temperatura2);
 	}
 	else if (Label == "pantpress:")
 	{
@@ -1982,7 +1982,7 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 		// np. ciśnienie sterownika sprzęgła
 		auto &gauge = Cabine[Cabindex].Gauge(-1); // pierwsza wolna gałka
 		gauge.Load(Parser, DynamicObject);
-		gauge.AssignDouble(&mvControlled->dizel_engage);
+		gauge.AssignDouble(&mvControlled->diesel.clutchPressure);
 	} // ggEngageRatio.Load(Parser,DynamicObject->mdKabina);
 	else if (Label == "maingearstatus:")
 	{

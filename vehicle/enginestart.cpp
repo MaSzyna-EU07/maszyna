@@ -103,7 +103,7 @@ bool remote_switch::open(TMoverParameters &Engine) {
 }
 
 bool remote_switch::is_running(TMoverParameters const &Engine) {
-	return Engine.Mains || Engine.dizel_startup;
+	return Engine.Mains || Engine.diesel.startupRequested;
 }
 
 } // namespace engine_start

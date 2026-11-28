@@ -653,10 +653,10 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     btMechanik1.Init( "mechanik1", mdLowPolyInt, false);
 	btMechanik2.Init( "mechanik2", mdLowPolyInt, false);
 
-    if( MoverParameters->dizel_heat.water.config.shutters ) {
+    if( MoverParameters->diesel.heat.water.config.shutters ) {
         btShutters1.Init( "shutters1", mdModel, false );
     }
-    if( MoverParameters->dizel_heat.water_aux.config.shutters ) {
+    if( MoverParameters->diesel.heat.water_aux.config.shutters ) {
         btShutters2.Init( "shutters2", mdModel, false );
     }
     TurnOff(); // resetowanie zmiennych submodeli

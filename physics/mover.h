@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/derailmotion.h"
 #include "vehicle/odometerreading.h"
 #include "physics/vehicletypes.h"
+#include "physics/components/dieselengine.h"
 
 class TractionDrive;
 
@@ -810,68 +811,6 @@ class TMoverParameters
 		bool is_damaged{false}; // device is damaged
 	};
 
-	struct heat_data
-	{
-		// input, state of relevant devices
-		bool cooling{false}; // TODO: user controlled device, implement
-		//    bool okienko { true }; // window in the engine compartment
-		// system configuration
-		bool auxiliary_water_circuit{false}; // cooling system has an extra water circuit
-		double fan_speed{0.075}; // cooling fan rpm; either fraction of engine rpm, or absolute value if negative
-		// heat exchange factors
-		double kw{0.35};
-		double kv{0.6};
-		double kfe{1.0};
-		double kfs{80.0};
-		double kfo{25.0};
-		double kfo2{25.0};
-		// system parts
-		struct fluid_circuit_t
-		{
-
-			struct circuit_config_t
-			{
-				float temp_min{-1}; // lowest accepted temperature
-				float temp_max{-1}; // highest accepted temperature
-				float temp_cooling{-1}; // active cooling activation point
-				float temp_flow{-1}; // fluid flow activation point
-				bool shutters{false}; // the radiator has shutters to assist the cooling
-			};
-			circuit_config_t config;
-			bool is_cold{false}; // fluid is too cold
-			bool is_warm{false}; // fluid is too hot
-			bool is_hot{false}; // fluid temperature crossed cooling threshold
-			bool is_flowing{false}; // fluid is being pushed through the circuit
-		};
-		fluid_circuit_t water;
-		fluid_circuit_t water_aux;
-		fluid_circuit_t oil;
-		fluid_circuit_t engine;
-		// output, state of affected devices
-		bool PA{false}; // malfunction flag
-		float rpmw{0.0}; // current main circuit fan revolutions
-		float rpmwz{0.0}; // desired main circuit fan revolutions
-		bool zaluzje1{false};
-		float rpmw2{0.0}; // current auxiliary circuit fan revolutions
-		float rpmwz2{0.0}; // desired auxiliary circuit fan revolutions
-		bool zaluzje2{false};
-		// output, temperatures
-		float Te{15.0}; // ambient temperature TODO: get it from environment data
-		// NOTE: by default the engine is initialized in warm, startup-ready state
-		float Ts{50.0}; // engine temperature
-		float To{45.0}; // oil temperature
-		float Tsr{50.0}; // main circuit radiator temperature (?)
-		float Twy{50.0}; // main circuit water temperature
-		float Tsr2{40.0}; // secondary circuit radiator temperature (?)
-		float Twy2{40.0}; // secondary circuit water temperature
-		float temperatura1{50.0};
-		float temperatura2{40.0};
-		float powerfactor{1.0}; // coefficient of heat generation for engines other than su45
-		// engine overheat threshold
-		float engine_max_temp{-1}; // maximum acceptable engine temperature, triggers overheat lamp when exceeded
-		bool engine_is_hot{false}; // engine temperature crossed cooling threshold
-	};
-
 	struct spring_brake
 	{
 		std::shared_ptr<TReservoir> Cylinder;
@@ -1184,64 +1123,12 @@ class TMoverParameters
 	int SmallCompressorPower = 0; /*Winger ZROBIC*/
 	bool Trafo = false; /*pojazd wyposażony w transformator*/
 
-	/*-sekcja parametrow dla lokomotywy spalinowej z przekladnia mechaniczna*/
-	double dizel_Mmax = 1.0;
-	double dizel_nMmax = 1.0;
-	double dizel_Mnmax = 2.0;
-	double dizel_nmax = 2.0;
-	double dizel_nominalfill = 0.0;
-	std::map<double, double> dizel_Momentum_Table;
-	std::map<double, double> dizel_vel2nmax_Table;
-	/*parametry aproksymacji silnika spalinowego*/
-	double dizel_Mstand = 0.0; /*moment oporow ruchu silnika dla enrot=0*/
-	/*                dizel_auto_min, dizel_auto_max: real; {predkosc obrotowa przelaczania automatycznej skrzyni biegow*/
-	double dizel_nmax_cutoff = 0.0; /*predkosc obrotowa zadzialania ogranicznika predkosci*/
-	double dizel_nmin = 0.0; /*najmniejsza dopuszczalna predkosc obrotowa*/
-	double dizel_nmin_hdrive = 0.0; /*najmniejsza dopuszczalna predkosc obrotowa w czasie jazdy na hydro */
-	double dizel_nmin_hdrive_factor = 0.0; /*wspolczynnik wzrostu obrotow minimalnych hydro zaleznosci od zadanego procentu*/
-	double dizel_nmin_retarder = 0.0; /*obroty pracy podczas hamowania retarderem*/
-	double dizel_nreg_acc = 999.0; /*tempo zwiększania prędkości przez regulator dizla */
-	double dizel_minVelfullengage = 0.0; /*najmniejsza predkosc przy jezdzie ze sprzeglem bez poslizgu*/
-	double dizel_maxVelANS = 3.0; /*predkosc progowa rozlaczenia przetwornika momentu*/
-	double dizel_AIM = 1.0; /*moment bezwladnosci walu itp*/
-	double dizel_RevolutionsDecreaseRate{2.0};
-	double dizel_NominalFuelConsumptionRate = 250.0; /*jednostkowe zużycie paliwa przy mocy nominalnej, wczytywane z fiz, g/kWh*/
-	double dizel_FuelConsumption = 0.0; /*współczynnik zużycia paliwa przeliczony do jednostek maszynowych, l/obrót*/
-	double dizel_FuelConsumptionActual = 0.0; /*chwilowe spalanie paliwa w l/h*/
-	double dizel_FuelConsumptedTotal = 0.0; /*ilość paliwa zużyta od początku symulacji, l*/
-	double dizel_engageDia = 0.5;
-	double dizel_engageMaxForce = 6000.0;
-	double dizel_engagefriction = 0.5; /*parametry sprzegla*/
+	// the diesel engine, its torque converter and its retarder (physics/components/dieselengine.h)
+	DieselEngine diesel;
+	TorqueConverter torqueConverter;
+	Retarder retarder;
 	double engagedownspeed = 0.9;
 	double engageupspeed = 0.5;
-	/*parametry przetwornika momentu*/
-	bool hydro_TC = false; /*obecnosc hydraulicznego przetwornika momentu*/
-	double hydro_TC_TMMax = 2.0; /*maksymalne wzmocnienie momentu*/
-	double hydro_TC_CouplingPoint = 0.85; /*wzgledna predkosc zasprzeglenia*/
-	double hydro_TC_LockupTorque = 3000.0; /*moment graniczny sprzegla blokujacego*/
-	double hydro_TC_LockupRate = 1.0; /*szybkosc zalaczania sprzegla blokujacego*/
-	double hydro_TC_UnlockRate = 1.0; /*szybkosc rozlaczania sprzegla blokujacego*/
-	double hydro_TC_FillRateInc = 1.0; /*szybkosc napelniania sprzegla*/
-	double hydro_TC_FillRateDec = 1.0; /*szybkosc oprozniania sprzegla*/
-	double hydro_TC_TorqueInIn = 4.5; /*stala momentu proporcjonalnego do kwadratu obrotow wejsciowych*/
-	double hydro_TC_TorqueInOut = 0.0; /*stala momentu proporcjonalnego do roznica obrotow wejsciowych i wyjsciowych*/
-	double hydro_TC_TorqueOutOut = 0.0; /*stala momentu proporcjonalnego do kwadratu obrotow wyjsciowych*/
-	double hydro_TC_LockupSpeed = 1.0; /*prog predkosci zalaczania sprzegla blokujacego*/
-	double hydro_TC_UnlockSpeed = 1.0; /*prog predkosci rozlaczania sprzegla blokujacego*/
-	std::map<double, double> hydro_TC_Table; /*tablica przetwornika momentu*/
-	/*parametry retardera*/
-	bool hydro_R = false; /*obecnosc retardera*/
-	int hydro_R_Placement = 0; /*umiejscowienie retardera: 0 - za skrzynia biegow, 1 - miedzy przetwornikiem a biegami, 2 - przed skrzynia biegow */
-	double hydro_R_TorqueInIn = 1.0; /*stala momentu proporcjonalnego do kwadratu obrotow wejsciowych*/
-	double hydro_R_MaxTorque = 1.0; /*maksymalny moment retardera*/
-	double hydro_R_MaxPower = 1.0; /*maksymalna moc retardera - ogranicza moment*/
-	double hydro_R_FillRateInc = 1.0; /*szybkosc napelniania sprzegla*/
-	double hydro_R_FillRateDec = 1.0; /*szybkosc oprozniania sprzegla*/
-	double hydro_R_MinVel = 1.0; /*minimalna predkosc, przy ktorej retarder dziala*/
-	double hydro_R_EngageVel = 1.0; /*minimalna predkosc hamowania, przy ktorej sprzeglo jest wciaz wlaczone*/
-	bool hydro_R_Clutch = false; /*czy retarder ma rozłączalne sprzęgło*/
-	double hydro_R_ClutchSpeed = 10.0; /*szybkość narastania obrotów po włączeniu sprzęgła retardera*/
-	bool hydro_R_WithIndividual = false; /*czy dla autobusów jest to łączone*/
 	/*- dla lokomotyw spalinowo-elektrycznych -*/
 	double AnPos = 0.0; // pozycja sterowania dokladnego (analogowego)
 	bool AnalogCtrl = false; //
@@ -1448,7 +1335,6 @@ class TMoverParameters
 	water_pump WaterPump;
 	water_heater WaterHeater;
 	bool WaterCircuitsLink{false}; // optional connection between water circuits
-	heat_data dizel_heat;
 	std::array<cooling_fan, 2> MotorBlowers;
 	door_data Doors;
 	float DoorsOpenWithPermitAfter{-1.f}; // remote open if permit button is held for specified time. NOTE: separate from door data as its cab control thing
@@ -1597,42 +1483,6 @@ class TMoverParameters
 	bool OvervoltageRelay{true}; // switches off if the power level goes above threshold
 	bool s_CAtestebrake = false; // hunter-091012: zmienna dla testu ca
 	std::array<std::pair<double, double>, 4> PowerCircuits; // 24v, 110v, 3x400v and 3000v power circuits, voltage from local sources and current draw pairs
-
-	/*-zmienne dla lokomotywy spalinowej z przekladnia mechaniczna*/
-	double dizel_fill = 0.0; /*napelnienie*/
-	double dizel_engagestate = 0.0; /*sprzeglo skrzyni biegow: 0 - luz, 1 - wlaczone, 0.5 - wlaczone 50% (z poslizgiem)*/
-	double dizel_engage = 0.0; /*sprzeglo skrzyni biegow: aktualny docisk*/
-	double dizel_automaticgearstatus = 0.0; /*0 - bez zmiany, -1 zmiana na nizszy +1 zmiana na wyzszy*/
-	bool dizel_startup{false}; // engine startup procedure request indicator
-	bool dizel_ignition{false}; // engine ignition request indicator
-	bool dizel_spinup{false}; // engine spin up to idle speed flag
-	// the starter turns the engine a while before it fires: smoke comes out only after SmokeDelay (the Engine section of the vehicle's
-	// .fiz, seconds from the start of the spin up) has passed. 0, the default, lets it out as soon as the starter turns, as before eu07/maszyna#523
-	double dizel_SmokeDelay{0.0};
-	double dizel_FiringCountdown{0.0}; // seconds left until the engine being started fires, 0 once it runs on its own
-	double dizel_engagedeltaomega = 0.0; /*roznica predkosci katowych tarcz sprzegla*/
-	double dizel_n_old = 0.0; /*poredkosc na potrzeby obliczen sprzegiel*/
-	double dizel_Torque = 0.0; /*aktualny moment obrotowy silnika spalinowego*/
-	double dizel_Power = 0.0; /*aktualna moc silnika spalinowego*/
-	double dizel_nreg_min = 0.0; /*predkosc regulatora minimalna, zmienna w hydro*/
-	double dizel_nreg_max = 0.0; /*predkosc regulatora maksymalna, zmienna w hydro*/
-
-	/* - zmienne dla przetowrnika momentu */
-	double hydro_TC_Fill = 0.0; /*napelnienie*/
-	bool hydro_TC_Lockup = false; /*zapiecie sprzegla*/
-	double hydro_TC_TorqueIn = 0.0; /*moment*/
-	double hydro_TC_TorqueOut = 0.0; /*moment*/
-	double hydro_TC_TMRatio = 1.0; /*aktualne przelozenie momentu*/
-	double hydro_TC_Request = 0.0; /*zadanie sily*/
-	double hydro_TC_nIn = 0.0; /*predkosc obrotowa walu wejsciowego*/
-	double hydro_TC_nOut = 0.0; /*predkosc obrotowa walu wyjsciowego*/
-
-	/* - zmienne dla przetowrnika momentu */
-	double hydro_R_Fill = 0.0; /*napelnienie*/
-	double hydro_R_Torque = 0.0; /*moment*/
-	double hydro_R_Request = 0.0; /*zadanie sily hamowania*/
-	double hydro_R_n = 0.0; /*predkosc obrotowa retardera*/
-	bool hydro_R_ClutchActive = false; /*czy retarder jest napędzany*/
 
 	/*- zmienne dla lokomotyw z silnikami indukcyjnymi -*/
 	double eimic = 0; /*aktualna pozycja zintegrowanego sterowania jazda i hamowaniem*/
@@ -2329,7 +2179,7 @@ class TMoverParameters
 	double dizel_DigitalFill(double dt);
 	double dizel_GovernorFill(int mcp, double realfill) const;
 	double dizel_GovernorRevolutions(int mcp, double &realfill) const;
-	double dizel_Momentum(double dizel_fill, double n, double dt);
+	double dizel_Momentum(double Fill, double n, double dt);
 	void hydro_TCFillCheck(double dt);
 	void hydro_TCTorque();
 	double dizel_MomentumRetarder(double n, double dt); // moment hamowania retardera

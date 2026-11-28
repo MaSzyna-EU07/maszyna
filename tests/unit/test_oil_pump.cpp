@@ -31,11 +31,11 @@ TEST_CASE("oil pump: the pump started with the engine start procedure stops once
 	REQUIRE(loco->OilPump.start_type == start_t::automatic);
 	loco->Power24vIsAvailable = true;
 
-	loco->dizel_startup = true; // starter button pressed
+	loco->diesel.startupRequested = true; // starter button pressed
 	loco->OilPumpCheck(0.01);
 	CHECK(loco->OilPump.is_active);
 
-	loco->dizel_startup = false; // start procedure done, the pump keeps working until the engine runs
+	loco->diesel.startupRequested = false; // start procedure done, the pump keeps working until the engine runs
 	loco->OilPumpCheck(0.01);
 	CHECK(loco->OilPump.is_active);
 

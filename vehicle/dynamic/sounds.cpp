@@ -1022,8 +1022,8 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
                 }
                 case TEngineType::DieselEngine: {
                     if( Vehicle.enrot > 0.0 ) {
-                        volume = Vehicle.EnginePower > 0 ? engine.m_amplitudeoffset + engine.m_amplitudefactor * Vehicle.dizel_fill :
-					                                       engine.m_amplitudeoffset + engine.m_amplitudefactor * std::fabs(Vehicle.enrot / Vehicle.dizel_nmax);
+                        volume = Vehicle.EnginePower > 0 ? engine.m_amplitudeoffset + engine.m_amplitudefactor * Vehicle.diesel.fill :
+					                                       engine.m_amplitudeoffset + engine.m_amplitudefactor * std::fabs(Vehicle.enrot / Vehicle.diesel.maxRevolutions);
                     }
                     break;
                 }
@@ -1108,7 +1108,7 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
     // youBy - przenioslem, bo diesel tez moze miec turbo
     if( Vehicle.TurboTest > 0 ) {
         // udawanie turbo:
-		auto const pitch_diesel{Vehicle.EngineType == TEngineType::DieselEngine || Vehicle.EngineType == TEngineType::DieselElectric ? Vehicle.enrot / Vehicle.dizel_nmax * Vehicle.dizel_fill : 1};
+		auto const pitch_diesel{Vehicle.EngineType == TEngineType::DieselEngine || Vehicle.EngineType == TEngineType::DieselElectric ? Vehicle.enrot / Vehicle.diesel.maxRevolutions * Vehicle.diesel.fill : 1};
         auto const goalpitch { std::max( 0.025, ( /*engine_volume **/ pitch_diesel + engine_turbo.m_frequencyoffset ) * engine_turbo.m_frequencyfactor ) };
         auto const goalvolume { (
             Vehicle.MainCtrlPos >= Vehicle.TurboTest && Vehicle.enrot > 0.1 ?
@@ -1133,14 +1133,14 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
         }
     }
 
-    if( Vehicle.dizel_engage > 0.1 ) {
-        if( std::abs( Vehicle.dizel_engagedeltaomega ) > 0.2 ) {
-            frequency = rsEngageSlippery.m_frequencyoffset + rsEngageSlippery.m_frequencyfactor * std::fabs( Vehicle.dizel_engagedeltaomega );
-            volume = rsEngageSlippery.m_amplitudeoffset + rsEngageSlippery.m_amplitudefactor * Vehicle.dizel_engage;
+    if( Vehicle.diesel.clutchPressure > 0.1 ) {
+        if( std::abs( Vehicle.diesel.clutchSlip ) > 0.2 ) {
+            frequency = rsEngageSlippery.m_frequencyoffset + rsEngageSlippery.m_frequencyfactor * std::fabs( Vehicle.diesel.clutchSlip );
+            volume = rsEngageSlippery.m_amplitudeoffset + rsEngageSlippery.m_amplitudefactor * Vehicle.diesel.clutchPressure;
         }
         else {
             frequency = 1.f; // rsEngageSlippery.FA+0.7*rsEngageSlippery.FM*(fabs(mvControlled->enrot)+mvControlled->nmax);
-            volume = Vehicle.dizel_engage > 0.2 ? rsEngageSlippery.m_amplitudeoffset + 0.2 * rsEngageSlippery.m_amplitudefactor * (Vehicle.enrot / Vehicle.nmax) : 0.f;
+            volume = Vehicle.diesel.clutchPressure > 0.2 ? rsEngageSlippery.m_amplitudeoffset + 0.2 * rsEngageSlippery.m_amplitudefactor * (Vehicle.enrot / Vehicle.nmax) : 0.f;
         }
 
         rsEngageSlippery
@@ -1152,14 +1152,14 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
         rsEngageSlippery.stop();
     }
 
-	if (Vehicle.hydro_R) {
-		float speed = std::abs(Vehicle.hydro_R_n);
+	if (Vehicle.retarder.present) {
+		float speed = std::abs(Vehicle.retarder.revolutions);
 
 		retarder
 			.pitch(retarder.m_frequencyoffset + speed * retarder.m_frequencyfactor)
-			.gain(retarder.m_amplitudeoffset + Vehicle.hydro_R_Fill * retarder.m_amplitudefactor);
+			.gain(retarder.m_amplitudeoffset + Vehicle.retarder.fill * retarder.m_amplitudefactor);
 
-		if (retarder.gain() > 0.01 && speed > 1 && Vehicle.hydro_R_ClutchActive) {
+		if (retarder.gain() > 0.01 && speed > 1 && Vehicle.retarder.clutchActive) {
 			retarder.play(sound_flags::exclusive | sound_flags::looping);
 		}
 		else {
@@ -1332,11 +1332,11 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
     if( Vehicle.EngineType == TEngineType::DieselEngine
      || Vehicle.EngineType == TEngineType::DieselElectric ) {
 
-        if( Vehicle.dizel_heat.rpmw > 0.1 ) {
+        if( Vehicle.diesel.heat.rpmw > 0.1 ) {
             // NOTE: fan speed tends to max out at ~100 rpm; by default we try to get pitch range of 0.5-1.5 and volume range of 0.5-1.0
             radiator_fan
-                .pitch( 0.5 + radiator_fan.m_frequencyoffset + radiator_fan.m_frequencyfactor * Vehicle.dizel_heat.rpmw * 0.01 )
-                .gain( 0.5 + radiator_fan.m_amplitudeoffset + 0.5 * radiator_fan.m_amplitudefactor * Vehicle.dizel_heat.rpmw * 0.01 )
+                .pitch( 0.5 + radiator_fan.m_frequencyoffset + radiator_fan.m_frequencyfactor * Vehicle.diesel.heat.rpmw * 0.01 )
+                .gain( 0.5 + radiator_fan.m_amplitudeoffset + 0.5 * radiator_fan.m_amplitudefactor * Vehicle.diesel.heat.rpmw * 0.01 )
                 .play( sound_flags::exclusive | sound_flags::looping );
         }
         else {
@@ -1344,11 +1344,11 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
             radiator_fan.stop();
         }
 
-        if( Vehicle.dizel_heat.rpmw2 > 0.1 ) {
+        if( Vehicle.diesel.heat.rpmw2 > 0.1 ) {
             // NOTE: fan speed tends to max out at ~100 rpm; by default we try to get pitch range of 0.5-1.5 and volume range of 0.5-1.0
             radiator_fan_aux
-                .pitch( 0.5 + radiator_fan_aux.m_frequencyoffset + radiator_fan_aux.m_frequencyfactor * Vehicle.dizel_heat.rpmw2 * 0.01 )
-                .gain( 0.5 + radiator_fan_aux.m_amplitudeoffset + 0.5 * radiator_fan_aux.m_amplitudefactor * Vehicle.dizel_heat.rpmw2 * 0.01 )
+                .pitch( 0.5 + radiator_fan_aux.m_frequencyoffset + radiator_fan_aux.m_frequencyfactor * Vehicle.diesel.heat.rpmw2 * 0.01 )
+                .gain( 0.5 + radiator_fan_aux.m_amplitudeoffset + 0.5 * radiator_fan_aux.m_amplitudefactor * Vehicle.diesel.heat.rpmw2 * 0.01 )
                 .play( sound_flags::exclusive | sound_flags::looping );
         }
         else {

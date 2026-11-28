@@ -173,14 +173,14 @@ void ui::vehicleparams_panel::render_contents()
 	              mover.EnginePower, std::abs(mover.TrainType == train_type::emu ? mover.ShowCurrent(0) : mover.Im),
 	              // revolutions
 	              std::abs(mover.enrot) * 60, std::abs(mover.nrot) * mover.Transmision.Ratio * 60, mover.RventRot * 60, std::abs(mover.MotorBlowers[end::front].revolutions),
-	              std::abs(mover.MotorBlowers[end::rear].revolutions), mover.dizel_heat.rpmw, mover.dizel_heat.rpmw2);
+	              std::abs(mover.MotorBlowers[end::rear].revolutions), mover.diesel.heat.rpmw, mover.diesel.heat.rpmw2);
 
 	ImGui::TextUnformatted(buffer.data());
 
 	if (isdieselenginepowered)
 	{
-		std::snprintf(buffer.data(), buffer.size(), STR_C("\nTemperatures:\n engine: %.2f, oil: %.2f, water: %.2f%c%.2f"), mover.dizel_heat.Ts, mover.dizel_heat.To, mover.dizel_heat.temperatura1,
-		              (mover.WaterCircuitsLink ? '-' : '|'), mover.dizel_heat.temperatura2);
+		std::snprintf(buffer.data(), buffer.size(), STR_C("\nTemperatures:\n engine: %.2f, oil: %.2f, water: %.2f%c%.2f"), mover.diesel.heat.Ts, mover.diesel.heat.To, mover.diesel.heat.temperatura1,
+		              (mover.WaterCircuitsLink ? '-' : '|'), mover.diesel.heat.temperatura2);
 		ImGui::TextUnformatted(buffer.data());
 	}
 

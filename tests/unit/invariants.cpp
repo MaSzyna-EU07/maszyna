@@ -84,14 +84,14 @@ std::vector<invariant> const &invariants() {
 	     [](auto const &M, double, auto const *) { return M.Power >= 0.01 || std::abs(M.Ft) < 1.0; },
 	     [](auto const &M) { return values({{"Power", M.Power}, {"Ft", M.Ft}}); }},
 	    {"engine fill between none and full",
-	     [](auto const &M, double, auto const *) { return M.dizel_fill >= 0.0 && M.dizel_fill <= 1.0; },
-	     [](auto const &M) { return values({{"dizel_fill", M.dizel_fill}}); }},
+	     [](auto const &M, double, auto const *) { return M.diesel.fill >= 0.0 && M.diesel.fill <= 1.0; },
+	     [](auto const &M) { return values({{"dizel_fill", M.diesel.fill}}); }},
 	    {"diesel engine turning forward, no faster than its top speed",
 	     [](auto const &M, double, auto const *) {
 		     // the governor lets it overshoot a little (the SN61 by 1%)
-		     return M.EngineType != TEngineType::DieselEngine || (M.enrot >= 0.0 && M.enrot <= 1.05 * M.dizel_nmax);
+		     return M.EngineType != TEngineType::DieselEngine || (M.enrot >= 0.0 && M.enrot <= 1.05 * M.diesel.maxRevolutions);
 	     },
-	     [](auto const &M) { return values({{"enrot", M.enrot}, {"dizel_nmax", M.dizel_nmax}}); }},
+	     [](auto const &M) { return values({{"enrot", M.enrot}, {"dizel_nmax", M.diesel.maxRevolutions}}); }},
 	    {"battery no higher than its nominal voltage",
 	     [](auto const &M, double, auto const *) { return M.NominalBatteryVoltage <= 0.0 || M.BatteryVoltage <= 1.05 * M.NominalBatteryVoltage; },
 	     [](auto const &M) { return values({{"BatteryVoltage", M.BatteryVoltage}, {"NominalBatteryVoltage", M.NominalBatteryVoltage}}); }},

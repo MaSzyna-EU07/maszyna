@@ -364,7 +364,7 @@ TController::PrepareHeating() {
         case TEngineType::DieselElectric:
         case TEngineType::DieselEngine: {
 
-            auto const &heat { mvControlling->dizel_heat };
+            auto const &heat { mvControlling->diesel.heat };
 
             // determine whether there's need to enable the water heater
             // if the heater has configured maximum temperature, it'll disable itself automatically, so we can leave it always running

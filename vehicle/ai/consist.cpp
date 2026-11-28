@@ -951,7 +951,7 @@ TController::determine_consist_state() {
 
             Ready = vehicle->Vel > EU07_AI_MOVEMENT // already moving
 			        || false == vehicle->Mains // deadweight vehicle
-			        || vehicle->enrot > 0.8 * (vehicle->EngineType == TEngineType::DieselEngine ? vehicle->dizel_nmin : vehicle->DElist[0].RPM / 60.0);
+			        || vehicle->enrot > 0.8 * (vehicle->EngineType == TEngineType::DieselEngine ? vehicle->diesel.minRevolutions : vehicle->DElist[0].RPM / 60.0);
         }
         p = p->Next(); // pojazd podłączony z tyłu (patrząc od czoła)
     }

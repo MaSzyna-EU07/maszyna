@@ -28,7 +28,7 @@ test::vehicle diesel() {
 
 TEST_CASE("smoke: a vehicle taken off the tracks puffs no more (#90)") {
 	auto vehicle{diesel()};
-	SUBCASE("engine starting") { vehicle->dizel_spinup = true; }
+	SUBCASE("engine starting") { vehicle->diesel.spinningUp = true; }
 	SUBCASE("engine idling") { vehicle->DirAbsolute = 0; }
 	SUBCASE("engine under load") {
 		vehicle->DirAbsolute = 1;
@@ -68,7 +68,7 @@ TEST_CASE("smoke: the engine adds to the steady rate of the source") {
 	CHECK(working > steady);
 
 	// the faster the starting engine turns, the more it puffs
-	vehicle->dizel_spinup = true;
+	vehicle->diesel.spinningUp = true;
 	vehicle->enrot = 100.0;
 	auto const slow{smoke::vehicle_spawn_count(vehicle.mover(), true, source, update)};
 	vehicle->enrot = 400.0;
@@ -77,7 +77,7 @@ TEST_CASE("smoke: the engine adds to the steady rate of the source") {
 
 TEST_CASE("smoke: the pending particles never outgrow the room of the source") {
 	auto vehicle{diesel()};
-	vehicle->dizel_spinup = true;
+	vehicle->diesel.spinningUp = true;
 	vehicle->enrot = 100000.0;
 	auto rate{source};
 	rate.pending = 99.f;
@@ -87,14 +87,14 @@ TEST_CASE("smoke: the pending particles never outgrow the room of the source") {
 
 TEST_CASE("smoke: an engine the starter turns lets out no smoke until it fires (#523)") {
 	auto vehicle{diesel()};
-	vehicle->dizel_spinup = true;
+	vehicle->diesel.spinningUp = true;
 	auto pending{source};
 	pending.pending = 5.f;
 
-	vehicle->dizel_FiringCountdown = 0.5;
+	vehicle->diesel.firingCountdown = 0.5;
 	CHECK(smoke::vehicle_spawn_count(vehicle.mover(), true, pending, update) == 0.f);
 
-	vehicle->dizel_FiringCountdown = 0.0;
+	vehicle->diesel.firingCountdown = 0.0;
 	CHECK(smoke::vehicle_spawn_count(vehicle.mover(), true, pending, update) >= 1.f);
 }
 
@@ -118,16 +118,16 @@ TEST_CASE("smoke: a real diesel smokes only once its engine has fired, SmokeDela
 		{
 			// SmokeDelay set in the .fiz of the locomotive
 			test::vehicle locomotive{test::definition{test::definition::fiz(path)}.set("Engine", "SmokeDelay", 2)};
-			REQUIRE(locomotive->dizel_SmokeDelay == doctest::Approx(2.0));
+			REQUIRE(locomotive->diesel.smokeDelay == doctest::Approx(2.0));
 			auto const driven{test::driving(locomotive)};
 			REQUIRE(start_engine(driven, track));
 			// the engine started less than a second ago: the starter still turns it
-			CHECK(locomotive->dizel_FiringCountdown > 0.5);
+			CHECK(locomotive->diesel.firingCountdown > 0.5);
 			CHECK(smoke::vehicle_spawn_count(locomotive.mover(), true, source, update) == 0.f);
 			// it has fired since
 			test::drive(driven, track, 3.0);
 			CHECK(locomotive->Mains);
-			CHECK(locomotive->dizel_FiringCountdown == 0.0);
+			CHECK(locomotive->diesel.firingCountdown == 0.0);
 			CHECK(smoke::vehicle_spawn_count(locomotive.mover(), true, source, update) >= 1.f);
 		}
 		{
@@ -149,13 +149,13 @@ TEST_CASE("smoke: without SmokeDelay in its .fiz a diesel smokes as soon as the 
 		test::track const track{};
 		// a locomotive which has the delay, loaded first, doesn't hand it on to the next one: the value is the vehicle's own
 		test::vehicle delayed{test::definition{test::definition::fiz(path)}.set("Engine", "SmokeDelay", 3)};
-		REQUIRE(delayed->dizel_SmokeDelay == doctest::Approx(3.0));
+		REQUIRE(delayed->diesel.smokeDelay == doctest::Approx(3.0));
 		test::vehicle locomotive{test::definition::fiz(path)};
-		REQUIRE(locomotive->dizel_SmokeDelay == 0.0);
-		CHECK(delayed->dizel_SmokeDelay == doctest::Approx(3.0));
+		REQUIRE(locomotive->diesel.smokeDelay == 0.0);
+		CHECK(delayed->diesel.smokeDelay == doctest::Approx(3.0));
 		auto const driven{test::driving(locomotive)};
 		REQUIRE(start_engine(driven, track));
-		CHECK(locomotive->dizel_FiringCountdown == 0.0);
+		CHECK(locomotive->diesel.firingCountdown == 0.0);
 		CHECK(smoke::vehicle_spawn_count(locomotive.mover(), true, source, update) >= 1.f);
 	}
 }

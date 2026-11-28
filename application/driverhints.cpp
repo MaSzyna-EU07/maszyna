@@ -725,7 +725,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const /*Parameter*/) {
-                    return mvControlling->dizel_heat.auxiliary_water_circuit == false || mvControlling->WaterCircuitsLink == true; } );
+                    return mvControlling->diesel.heat.auxiliary_water_circuit == false || mvControlling->WaterCircuitsLink == true; } );
             break;
         }
         case driver_hint::watercircuitslinkoff: {
@@ -736,7 +736,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const /*Parameter*/) {
-                    return mvControlling->dizel_heat.auxiliary_water_circuit == false || mvControlling->WaterCircuitsLink == false; } );
+                    return mvControlling->diesel.heat.auxiliary_water_circuit == false || mvControlling->WaterCircuitsLink == false; } );
             break;
         }
         case driver_hint::waittemperaturetoolow: {

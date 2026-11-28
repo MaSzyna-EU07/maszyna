@@ -18,7 +18,7 @@ namespace {
 
 // how hard the engine works, scaling the spawn rate of the source
 double engine_load(TMoverParameters const &Mover) {
-	if (Mover.dizel_spinup) {
+	if (Mover.diesel.spinningUp) {
 		// starting up, it puffs harder the faster it turns
 		return ((Mover.enrot / 4) * 0.01);
 	}
@@ -34,7 +34,7 @@ double engine_load(TMoverParameters const &Mover) {
 } // namespace
 
 float vehicle_spawn_count(TMoverParameters const &Mover, bool const Ontracks, spawn_rate const &Rate, double const Timedelta) {
-	if (false == Ontracks || Mover.dizel_FiringCountdown > 0.0) {
+	if (false == Ontracks || Mover.diesel.firingCountdown > 0.0) {
 		return 0.f;
 	}
 	// the steady rate of the source, the way a source of the scenery spawns...

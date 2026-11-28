@@ -1270,32 +1270,32 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 void TMoverParameters::LoadFIZ_EngineDiesel(std::string const &Input)
 {
 
-	extract_value(dizel_nmin, "nmin", Input, "");
-	dizel_nmin /= 60.0;
-	dizel_nreg_min = dizel_nmin * 0.98;
-	extract_value(dizel_nmin_hdrive, "nmin_hdrive", Input, "");
-	dizel_nmin_hdrive /= 60.0;
-	if (dizel_nmin_hdrive == 0.0)
+	extract_value(diesel.minRevolutions, "nmin", Input, "");
+	diesel.minRevolutions /= 60.0;
+	diesel.governorMinRevolutions = diesel.minRevolutions * 0.98;
+	extract_value(diesel.hydraulicMinRevolutions, "nmin_hdrive", Input, "");
+	diesel.hydraulicMinRevolutions /= 60.0;
+	if (diesel.hydraulicMinRevolutions == 0.0)
 	{
-		dizel_nmin_hdrive = dizel_nmin;
+		diesel.hydraulicMinRevolutions = diesel.minRevolutions;
 	}
-	extract_value(dizel_nmin_hdrive_factor, "nmin_hdrive_factor", Input, "");
-	dizel_nmin_hdrive_factor /= 60.0;
-	extract_value(dizel_nmin_retarder, "nmin_retarder", Input, "");
-	dizel_nmin_retarder /= 60.0;
-	if (dizel_nmin_retarder == 0.0)
+	extract_value(diesel.hydraulicMinRevolutionsFactor, "nmin_hdrive_factor", Input, "");
+	diesel.hydraulicMinRevolutionsFactor /= 60.0;
+	extract_value(diesel.retarderRevolutions, "nmin_retarder", Input, "");
+	diesel.retarderRevolutions /= 60.0;
+	if (diesel.retarderRevolutions == 0.0)
 	{
-		dizel_nmin_retarder = dizel_nmin;
+		diesel.retarderRevolutions = diesel.minRevolutions;
 	}
 	// TODO: unify naming scheme and sort out which diesel engine params are used where and how
 	extract_value(nmax, "nmax", Input, "");
 	nmax /= 60.0;
-	extract_value(dizel_nmax_cutoff, "nmax_cutoff", Input, "0.0");
-	dizel_nmax_cutoff /= 60.0;
-	extract_value(dizel_nreg_acc, "nreg_acc", Input, "");
-	dizel_nreg_acc /= 60.0;
-	extract_value(dizel_AIM, "AIM", Input, "1.0");
-	extract_value(dizel_RevolutionsDecreaseRate, "RPMDecRate", Input, "");
+	extract_value(diesel.cutoffRevolutions, "nmax_cutoff", Input, "0.0");
+	diesel.cutoffRevolutions /= 60.0;
+	extract_value(diesel.governorAcceleration, "nreg_acc", Input, "");
+	diesel.governorAcceleration /= 60.0;
+	extract_value(diesel.shaftInertia, "AIM", Input, "1.0");
+	extract_value(diesel.revolutionsDecreaseRate, "RPMDecRate", Input, "");
 
 	extract_value(engageupspeed, "EUS", Input, "0.5");
 	extract_value(engagedownspeed, "EDS", Input, "0.9");
@@ -1311,37 +1311,37 @@ void TMoverParameters::LoadFIZ_EngineDiesel(std::string const &Input)
 			AnPos = 1.0 / AnPos; // im większa liczba, tym wolniej jedzie
 		}
 	}
-	extract_value(hydro_TC, "IsTC", Input, "");
-	if (true == hydro_TC)
+	extract_value(torqueConverter.present, "IsTC", Input, "");
+	if (true == torqueConverter.present)
 	{
-		extract_value(hydro_TC_TMMax, "TC_TMMax", Input, "");
-		extract_value(hydro_TC_CouplingPoint, "TC_CP", Input, "");
-		extract_value(hydro_TC_LockupTorque, "TC_LT", Input, "");
-		extract_value(hydro_TC_LockupRate, "TC_LR", Input, "");
-		extract_value(hydro_TC_UnlockRate, "TC_ULR", Input, "");
-		extract_value(hydro_TC_FillRateInc, "TC_FRI", Input, "");
-		extract_value(hydro_TC_FillRateDec, "TC_FRD", Input, "");
-		extract_value(hydro_TC_TorqueInIn, "TC_TII", Input, "");
-		extract_value(hydro_TC_TorqueInOut, "TC_TIO", Input, "");
-		extract_value(hydro_TC_TorqueOutOut, "TC_TOO", Input, "");
-		extract_value(hydro_TC_LockupSpeed, "TC_LS", Input, "");
-		extract_value(hydro_TC_UnlockSpeed, "TC_ULS", Input, "");
-		extract_value(dizel_maxVelANS, "MaxVelANS", Input, "");
+		extract_value(torqueConverter.maxTorqueRatio, "TC_TMMax", Input, "");
+		extract_value(torqueConverter.couplingPoint, "TC_CP", Input, "");
+		extract_value(torqueConverter.lockupTorque, "TC_LT", Input, "");
+		extract_value(torqueConverter.lockupRate, "TC_LR", Input, "");
+		extract_value(torqueConverter.unlockRate, "TC_ULR", Input, "");
+		extract_value(torqueConverter.fillRateIncrease, "TC_FRI", Input, "");
+		extract_value(torqueConverter.fillRateDecrease, "TC_FRD", Input, "");
+		extract_value(torqueConverter.torqueInIn, "TC_TII", Input, "");
+		extract_value(torqueConverter.torqueInOut, "TC_TIO", Input, "");
+		extract_value(torqueConverter.torqueOutOut, "TC_TOO", Input, "");
+		extract_value(torqueConverter.lockupSpeed, "TC_LS", Input, "");
+		extract_value(torqueConverter.unlockSpeed, "TC_ULS", Input, "");
+		extract_value(diesel.converterReleaseVelocity, "MaxVelANS", Input, "");
 
-		extract_value(hydro_R, "IsRetarder", Input, "");
-		if (true == hydro_R)
+		extract_value(retarder.present, "IsRetarder", Input, "");
+		if (true == retarder.present)
 		{
-			extract_value(hydro_R_Placement, "R_Place", Input, "");
-			extract_value(hydro_R_TorqueInIn, "R_TII", Input, "");
-			extract_value(hydro_R_MaxTorque, "R_MT", Input, "");
-			extract_value(hydro_R_MaxPower, "R_MP", Input, "");
-			extract_value(hydro_R_FillRateInc, "R_FRI", Input, "");
-			extract_value(hydro_R_FillRateDec, "R_FRD", Input, "");
-			extract_value(hydro_R_MinVel, "R_MinVel", Input, "");
-			extract_value(hydro_R_EngageVel, "R_EngageVel", Input, "");
-			extract_value(hydro_R_Clutch, "R_IsClutch", Input, "");
-			extract_value(hydro_R_ClutchSpeed, "R_ClutchSpeed", Input, "");
-			extract_value(hydro_R_WithIndividual, "R_WithIndividual", Input, "");
+			extract_value(retarder.placement, "R_Place", Input, "");
+			extract_value(retarder.torqueInIn, "R_TII", Input, "");
+			extract_value(retarder.maxTorque, "R_MT", Input, "");
+			extract_value(retarder.maxPower, "R_MP", Input, "");
+			extract_value(retarder.fillRateIncrease, "R_FRI", Input, "");
+			extract_value(retarder.fillRateDecrease, "R_FRD", Input, "");
+			extract_value(retarder.minVelocity, "R_MinVel", Input, "");
+			extract_value(retarder.engageVelocity, "R_EngageVel", Input, "");
+			extract_value(retarder.hasClutch, "R_IsClutch", Input, "");
+			extract_value(retarder.clutchSpeed, "R_ClutchSpeed", Input, "");
+			extract_value(retarder.withIndividual, "R_WithIndividual", Input, "");
 		}
 	}
 }
@@ -1368,8 +1368,8 @@ void TMoverParameters::LoadFIZ_EngineDieselElectric(std::string const &Input)
 		ImaxLo = 1;
 	}
 	extract_value(EngineHeatingRPM, "HeatingRPM", Input, "");
-	extract_value(dizel_AIM, "AIM", Input, "1.25");
-	extract_value(dizel_RevolutionsDecreaseRate, "RPMDecRate", Input, "");
+	extract_value(diesel.shaftInertia, "AIM", Input, "1.25");
+	extract_value(diesel.revolutionsDecreaseRate, "RPMDecRate", Input, "");
 	LoadFIZ_DieselElectricDynamicBrake(Input);
 }
 
@@ -1432,36 +1432,36 @@ void TMoverParameters::LoadFIZ_EngineDieselShared(std::string const &Input)
 	extract_value(OilPump.pressure_minimum, "OilMinPressure", Input, "");
 	extract_value(OilPump.pressure_maximum, "OilMaxPressure", Input, "");
 	// the time the starter turns the engine before it fires and smokes (eu07/maszyna#523)
-	extract_value(dizel_SmokeDelay, "SmokeDelay", Input, "0");
-	dizel_SmokeDelay = std::max(0.0, dizel_SmokeDelay);
+	extract_value(diesel.smokeDelay, "SmokeDelay", Input, "0");
+	diesel.smokeDelay = std::max(0.0, diesel.smokeDelay);
 	// engine cooling factore
-	extract_value(dizel_heat.kw, "HeatKW", Input, "");
-	extract_value(dizel_heat.kv, "HeatKV", Input, "");
-	extract_value(dizel_heat.kfe, "HeatKFE", Input, "");
-	extract_value(dizel_heat.kfs, "HeatKFS", Input, "");
-	extract_value(dizel_heat.kfo, "HeatKFO", Input, "");
-	extract_value(dizel_heat.kfo2, "HeatKFO2", Input, "");
+	extract_value(diesel.heat.kw, "HeatKW", Input, "");
+	extract_value(diesel.heat.kv, "HeatKV", Input, "");
+	extract_value(diesel.heat.kfe, "HeatKFE", Input, "");
+	extract_value(diesel.heat.kfs, "HeatKFS", Input, "");
+	extract_value(diesel.heat.kfo, "HeatKFO", Input, "");
+	extract_value(diesel.heat.kfo2, "HeatKFO2", Input, "");
 	// engine cooling systems
-	extract_value(dizel_heat.water.config.temp_min, "WaterMinTemperature", Input, "");
-	extract_value(dizel_heat.water.config.temp_max, "WaterMaxTemperature", Input, "");
-	extract_value(dizel_heat.water.config.temp_flow, "WaterFlowTemperature", Input, "");
-	extract_value(dizel_heat.water.config.temp_cooling, "WaterCoolingTemperature", Input, "");
-	extract_value(dizel_heat.water.config.shutters, "WaterShutters", Input, "");
-	extract_value(dizel_heat.auxiliary_water_circuit, "WaterAuxCircuit", Input, "");
-	extract_value(dizel_heat.water_aux.config.temp_min, "WaterAuxMinTemperature", Input, "");
-	extract_value(dizel_heat.water_aux.config.temp_max, "WaterAuxMaxTemperature", Input, "");
-	extract_value(dizel_heat.water_aux.config.temp_cooling, "WaterAuxCoolingTemperature", Input, "");
-	extract_value(dizel_heat.water_aux.config.shutters, "WaterAuxShutters", Input, "");
-	extract_value(dizel_heat.oil.config.temp_min, "OilMinTemperature", Input, "");
-	extract_value(dizel_heat.oil.config.temp_max, "OilMaxTemperature", Input, "");
-	extract_value(dizel_heat.engine_max_temp, "EngineMaxTemperature", Input, "");
-	extract_value(dizel_heat.fan_speed, "WaterCoolingFanSpeed", Input, "");
+	extract_value(diesel.heat.water.config.temp_min, "WaterMinTemperature", Input, "");
+	extract_value(diesel.heat.water.config.temp_max, "WaterMaxTemperature", Input, "");
+	extract_value(diesel.heat.water.config.temp_flow, "WaterFlowTemperature", Input, "");
+	extract_value(diesel.heat.water.config.temp_cooling, "WaterCoolingTemperature", Input, "");
+	extract_value(diesel.heat.water.config.shutters, "WaterShutters", Input, "");
+	extract_value(diesel.heat.auxiliary_water_circuit, "WaterAuxCircuit", Input, "");
+	extract_value(diesel.heat.water_aux.config.temp_min, "WaterAuxMinTemperature", Input, "");
+	extract_value(diesel.heat.water_aux.config.temp_max, "WaterAuxMaxTemperature", Input, "");
+	extract_value(diesel.heat.water_aux.config.temp_cooling, "WaterAuxCoolingTemperature", Input, "");
+	extract_value(diesel.heat.water_aux.config.shutters, "WaterAuxShutters", Input, "");
+	extract_value(diesel.heat.oil.config.temp_min, "OilMinTemperature", Input, "");
+	extract_value(diesel.heat.oil.config.temp_max, "OilMaxTemperature", Input, "");
+	extract_value(diesel.heat.engine_max_temp, "EngineMaxTemperature", Input, "");
+	extract_value(diesel.heat.fan_speed, "WaterCoolingFanSpeed", Input, "");
 	// water heater
 	extract_value(WaterHeater.config.temp_min, "HeaterMinTemperature", Input, "");
 	extract_value(WaterHeater.config.temp_max, "HeaterMaxTemperature", Input, "");
 	float pf{1235.f};
 	extract_value(pf, "NominalCoolingPower", Input, "1235");
-	dizel_heat.powerfactor = 1235 / pf;
+	diesel.heat.powerfactor = 1235 / pf;
 }
 
 void TMoverParameters::LoadFIZ_Switches(std::string const &Input)
@@ -1497,10 +1497,10 @@ void TMoverParameters::LoadFIZ_MotorParamTable(std::string const &Input)
 	case TEngineType::DieselEngine:
 	{
 
-		extract_value(dizel_minVelfullengage, "minVelfullengage", Input, "");
-		extract_value(dizel_engageDia, "engageDia", Input, "");
-		extract_value(dizel_engageMaxForce, "engageMaxForce", Input, "");
-		extract_value(dizel_engagefriction, "engagefriction", Input, "");
+		extract_value(diesel.fullEngageMinVelocity, "minVelfullengage", Input, "");
+		extract_value(diesel.clutchDiameter, "engageDia", Input, "");
+		extract_value(diesel.clutchMaxForce, "engageMaxForce", Input, "");
+		extract_value(diesel.clutchFriction, "engagefriction", Input, "");
 		break;
 	}
 	default:
@@ -1612,25 +1612,25 @@ void TMoverParameters::LoadFIZ_UCList(std::string const &Input)
 void TMoverParameters::LoadFIZ_DList(std::string const &Input)
 {
 
-	extract_value(dizel_Mmax, "Mmax", Input, "");
-	extract_value(dizel_nMmax, "nMmax", Input, "");
-	extract_value(dizel_Mnmax, "Mnmax", Input, "");
-	extract_value(dizel_nmax, "nmax", Input, "");
-	extract_value(dizel_nominalfill, "nominalfill", Input, "");
-	extract_value(dizel_Mstand, "Mstand", Input, "");
-	extract_value(dizel_NominalFuelConsumptionRate, "NomFuelConsRate", Input, "");
+	extract_value(diesel.maxMoment, "Mmax", Input, "");
+	extract_value(diesel.maxMomentRevolutions, "nMmax", Input, "");
+	extract_value(diesel.maxRevolutionsMoment, "Mnmax", Input, "");
+	extract_value(diesel.maxRevolutions, "nmax", Input, "");
+	extract_value(diesel.nominalFill, "nominalfill", Input, "");
+	extract_value(diesel.standingMoment, "Mstand", Input, "");
+	extract_value(diesel.nominalFuelConsumptionRate, "NomFuelConsRate", Input, "");
 
-	if (dizel_nMmax == dizel_nmax)
+	if (diesel.maxMomentRevolutions == diesel.maxRevolutions)
 	{
 		// HACK: guard against cases where nMmax == nmax, leading to division by 0 in momentum calculation
-		dizel_nMmax = dizel_nmax - 1.0 / 60.0;
+		diesel.maxMomentRevolutions = diesel.maxRevolutions - 1.0 / 60.0;
 	}
 
 	// Calculation of fuel consumption coefficient for futher calculation
-	double dizel_max_power = dizel_nmax * (dizel_Mnmax - dizel_Mstand) * M_PI * 2 * 0.001; // power in kW
+	double dizel_max_power = diesel.maxRevolutions * (diesel.maxRevolutionsMoment - diesel.standingMoment) * M_PI * 2 * 0.001; // power in kW
 	double dizel_max_energy = dizel_max_power; // energy per one hour in kWh is equal to power in kW times 1 h
 	double fuel_density = 850; // g/l
-	dizel_FuelConsumption = dizel_NominalFuelConsumptionRate * dizel_max_energy / fuel_density / dizel_nmax;
+	diesel.fuelConsumption = diesel.nominalFuelConsumptionRate * dizel_max_energy / fuel_density / diesel.maxRevolutions;
 }
 
 void TMoverParameters::LoadFIZ_FFList(std::string const &Input)

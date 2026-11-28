@@ -463,7 +463,7 @@ bool TMoverParameters::RunPumpsCommand(VehicleCommand const Command, double CVal
 	}
 	else if (Command == VehicleCommand::waterCircuitsLinkSwitch)
 	{
-		if (true == dizel_heat.auxiliary_water_circuit)
+		if (true == diesel.heat.auxiliary_water_circuit)
 		{
 			// can only link circuits if the vehicle has more than one of them
 			WaterCircuitsLink = CValue1 == 1;

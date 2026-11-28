@@ -707,7 +707,7 @@ bool TController::IncSpeed()
 		if (mvControlling->EIMCtrlType > 0) {
 			if (true == Ready)
 			{
-				bool max = mvControlling->Vel > mvControlling->dizel_minVelfullengage
+				bool max = mvControlling->Vel > mvControlling->diesel.fullEngageMinVelocity
 				    	|| (mvControlling->SpeedCtrl && mvControlling->ScndCtrlPos > 0);
 				DizelPercentage = max ? 100 : 1;
 			}
@@ -715,7 +715,7 @@ bool TController::IncSpeed()
 		}
         else {
             if( true == Ready ) {
-                if( mvControlling->Vel > mvControlling->dizel_minVelfullengage
+                if( mvControlling->Vel > mvControlling->diesel.fullEngageMinVelocity
                  && mvControlling->RList[mvControlling->MainCtrlPos].Mn > 0 ) {
                     OK = mvControlling->IncMainCtrl( 1 );
                 }
@@ -794,7 +794,7 @@ bool TController::DecSpeed(bool force)
 			break;
 		}
 
-        if (mvControlling->Vel > mvControlling->dizel_minVelfullengage)
+        if (mvControlling->Vel > mvControlling->diesel.fullEngageMinVelocity)
         {
             if (mvControlling->RList[mvControlling->MainCtrlPos].Mn > 0)
                 OK = mvControlling->DecMainCtrl(1);
@@ -1202,7 +1202,7 @@ void TController::SetTimeControllers()
 	{
 
         DizelPercentage_Speed = DizelPercentage; //wstepnie procenty
-		auto MinVel{ std::min(mvControlling->hydro_TC_LockupSpeed, mvControlling->Vmax / 6) }; //minimal velocity
+		auto MinVel{ std::min(mvControlling->torqueConverter.lockupSpeed, mvControlling->Vmax / 6) }; //minimal velocity
 		//when speed controll unit is active - start with the procedure
 		if (mvControlling->SpeedCtrl && mvControlling->ScndCtrlPos > 0) {
 			if (mvControlling->ScndCtrlPos > 0 && mvControlling->Vel < 1 + mvControlling->SpeedCtrlUnit.StartVelocity && DizelPercentage > 0)
@@ -1272,7 +1272,7 @@ void TController::SetTimeControllers()
 			if (!mvControlling->SlippingWheels)
 			{
 				while (mvControlling->MainCtrlPos > DesiredPos) mvControlling->DecMainCtrl(1);
-				if (mvControlling->Vel>mvControlling->dizel_minVelfullengage)
+				if (mvControlling->Vel>mvControlling->diesel.fullEngageMinVelocity)
 				  while (mvControlling->MainCtrlPos < DesiredPos) mvControlling->IncMainCtrl(1);
 			}
 		}

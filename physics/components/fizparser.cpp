@@ -327,7 +327,7 @@ bool TMoverParameters::readDMList(std::string const &line)
 	double y = 0.0;
 	parser >> x >> y;
 
-	dizel_Momentum_Table.emplace(x / 60.0, y);
+	diesel.momentTable.emplace(x / 60.0, y);
 
 	return true;
 }
@@ -347,7 +347,7 @@ bool TMoverParameters::readV2NMAXList(std::string const &line)
 	double y = 0.0;
 	parser >> x >> y;
 
-	dizel_vel2nmax_Table.emplace(x, y / 60.0);
+	diesel.speedMaxRevolutionsTable.emplace(x, y / 60.0);
 
 	return true;
 }
@@ -367,7 +367,7 @@ bool TMoverParameters::readHTCList(std::string const &line)
 	double y = 0.0;
 	parser >> x >> y;
 
-	hydro_TC_Table.emplace(x, y);
+	torqueConverter.table.emplace(x, y);
 
 	return true;
 }

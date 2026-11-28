@@ -29,7 +29,7 @@ TEST_CASE("engine shutdown: the shunter starts with the starter button") {
 	REQUIRE(shunter->FuelPump.start_type == start_t::automatic);
 	CHECK(shunter->Mains);
 	CHECK(shunter->FuelPump.is_active);
-	CHECK(shunter->enrot > 0.9 * shunter->dizel_nmin);
+	CHECK(shunter->enrot > 0.9 * shunter->diesel.minRevolutions);
 }
 
 TEST_CASE("engine shutdown: neither the fuel pump switch nor the battery switch stop the engine") {
@@ -41,7 +41,7 @@ TEST_CASE("engine shutdown: neither the fuel pump switch nor the battery switch 
 	shunter.run(10.0);
 	CHECK(shunter->Power110vIsAvailable); // the converter run by the engine keeps feeding the fuel pump
 	CHECK(shunter->Mains);
-	CHECK(shunter->enrot > 0.9 * shunter->dizel_nmin);
+	CHECK(shunter->enrot > 0.9 * shunter->diesel.minRevolutions);
 }
 
 TEST_CASE("engine shutdown: the command opening the main circuit stops the engine and it stays stopped") {
@@ -62,7 +62,7 @@ TEST_CASE("engine shutdown: the engine starts again after it was stopped") {
 	shunter->MainSwitch(true);
 	shunter.run(15.0);
 	CHECK(shunter->Mains);
-	CHECK(shunter->enrot > 0.9 * shunter->dizel_nmin);
+	CHECK(shunter->enrot > 0.9 * shunter->diesel.minRevolutions);
 }
 
 TEST_CASE("engine shutdown: vehicles without a diesel keep ignoring the command with only the button closing the circuit") {

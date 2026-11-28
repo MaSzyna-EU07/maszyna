@@ -308,7 +308,7 @@ void TMoverParameters::MainsCheck(double const Deltatime)
 		else
 		{
 			// optional automatic circuit start
-			if (MainsStart != start_t::manual && false == (Mains || dizel_startup))
+			if (MainsStart != start_t::manual && false == (Mains || diesel.startupRequested))
 			{
 				MainSwitch(true);
 			}
@@ -919,7 +919,7 @@ bool TMoverParameters::CompartmentLightsSwitchOff(bool State, range_t const Noti
 bool TMoverParameters::MainSwitch(bool const State, range_t const Notify)
 {
 
-	bool const initialstate{Mains || dizel_startup};
+	bool const initialstate{Mains || diesel.startupRequested};
 
 	MainSwitch_(State);
 
@@ -930,7 +930,7 @@ bool TMoverParameters::MainSwitch(bool const State, range_t const Notify)
 		SendCtrlToNext(VehicleCommand::mainSwitch, State ? 1 : 0, CabActive, Notify == range_t::unit ? Coupling::control | Coupling::permanent : Coupling::control);
 	}
 
-	return (Mains || dizel_startup) != initialstate;
+	return (Mains || diesel.startupRequested) != initialstate;
 }
 
 void TMoverParameters::MainSwitch_(bool const State)
@@ -953,7 +953,7 @@ void TMoverParameters::MainSwitch_(bool const State)
 			if (EngineType == TEngineType::DieselEngine || EngineType == TEngineType::DieselElectric)
 			{
 				// launch diesel engine startup procedure
-				dizel_startup = true;
+				diesel.startupRequested = true;
 			}
 			else
 			{

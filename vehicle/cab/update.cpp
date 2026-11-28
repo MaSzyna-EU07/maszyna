@@ -56,7 +56,7 @@ bool TTrain::Update(double const Deltatime)
 		// crude way to sync state of the linebreaker with ai-issued commands
 		m_linebreakerstate = linebreaker::state::closed;
 	}
-	if (m_linebreakerstate == linebreaker::state::closed && false == (mvControlled->Mains || mvControlled->dizel_startup))
+	if (m_linebreakerstate == linebreaker::state::closed && false == (mvControlled->Mains || mvControlled->diesel.startupRequested))
 	{
 		// crude way to catch cases where the main was knocked out
 		// because the state of the line breaker isn't changed to match, we need to do it here manually
@@ -378,13 +378,13 @@ bool TTrain::Update(double const Deltatime)
 				fDieselParams[1 + in][0] = static_cast<float>(p->MoverParameters->enrot * 60);
 				fDieselParams[1 + in][1] = static_cast<float>(p->MoverParameters->nrot);
 				fDieselParams[1 + in][2] = static_cast<float>(p->MoverParameters->RList[p->MoverParameters->MainCtrlPos].R);
-				fDieselParams[1 + in][3] = static_cast<float>(p->MoverParameters->dizel_fill);
+				fDieselParams[1 + in][3] = static_cast<float>(p->MoverParameters->diesel.fill);
 				fDieselParams[1 + in][4] = static_cast<float>(p->MoverParameters->RList[p->MoverParameters->MainCtrlPos].Mn);
-				fDieselParams[1 + in][5] = static_cast<float>(p->MoverParameters->dizel_engage);
-				fDieselParams[1 + in][6] = p->MoverParameters->dizel_heat.Twy;
+				fDieselParams[1 + in][5] = static_cast<float>(p->MoverParameters->diesel.clutchPressure);
+				fDieselParams[1 + in][6] = p->MoverParameters->diesel.heat.Twy;
 				fDieselParams[1 + in][7] = p->MoverParameters->OilPump.pressure;
-				fDieselParams[1 + in][8] = p->MoverParameters->dizel_heat.Ts;
-				fDieselParams[1 + in][9] = static_cast<float>(p->MoverParameters->hydro_R_Fill);
+				fDieselParams[1 + in][8] = p->MoverParameters->diesel.heat.Ts;
+				fDieselParams[1 + in][9] = static_cast<float>(p->MoverParameters->retarder.fill);
 				bMains[in] = p->MoverParameters->Mains;
 				fCntVol[in] = static_cast<float>(p->MoverParameters->BatteryVoltage);
 				bFuse[in] = p->MoverParameters->FuseFlag;
@@ -523,7 +523,7 @@ bool TTrain::Update(double const Deltatime)
 			}
 			if (ggWater1TempB.SubModel)
 			{
-				ggWater1TempB.UpdateValue(tmp->MoverParameters->dizel_heat.temperatura1);
+				ggWater1TempB.UpdateValue(tmp->MoverParameters->diesel.heat.temperatura1);
 				ggWater1TempB.Update();
 			}
 			if (ggOilPressB.SubModel)
@@ -605,14 +605,14 @@ bool TTrain::Update(double const Deltatime)
 		if (ggMainGearStatus.SubModel)
 		{
 			if (mvControlled->Mains)
-				ggMainGearStatus.UpdateValue(static_cast<float>(1.1 - std::abs(mvControlled->dizel_automaticgearstatus)));
+				ggMainGearStatus.UpdateValue(static_cast<float>(1.1 - std::abs(mvControlled->diesel.automaticGearShift)));
 			else
 				ggMainGearStatus.UpdateValue(0.0);
 			ggMainGearStatus.Update();
 		}
 		if (ggIgnitionKey.SubModel && ggIgnitionKey.GetDesiredValue() == 0.0)
 		{
-			ggIgnitionKey.UpdateValue(mvControlled->Mains || mvControlled->dizel_startup || fMainRelayTimer > 0.f ||
+			ggIgnitionKey.UpdateValue(mvControlled->Mains || mvControlled->diesel.startupRequested || fMainRelayTimer > 0.f ||
 			                          (ggMainButton.SubModel != nullptr && ggMainButton.GetDesiredValue() > 0.95) ||
 			                          (ggMainOnButton.SubModel != nullptr && ggMainOnButton.GetDesiredValue() > 0.95));
 		}
@@ -721,9 +721,9 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaBocznik4.Turn(!mvControlled->DelayCtrlFlag && mvControlled->ScndCtrlPos > 3 || mvControlled->ScndCtrlActualPos > 3 || scp > 3);
 
 		// biegi dla motoraka
-		btLampkaGear1.Turn(mvControlled->ScndCtrlActualPos == 1 && mvControlled->dizel_engagestate > 0); // bieg 1
-		btLampkaGear2.Turn(mvControlled->ScndCtrlActualPos == 2 && mvControlled->dizel_engagestate > 0); // bieg 2
-		btLampkaHydroLockup.Turn(mvControlled->hydro_TC_Lockup); // zblokowanie skrzyni z silnikiem
+		btLampkaGear1.Turn(mvControlled->ScndCtrlActualPos == 1 && mvControlled->diesel.clutchState > 0); // bieg 1
+		btLampkaGear2.Turn(mvControlled->ScndCtrlActualPos == 2 && mvControlled->diesel.clutchState > 0); // bieg 2
+		btLampkaHydroLockup.Turn(mvControlled->torqueConverter.lockedUp); // zblokowanie skrzyni z silnikiem
 
 		if (mvControlled->Signalling == true)
 		{
@@ -829,12 +829,12 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaRearLeftEndLight.Turn((mvOccupied->iLights[end::rear] & light::redmarker_left) != 0);
 		btLampkaRearRightEndLight.Turn((mvOccupied->iLights[end::rear] & light::redmarker_right) != 0);
 		// others
-		btLampkaMalfunction.Turn(mvControlled->dizel_heat.PA);
+		btLampkaMalfunction.Turn(mvControlled->diesel.heat.PA);
 		// overheat indicator lamps
-		btLampkaOilOverheat.Turn(mvControlled->dizel_heat.oil.is_hot);
-		btLampkaWaterOverheat.Turn(mvControlled->dizel_heat.water.is_hot);
-		btLampkaWaterAuxOverheat.Turn(mvControlled->dizel_heat.water_aux.is_hot);
-		btLampkaEngineOverheat.Turn(mvControlled->dizel_heat.engine_is_hot);
+		btLampkaOilOverheat.Turn(mvControlled->diesel.heat.oil.is_hot);
+		btLampkaWaterOverheat.Turn(mvControlled->diesel.heat.water.is_hot);
+		btLampkaWaterAuxOverheat.Turn(mvControlled->diesel.heat.water_aux.is_hot);
+		btLampkaEngineOverheat.Turn(mvControlled->diesel.heat.engine_is_hot);
 		btLampkaMotorBlowers.Turn(mvControlled->MotorBlowers[end::front].is_active && mvControlled->MotorBlowers[end::rear].is_active);
 		btLampkaCoolingFans.Turn(mvControlled->RventRot > 1.0);
 		btLampkaLouvresClosed.Turn(mvControlled->LouvresClosed());
@@ -993,7 +993,7 @@ bool TTrain::Update(double const Deltatime)
 				btLampkaPrzetwB.Turn(mover->ConverterFlag); // zalaczenie przetwornicy
 				btLampkaPrzetwBOff.Turn(false == mover->ConverterFlag);
 				btLampkaHVoltageB.Turn(mover->NoVoltRelay && mover->OvervoltageRelay);
-				btLampkaMalfunctionB.Turn(mover->dizel_heat.PA);
+				btLampkaMalfunctionB.Turn(mover->diesel.heat.PA);
 				// motor fuse indicator turns on if the fuse was blown in any unit under control
 				if (mover->Mains)
 				{

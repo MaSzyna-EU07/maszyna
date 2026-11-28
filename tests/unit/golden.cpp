@@ -66,7 +66,7 @@ std::vector<channel> traction() {
 	    {"EngineVoltage", [](auto const &M) { return M.EngineVoltage; }},
 	    {"EnginePower", [](auto const &M) { return M.EnginePower; }},
 	    {"enrot", [](auto const &M) { return M.enrot; }},
-	    {"dizel_fill", [](auto const &M) { return M.dizel_fill; }},
+	    {"dizel_fill", [](auto const &M) { return M.diesel.fill; }},
 	    {"eimv_pr", [](auto const &M) { return M.eimv_pr; }},
 	    {"DynamicBrakeFlag", [](auto const &M) { return M.DynamicBrakeFlag ? 1.0 : 0.0; }},
 	};

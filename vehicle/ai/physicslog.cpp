@@ -85,10 +85,10 @@ std::string TController::physicslog_line() const {
         << mvOccupied->CommandIn.Value2 << " "
         << int(mvControlling->SecuritySystem.is_blinking()) << " "
         << int(mvControlling->SlippingWheels) << " "
-        << mvControlling->dizel_heat.Ts << " "
-        << mvControlling->dizel_heat.To << " "
-        << mvControlling->dizel_heat.temperatura1 << " "
-        << mvControlling->dizel_heat.temperatura2 << " "
+        << mvControlling->diesel.heat.Ts << " "
+        << mvControlling->diesel.heat.To << " "
+        << mvControlling->diesel.heat.temperatura1 << " "
+        << mvControlling->diesel.heat.temperatura2 << " "
         // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
         << mvOccupied->V * 3.6
         << "\r\n";

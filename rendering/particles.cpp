@@ -346,19 +346,19 @@ smoke_source::launch_scales( float &Velocity, float &Opacity ) const {
     Opacity = 1.f;
     if( m_ownertype != owner_type::vehicle ) { return; }
 
-    Opacity = static_cast<float>(m_owner.vehicle->MoverParameters->dizel_fill);
+    Opacity = static_cast<float>(m_owner.vehicle->MoverParameters->diesel.fill);
         if (m_owner.vehicle->MoverParameters->EngineType == TEngineType::DieselElectric)
         {
-                if (m_owner.vehicle->MoverParameters->dizel_spinup == true)
+                if (m_owner.vehicle->MoverParameters->diesel.spinningUp == true)
                 {
-                Velocity = static_cast<float>(0.38*(((m_owner.vehicle->MoverParameters->enrot)/2)*0.5));  // / m_owner.vehicle->MoverParameters->dizel_fill *0.01)) ; 
+                Velocity = static_cast<float>(0.38*(((m_owner.vehicle->MoverParameters->enrot)/2)*0.5));  // / m_owner.vehicle->MoverParameters->diesel.fill *0.01)) ; 
                 
                 }
                 else 
                 {
               
-                Velocity = static_cast<float>((((m_owner.vehicle->MoverParameters->enrot)/60)*0.6) * (m_owner.vehicle->MoverParameters->EnginePower *0.03));  // / m_owner.vehicle->MoverParameters->dizel_fill *0.01)) ; 
-                //Particle.velocity *= m_owner.vehicle->GetVelocity();  // / m_owner.vehicle->MoverParameters->dizel_fill *0.01)) ; 
+                Velocity = static_cast<float>((((m_owner.vehicle->MoverParameters->enrot)/60)*0.6) * (m_owner.vehicle->MoverParameters->EnginePower *0.03));  // / m_owner.vehicle->MoverParameters->diesel.fill *0.01)) ; 
+                //Particle.velocity *= m_owner.vehicle->GetVelocity();  // / m_owner.vehicle->MoverParameters->diesel.fill *0.01)) ; 
                 }
 
         }

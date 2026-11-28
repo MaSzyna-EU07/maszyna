@@ -39,7 +39,7 @@ void prepare(consist &Train) {
 }
 
 bool running(TMoverParameters const &Vehicle) {
-	return Vehicle.Mains && Vehicle.enrot > 0.5 * Vehicle.dizel_nmin;
+	return Vehicle.Mains && Vehicle.enrot > 0.5 * Vehicle.diesel.minRevolutions;
 }
 
 // the time step of the train in the loops below
@@ -185,7 +185,7 @@ TEST_CASE("engine start: the switch of another vehicle is held for the vehicle's
 	hold(train, switchb, &second, 5.0);
 	train.run(5.0);
 	CHECK_FALSE(second.Mains);
-	CHECK_FALSE(second.dizel_startup);
+	CHECK_FALSE(second.diesel.startupRequested);
 
 	prepare(train);
 	// let go too early

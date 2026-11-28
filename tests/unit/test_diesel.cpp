@@ -15,15 +15,15 @@ namespace {
 
 std::vector<test::channel> heat() {
 	return {
-	    {"Ts", [](auto const &M) { return M.dizel_heat.Ts; }},
-	    {"To", [](auto const &M) { return M.dizel_heat.To; }},
-	    {"Twy", [](auto const &M) { return M.dizel_heat.Twy; }},
-	    {"Twy2", [](auto const &M) { return M.dizel_heat.Twy2; }},
-	    {"PA", [](auto const &M) { return M.dizel_heat.PA ? 1.0 : 0.0; }},
+	    {"Ts", [](auto const &M) { return M.diesel.heat.Ts; }},
+	    {"To", [](auto const &M) { return M.diesel.heat.To; }},
+	    {"Twy", [](auto const &M) { return M.diesel.heat.Twy; }},
+	    {"Twy2", [](auto const &M) { return M.diesel.heat.Twy2; }},
+	    {"PA", [](auto const &M) { return M.diesel.heat.PA ? 1.0 : 0.0; }},
 	    {"WaterHeater", [](auto const &M) { return M.WaterHeater.is_active ? 1.0 : 0.0; }},
 	    {"WaterPump", [](auto const &M) { return M.WaterPump.is_active ? 1.0 : 0.0; }},
-	    {"zaluzje1", [](auto const &M) { return M.dizel_heat.zaluzje1 ? 1.0 : 0.0; }},
-	    {"zaluzje2", [](auto const &M) { return M.dizel_heat.zaluzje2 ? 1.0 : 0.0; }},
+	    {"zaluzje1", [](auto const &M) { return M.diesel.heat.zaluzje1 ? 1.0 : 0.0; }},
+	    {"zaluzje2", [](auto const &M) { return M.diesel.heat.zaluzje2 ? 1.0 : 0.0; }},
 	};
 }
 
@@ -43,12 +43,12 @@ TEST_CASE("diesel: an engine too cold to start, warmed by its heater") {
 		auto &locomotive{scenario.cab()};
 		locomotive.dizel_HeatSet(-10.f);
 		CHECK(scenario.start_up() == starts);
-		CHECK(locomotive.dizel_heat.PA != starts);
+		CHECK(locomotive.diesel.heat.PA != starts);
 		CHECK(locomotive.WaterHeater.is_active);
 		scenario.act("heating");
 		scenario.wait(1200.0);
-		CHECK_FALSE(locomotive.dizel_heat.PA);
-		CHECK(locomotive.dizel_heat.Twy > 50.f);
+		CHECK_FALSE(locomotive.diesel.heat.PA);
+		CHECK(locomotive.diesel.heat.Twy > 50.f);
 		CHECK(scenario.start_up());
 		scenario.check();
 	}
@@ -70,13 +70,13 @@ TEST_CASE("diesel: an engine started hot, and run at full power") {
 		auto &locomotive{scenario.cab()};
 		locomotive.dizel_HeatSet(88.f);
 		CHECK(scenario.start_up() == starts);
-		CHECK(locomotive.dizel_heat.PA != starts);
+		CHECK(locomotive.diesel.heat.PA != starts);
 		if (starts) {
 			scenario.get_going();
 			scenario.full_power(300.0);
 			CHECK(locomotive.Vel > 50.0);
-			CHECK(locomotive.dizel_heat.zaluzje1);
-			CHECK(locomotive.dizel_heat.Twy < locomotive.dizel_heat.water.config.temp_max);
+			CHECK(locomotive.diesel.heat.zaluzje1);
+			CHECK(locomotive.diesel.heat.Twy < locomotive.diesel.heat.water.config.temp_max);
 		}
 		scenario.check();
 	}
@@ -94,7 +94,7 @@ TEST_CASE("diesel: the 214M railbus's torque converter, gears and retarder") {
 	scenario.full_power(60.0);
 	CHECK(railbus.MainCtrlPos == 5);
 	CHECK(railbus.eimic_real == doctest::Approx(1.0));
-	CHECK(railbus.hydro_TC_Lockup);
+	CHECK(railbus.torqueConverter.lockedUp);
 	CHECK(railbus.ScndCtrlActualPos == railbus.ScndCtrlPosNo);
 	struct position {
 		double eimic;
@@ -109,8 +109,8 @@ TEST_CASE("diesel: the 214M railbus's torque converter, gears and retarder") {
 		railbus.DecMainCtrl(1);
 		scenario.wait(8.0);
 		CHECK(railbus.eimic_real == doctest::Approx(eimic));
-		CHECK((railbus.hydro_R_Fill > 0.99) == retarder);
-		CHECK((railbus.hydro_R_Torque > 1000.0) == retarder);
+		CHECK((railbus.retarder.fill > 0.99) == retarder);
+		CHECK((railbus.retarder.torque > 1000.0) == retarder);
 		CHECK((railbus.BrakePress > 2.0) == air);
 	}
 	scenario.act("position 0");
@@ -160,7 +160,7 @@ TEST_CASE("diesel: the 214M railbus's speed control, up to the speed of a button
 	scenario.wait(5.0);
 	// the retarder does it at this speed, the air isn't needed
 	CHECK(railbus.eimic_real == doctest::Approx(-1.0));
-	CHECK(railbus.hydro_R_Fill == doctest::Approx(1.0));
+	CHECK(railbus.retarder.fill == doctest::Approx(1.0));
 	CHECK(railbus.BrakePress < 0.1);
 	CHECK_FALSE(railbus.SpeedCtrlUnit.BrakeInterventionBraking);
 	scenario.wait(60.0);
