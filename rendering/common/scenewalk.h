@@ -194,6 +194,23 @@ class scene_walk
 	// TDynamicObject::renderme as the walk sets and reads it: the walk keeps its own while the passes are walked by several threads at
 	// once (walk_sync), which the main thread puts in the vehicles once they're done (Keep) or drops
 	void set_renderme(TDynamicObject *Dynamic, bool const Value);
+	// how much of the glare of a light is drawn, 0..1, stepped towards whether its point was seen (walk_glare_seen()), for the
+	// submodel and the instance of the model drawn: it follows slowly rather than switching the glare on and off frame by frame
+	float glare_shown(TSubModel const *Submodel);
+	struct glare_key
+	{
+		TSubModel const *submodel{nullptr};
+		std::size_t instance{0};
+		bool operator==(glare_key const &) const = default;
+	};
+	struct glare_key_hash
+	{
+		std::size_t operator()(glare_key const &Key) const noexcept
+		{
+			return std::hash<TSubModel const *>{}(Key.submodel) ^ (std::hash<std::size_t>{}(Key.instance) * 31u);
+		}
+	};
+	std::unordered_map<glare_key, float, glare_key_hash> m_glareshown;
 	bool renderme(TDynamicObject const *Dynamic) const;
 	void Settle_Renderme(bool const Keep);
 	// what the walks put off while the passes are walked by several threads at once, done by the main thread once they're done: the
@@ -268,10 +285,11 @@ class scene_walk
 	// a decal (shapenode_data::decal) drawn pulled towards the camera in the depth buffer, over the surface it lies on; on top of the
 	// bias the pass draws everything with. not in the shadows, which it casts none of
 	virtual void walk_decal(bool const Enabled) {}
-	// the glare of a lamp: drawn without the depth test, added to what is there; drawn only where the point of the light was
-	// seen (walk_light_query() of the last frame, when the backend has it)
+	// the glare of a lamp: drawn without the depth test, added to what is there; faded out where the point of the light wasn't
+	// seen (walk_light_query(), walk_glare_seen())
 	virtual void walk_glare(bool const Enabled) = 0;
-	virtual void walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry) = 0;
+	// whether the point of the light was seen by the last occlusion query the backend has the result of; empty when it has none
+	virtual std::optional<bool> walk_glare_seen(TSubModel const *Submodel) const = 0;
 	virtual void walk_light_query(TSubModel *Submodel, bool const Begin) = 0;
 	// what the backend may draw itself (the gpu culling of the opengl renderer); by default the walk draws everything
 	// the start of the walk of a region

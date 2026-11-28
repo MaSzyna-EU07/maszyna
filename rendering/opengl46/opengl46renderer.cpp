@@ -5165,15 +5165,9 @@ void opengl46_renderer::walk_glare(bool const Enabled)
 	}
 }
 
-void opengl46_renderer::walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry)
+std::optional<bool> opengl46_renderer::walk_glare_seen(TSubModel const *Submodel) const
 {
-	if (Submodel->occlusion_query) {
-		glBeginConditionalRender(*Submodel->occlusion_query, GL_QUERY_WAIT);
-		draw(Geometry);
-		glEndConditionalRender();
-	}
-	else
-		draw(Geometry);
+	return Submodel->glare_seen;
 }
 
 void opengl46_renderer::walk_light_query(TSubModel *Submodel, bool const Begin)
@@ -5183,6 +5177,9 @@ void opengl46_renderer::walk_light_query(TSubModel *Submodel, bool const Begin)
 	if (Begin) {
 		if (!Submodel->occlusion_query)
 			Submodel->occlusion_query.emplace(gl::query::ANY_SAMPLES_PASSED);
+		else if (auto const seen{Submodel->occlusion_query->result()}; seen.has_value())
+			// the query of the frame before, which has come by now; one which hasn't leaves the one before that
+			Submodel->glare_seen = (*seen > 0);
 		Submodel->occlusion_query->begin();
 	}
 	else

@@ -1826,16 +1826,16 @@ void vulkan14_renderer::walk_glare(bool const Enabled)
 	m_draw->glare = Enabled;
 }
 
-void vulkan14_renderer::walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry)
+std::optional<bool> vulkan14_renderer::walk_glare_seen(TSubModel const *Submodel) const
 {
-	// the point of the light wasn't seen by the occlusion query of the last frame done by the gpu
+	// whether the point of the light was seen by the occlusion query of the last frame done by the gpu
 	auto const &visible{m_context->scene.glare_visible};
 	auto const lookup{visible.find(vk14::glare_point{Submodel, TSubModel::iInstance})};
-	if ((lookup != visible.end()) && (false == lookup->second))
+	if (lookup == visible.end())
 	{
-		return;
+		return std::nullopt;
 	}
-	walk_draw(Geometry);
+	return lookup->second;
 }
 
 void vulkan14_renderer::walk_light_query(TSubModel *Submodel, bool const Begin)

@@ -233,7 +233,7 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	void walk_cull_face(bool const Enabled) override;
 	void walk_decal(bool const Enabled) override;
 	void walk_glare(bool const Enabled) override;
-	void walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry) override;
+	std::optional<bool> walk_glare_seen(TSubModel const *Submodel) const override;
 	void walk_light_query(TSubModel *Submodel, bool const Begin) override;
 	// the gpu culling of the instances, models and sleepers, the depth pass of the whole scene
 	void walk_region_begin() override;

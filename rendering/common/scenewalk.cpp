@@ -13,6 +13,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/common/scenewalk.h"
+
+#include "utilities/Timer.h"
 #include "rendering/common/walksync.h"
 #include "utilities/color.h"
 #include "utilities/Globals.h"
@@ -40,6 +42,10 @@ namespace gfx
 
 namespace
 {
+
+// the glare of a light follows whether its point is seen: up in this many seconds once it is, down in this many once it isn't
+float constexpr GLARE_RISE{0.12f};
+float constexpr GLARE_FALL{0.6f};
 
 // the environment of a track the drawing takes into its light: the flag of the track (a tunnel, a canyon) only with
 // Global.gfx_tunnelflags. otherwise the light is the one of the geometry around it (gfx::sky_occlusion)
@@ -2981,6 +2987,18 @@ void scene_walk::Render_Alpha(scene::lines_node const &Lines)
 	++m_renderpass.draw_stats.drawcalls;
 }
 
+float scene_walk::glare_shown(TSubModel const *Submodel)
+{
+	auto &shown{m_glareshown.try_emplace(glare_key{Submodel, TSubModel::iInstance}, 1.f).first->second};
+	// stepped by the colour pass of the frame only: the other passes draw the same glare with what it has
+	if (m_renderpass.draw_mode == rendermode::color)
+	{
+		auto const step{static_cast<float>(Timer::GetDeltaRenderTime())};
+		shown = walk_glare_seen(Submodel).value_or(true) ? std::min(1.f, shown + step / GLARE_RISE) : std::max(0.f, shown - step / GLARE_FALL);
+	}
+	return shown;
+}
+
 // TDynamicObject::renderme, which only the walks read: kept by the walk itself while the passes are walked by several threads at once
 // (walk_sync), where it falls back on the value of the vehicle for a vehicle it didn't set (as when the passes come one after another)
 void scene_walk::set_renderme(TDynamicObject *Dynamic, bool const Value)
@@ -3318,11 +3336,14 @@ void scene_walk::Render_Alpha(TSubModel *Submodel)
 
 						walk_program( walk_shader::billboard );
 						walk_texture(0, m_glaretexture);
-						model_ubs.param[0] = glm::vec4(glm::vec3(lightcolor), Submodel->fVisible * glarelevel);
+						// faded where the light itself wasn't seen (an occlusion query of the last frame): a flake of snow or a drop
+						// going past the point of the light hides it for a frame or two, which mustn't blink the glare of a signal
+						auto const shown{glare_shown(Submodel)};
+						model_ubs.param[0] = glm::vec4(glm::vec3(lightcolor), Submodel->fVisible * glarelevel * shown);
 
 						// main draw call
-						// drawn where the light itself was seen in the last frame (an occlusion query of the opengl renderer)
-						walk_glare_draw(Submodel, m_billboardgeometry);
+						if (shown > 0.001f)
+							walk_draw(m_billboardgeometry);
 
 						walk_glare(false);
 
