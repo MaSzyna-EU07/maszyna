@@ -11925,7 +11925,10 @@ bool TMoverParameters::readWiperList(std::string const &line)
 		WriteLog("Read WiperList: number of entries exceeded capacity of the data table");
 		return false;
 	}
-	parser >> WiperList[idx].byteSum >> WiperList[idx].WiperSpeed >> WiperList[idx].interval >> WiperList[idx].outBackDelay;
+	// the mask of the wipers is a number: read into the uint8_t directly, the parser would take only its first character
+	int bytesum{0};
+	parser >> bytesum >> WiperList[idx].WiperSpeed >> WiperList[idx].interval >> WiperList[idx].outBackDelay;
+	WiperList[idx].byteSum = static_cast<uint8_t>(std::clamp(bytesum, 0, 255));
 	return true;
 }
 
