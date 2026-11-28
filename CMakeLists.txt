@@ -81,7 +81,8 @@ file(GLOB HEADERS "*.h"
 "utilities/*.h"
 "world/*.h"
 "vehicle/*.h"
-"vehicle/ai/*.h")
+"vehicle/ai/*.h"
+"vehicle/dynamic/*.h")
 
 set(GLOBAL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(GLOBAL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/global_include")
@@ -187,7 +188,21 @@ set(SOURCES
 "vehicle/ai/speedtable.cpp"
 "vehicle/crewchange.cpp"
 "application/driverhints.cpp"
-"vehicle/DynObj.cpp"
+"vehicle/dynamic/animations.cpp"
+"vehicle/dynamic/consist.cpp"
+"vehicle/dynamic/couplers.cpp"
+"vehicle/dynamic/destinations.cpp"
+"vehicle/dynamic/lifecycle.cpp"
+"vehicle/dynamic/lights.cpp"
+"vehicle/dynamic/load.cpp"
+"vehicle/dynamic/mmd.cpp"
+"vehicle/dynamic/movement.cpp"
+"vehicle/dynamic/neighbours.cpp"
+"vehicle/dynamic/offtrack.cpp"
+"vehicle/dynamic/sounds.cpp"
+"vehicle/dynamic/update.cpp"
+"vehicle/dynamic/vehicletable.cpp"
+"vehicle/dynamic/visual.cpp"
 "EU07.cpp"
 "export_e3d_standalone.cpp"
 "export_btf_standalone.cpp"
