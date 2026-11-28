@@ -50,6 +50,9 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 
 void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic);
 int export_btf_standalone(std::string in, std::string out);
+namespace e4d {
+int run_command_line(int Argc, char *Argv[]);
+}
 int generate_nodebank_previews(int Argc, char *Argv[]);
 
 #include <string>
@@ -145,6 +148,14 @@ int main(int argc, char *argv[])
 		int flags = std::stoi(std::string(argv[4]));
 		int dynamic = std::stoi(std::string(argv[5]));
 		export_e3d_standalone(in, out, flags, dynamic);
+	}
+	// standalone conversion, listing and checking of E4D models: -e4d convert|dump|validate ...
+	else if (argc >= 2 && std::string(argv[1]) == "-e4d")
+	{
+		auto const result{e4d::run_command_line(argc, argv)};
+		fflush(stdout);
+		fflush(stderr);
+		std::_Exit(result);
 	}
 	// standalone generation of preview images of the node bank models: -generate-nodebank-previews [options]
 	else if (argc >= 2 && std::string(argv[1]) == "-generate-nodebank-previews")
