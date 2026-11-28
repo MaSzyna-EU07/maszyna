@@ -201,7 +201,19 @@ std::string StopReasonTable[] = {
 //---------------------------------------------------------------------------
 //---------------------------------------------------------------------------
 
-TSpeedPos::TSpeedPos(TTrack *track, double dist, int flag)
+namespace
+{
+
+// the low 4 bits of a number as a number -8..7, as the route of a crossing was read from the top of the flags
+int signedNibble(unsigned const value)
+{
+    auto const nibble{static_cast<int>(value & 0xf)};
+    return nibble >= 8 ? nibble - 16 : nibble;
+}
+
+} // namespace
+
+TSpeedPos::TSpeedPos(TTrack *track, double dist, SpeedPointFlags flag)
 {
     Set(track, dist, flag);
 };
@@ -213,7 +225,7 @@ TSpeedPos::TSpeedPos(basic_event *event, double dist, double length, DriverOrder
 
 void TSpeedPos::Clear()
 {
-    iFlags = 0; // brak flag to brak reakcji
+    ResetFlags(); // brak flag to brak reakcji
     fVelNext = -1.0; // prędkość bez ograniczeń
 	fSectionVelocityDist = 0.0; //brak długości
     fPointDist = 0.0;
@@ -229,14 +241,14 @@ void TSpeedPos::CommandCheck()
     double value1 = evEvent->input_value(1);
     double value2 = evEvent->input_value(2);
     // the point of a PointVelocity limit is taken anew from the current command
-    iFlags &= ~spPointVelocity;
+    flags = flags.Without(SpeedPointFlag::pointSpeed);
     fPointDist = 0.0;
     switch (command)
     {
     case TCommandType::cm_ShuntVelocity:
         // prędkość manewrową zapisać, najwyżej AI zignoruje przy analizie tabelki
         fVelNext = value1; // powinno być value2, bo druga określa "za"?
-        iFlags |= spShuntSemaphor;
+        flags |= SpeedPointFlag::shuntSignal;
         break;
     case TCommandType::cm_SetVelocity:
         // w semaforze typu "m" jest ShuntVelocity dla Ms2 i SetVelocity dla S1
@@ -245,36 +257,36 @@ void TSpeedPos::CommandCheck()
         // SetVelocity -1 100 -> można jechać, przy następnym ograniczenie (SBL)
         // SetVelocity 40 -1  -> PutValues: jechać 40 aż do minięcia (koniec ograniczenia(
         fVelNext = value1;
-        iFlags &= ~(spShuntSemaphor | spPassengerStopPoint | spStopOnSBL);
-        iFlags |= spSemaphor;// nie manewrowa, nie przystanek, nie zatrzymać na SBL, ale semafor
+        flags = flags.Without((SpeedPointFlag::shuntSignal | SpeedPointFlag::passengerStop | SpeedPointFlag::stopOnAutomaticBlock));
+        flags |= SpeedPointFlag::signal;// nie manewrowa, nie przystanek, nie zatrzymać na SBL, ale semafor
         if (value1 == 0.0 && value2 != 0.0) // jeśli pierwsza zerowa
 		// a druga nie
 		{ // S1 na SBL, można przejechać po zatrzymaniu (tu nie mamy prędkości ani odległości)
 			fVelNext = value2; // normalnie będzie zezwolenie na jazdę, aby się usunął z tabelki
-			iFlags |= spStopOnSBL; // flaga, że ma zatrzymać; na pewno nie zezwoli na manewry
+			flags |= SpeedPointFlag::stopOnAutomaticBlock; // flaga, że ma zatrzymać; na pewno nie zezwoli na manewry
 		}
 		break;
     case TCommandType::cm_SectionVelocity:
         // odcinek z ograniczeniem prędkości
         fVelNext = value1;
         fSectionVelocityDist = value2;
-        iFlags |= spSectionVel;
+        flags |= SpeedPointFlag::sectionSpeed;
         break;
     case TCommandType::cm_RoadVelocity:
         // prędkość drogowa (od tej pory będzie jako domyślna najwyższa)
         fVelNext = value1;
-        iFlags |= spRoadVel;
+        flags |= SpeedPointFlag::roadSpeed;
         break;
     case TCommandType::cm_PassengerStopPoint:
         // nie ma dostępu do rozkładu
         // przystanek, najwyżej AI zignoruje przy analizie tabelki
         fVelNext = 0.0;
-        iFlags |= spPassengerStopPoint; // niestety nie da się w tym miejscu współpracować z rozkładem
+        flags |= SpeedPointFlag::passengerStop; // niestety nie da się w tym miejscu współpracować z rozkładem
 /*
         // NOTE: not used for now as it might be unnecessary
         // special case, potentially override any set speed limits if requested
         // NOTE: we test it here because for the time being it's only used for passenger stops
-        if( TestFlag( iFlags, spDontApplySpeedLimit ) ) {
+        if( flags.HasAll(spDontApplySpeedLimit) ) {
             fVelNext = -1;
         }
 */
@@ -282,7 +294,7 @@ void TSpeedPos::CommandCheck()
     case TCommandType::cm_SetProximityVelocity:
         // musi zostać gdyż inaczej nie działają manewry
         fVelNext = -1;
-        iFlags |= spProximityVelocity;
+        flags |= SpeedPointFlag::proximitySpeed;
         // fSectionVelocityDist = value2;
         break;
     case TCommandType::cm_PointVelocity:
@@ -291,15 +303,15 @@ void TSpeedPos::CommandCheck()
         // what it says then holds for the point (the warning disc of a level crossing, Osp1/Osp2)
         fVelNext = value1;
         fPointDist = std::max( value2, 0.0 );
-        iFlags &= ~(spShuntSemaphor | spPassengerStopPoint | spStopOnSBL | spSemaphor); // not a signal, even if the cell was one before
-        iFlags |= spPointVelocity;
+        flags = flags.Without((SpeedPointFlag::shuntSignal | SpeedPointFlag::passengerStop | SpeedPointFlag::stopOnAutomaticBlock | SpeedPointFlag::signal)); // not a signal, even if the cell was one before
+        flags |= SpeedPointFlag::pointSpeed;
         break;
     case TCommandType::cm_OutsideStation:
         // w trybie manewrowym: skanować od niej wstecz i stanąć po wyjechaniu za sygnalizator i
         // zmienić kierunek
         // w trybie pociągowym: można przyspieszyć do wskazanej prędkości (po zjechaniu z rozjazdów)
         fVelNext = -1;
-        iFlags |= spOutsideStation; // W5
+        flags |= SpeedPointFlag::outsideStation; // W5
         break;
     case TCommandType::cm_EmergencyBrake:
         fVelNext = -1;
@@ -310,7 +322,7 @@ void TSpeedPos::CommandCheck()
     case TCommandType::cm_SignalAreaEnd:
         // imposes no speed of its own, it only ends the reduced speed of the signal passed last
         fVelNext = -1;
-        iFlags |= spSignalAreaEnd;
+        flags |= SpeedPointFlag::signalAreaEnd;
         break;
     default:
         // inna komenda w evencie skanowanym powoduje zatrzymanie i wysłanie tej komendy
@@ -320,12 +332,12 @@ void TSpeedPos::CommandCheck()
 /*
         fVelNext = (
             evEvent->is_command() ? 0.0 : // ask for a stop if we have a command for the vehicle
-            ( iFlags & ( spSemaphor | spShuntSemaphor )) != 0 ? fVelNext : // don't change semafor velocity
+            flags.HasAny(( spSemaphor | spShuntSemaphor )) ? fVelNext : // don't change semafor velocity
             -1.0 ); // otherwise don't be a bother
 */
         // TODO: check whether clearing spShuntSemaphor flag doesn't cause problems
         // potentially it can invalidate shunt semaphor used to transmit timetable or similar command
-        iFlags &= ~(spShuntSemaphor | spPassengerStopPoint | spStopOnSBL);
+        flags = flags.Without((SpeedPointFlag::shuntSignal | SpeedPointFlag::passengerStop | SpeedPointFlag::stopOnAutomaticBlock));
     }
 };
 
@@ -333,10 +345,10 @@ bool TSpeedPos::Update()
 {
     if( fDist < 0.0 ) {
         // trzeba zazanaczyć, że minięty
-        iFlags |= spElapsed;
+        flags |= SpeedPointFlag::elapsed;
     }
     bSeenAhead = signal_passing::seen_ahead_on_update( fDist, bSeenAhead );
-    if (iFlags & spTrack) {
+    if (flags & SpeedPointFlag::track) {
         // road/track
         if (trTrack) {
             // może być NULL, jeśli koniec toru (???)
@@ -344,12 +356,12 @@ bool TSpeedPos::Update()
 
             if( trTrack->iCategoryFlag & 1 ) {
                 // railways
-                if( iFlags & spSwitch && (trTrack->GetSwitchState() & 1) != 0 != ((iFlags & spSwitchStatus) != 0) ) {
+                if( flags & SpeedPointFlag::switchTrack && (trTrack->GetSwitchState() & 1) != 0 != (flags.HasAny(SpeedPointFlag::switchState)) ) {
                     // jeśli odcinek zmienny
 					// czy stan się zmienił?
 					// Ra: zakładam, że są tylko 2 możliwe stany
-					iFlags ^= spSwitchStatus;
-					if ((iFlags & spElapsed) == 0)
+					flags ^= SpeedPointFlag::switchState;
+					if (false == flags.HasAny(SpeedPointFlag::elapsed))
 					{
 						// jeszcze trzeba skanowanie wykonać od tego toru
 						// problem jest chyba, jeśli zwrotnica się przełoży zaraz po zjechaniu z niej
@@ -360,7 +372,7 @@ bool TSpeedPos::Update()
             }
             else {
                 // roads and others
-                if( iFlags & 0xF0000000 && (iFlags & 0xF0000000) > 0x10000000 ) {
+                if( crossRoute != 0 && crossRoute != 1 ) { // as the top 4 bits read without the sign: -1 counts as turning
                     // jeśli skrzyżowanie, ograniczyć prędkość przy skręcaniu
 					// ±1 to jazda na wprost, ±2 nieby też, ale z przecięciem głównej drogi - chyba że jest równorzędne...
 					// TODO: uzależnić prędkość od promienia;
@@ -370,7 +382,7 @@ bool TSpeedPos::Update()
             }
         }
     }
-    else if (iFlags & spEvent && ((iFlags & spElapsed) == 0 || fVelNext == 0.0)) {
+    else if (flags & SpeedPointFlag::event && (false == flags.HasAny(SpeedPointFlag::elapsed) || fVelNext == 0.0)) {
         // jeśli event
 		// ignore already passed signals, but keep an eye on overrun stops
 		// (a PointVelocity cell is latched when the head passes it, except at 0, which has to be released by the cell)
@@ -383,9 +395,9 @@ bool TSpeedPos::Update()
 
 std::string TSpeedPos::GetName() const
 {
-    if( iFlags & spTrack ) // jeśli tor
+    if( flags & SpeedPointFlag::track ) // jeśli tor
         return trTrack->name();
-    else if( iFlags & spEvent ) // jeśli event
+    else if( flags & SpeedPointFlag::event ) // jeśli event
         return
             evEvent->m_name
             + " [" + std::to_string( static_cast<int>( evEvent->input_value( 1 ) ) )
@@ -397,9 +409,9 @@ std::string TSpeedPos::GetName() const
 
 std::string TSpeedPos::TableText() const
 { // pozycja tabelki pr?dko?ci
-    if (iFlags & spEnabled)
+    if (flags & SpeedPointFlag::enabled)
     { // o ile pozycja istotna
-		return to_hex_str(iFlags, 8) + "   " + to_string(fDist, 1, 6) +
+		return to_hex_str(LegacyFlagsValue(), 8) + "   " + to_string(fDist, 1, 6) +
                "   " + (fVelNext == -1.0 ? "  -" : to_string(static_cast<int>(fVelNext), 0, 3)) + "   " + GetName();
     }
     return "Empty";
@@ -409,12 +421,12 @@ bool TSpeedPos::IsProperSemaphor(DriverOrders order)
 { // sprawdzenie czy semafor jest zgodny z trybem jazdy
 	if (false == order.HasAny(trainOrders)) // Wait_for_orders, Prepare_engine, Change_direction, Connect, Disconnect, Shunt
     {
-        if (iFlags & (spSemaphor | spShuntSemaphor))
+        if (flags & (SpeedPointFlag::signal | SpeedPointFlag::shuntSignal))
             return true;
-        else if (iFlags & spOutsideStation)
+        else if (flags & SpeedPointFlag::outsideStation)
             return true;
     }
-    else if (order & DriverOrder::obeyTrain && iFlags & spSemaphor)
+    else if (order & DriverOrder::obeyTrain && flags & SpeedPointFlag::signal)
     {
 		return true;
 	}
@@ -429,7 +441,8 @@ bool TSpeedPos::Set(basic_event *event, double dist, double length, DriverOrders
     // little behind the head still counts as seen ahead. a standing train passes nothing: an event found behind its
     // head counts only once an update finds it ahead
     bSeenAhead = signal_passing::seen_ahead_when_found( dist, Standing );
-    iFlags = spEvent;
+    flags = SpeedPointFlag::event;
+    crossRoute = 0;
     evEvent = event;
     vPos = event->input_location(); // współrzędne eventu albo komórki pamięci (zrzutować na tor?)
     // ignore events located behind the consist, but with exception of stop points which may be needed to update freshly received timetable
@@ -437,43 +450,44 @@ bool TSpeedPos::Set(basic_event *event, double dist, double length, DriverOrders
      && event->input_command() != TCommandType::cm_PassengerStopPoint ) {
         return false;
     }
-    iFlags |= spEnabled;
+    flags |= SpeedPointFlag::enabled;
     CommandCheck(); // sprawdzenie typu komendy w evencie i określenie prędkości
 	// zależnie od trybu sprawdzenie czy jest tutaj gdzieś semafor lub tarcza manewrowa
 	// jeśli wskazuje stop wtedy wystawiamy true jako koniec sprawdzania
-	// WriteLog("EventSet: Vel=" + AnsiString(fVelNext) + " iFlags=" + AnsiString(iFlags) + " order="+AnsiString(order));
+	// WriteLog("EventSet: Vel=" + AnsiString(fVelNext) + " flags=" + AnsiString(flags) + " order="+AnsiString(order));
 	if (false == order.HasAny(trainOrders)) // Wait_for_orders, Prepare_engine, Change_direction, Connect, Disconnect, Shunt
     {
-        if (iFlags & (spSemaphor | spShuntSemaphor) && fVelNext == 0.0)
+        if (flags & (SpeedPointFlag::signal | SpeedPointFlag::shuntSignal) && fVelNext == 0.0)
             return true;
-        else if (iFlags & spOutsideStation)
+        else if (flags & SpeedPointFlag::outsideStation)
             return true;
     }
-    else if (order & DriverOrder::obeyTrain && iFlags & spSemaphor && fVelNext == 0.0)
+    else if (order & DriverOrder::obeyTrain && flags & SpeedPointFlag::signal && fVelNext == 0.0)
     {
 		return true;
 	}
     return false; // true gdy zatrzymanie, wtedy nie ma po co skanować dalej
 };
 
-void TSpeedPos::Set(TTrack *track, double dist, int flag)
+void TSpeedPos::Set(TTrack *track, double dist, SpeedPointFlags flag)
 { // zapamiętanie zmiany prędkości w torze
     fDist = dist; // odległość do początku toru
     trTrack = track; // TODO: (t) może być NULL i nie odczytamy końca poprzedniego :/
     if (trTrack)
     {
-        iFlags = flag | (trTrack->eType == tt_Normal ? spTrack : spTrack | spSwitch ); // zapamiętanie kierunku wraz z typem
-        if (iFlags & spSwitch && trTrack->GetSwitchState() & 1)
-			iFlags |= spSwitchStatus;
+        crossRoute = 0;
+        flags = flag | (trTrack->eType == tt_Normal ? SpeedPointFlag::track : SpeedPointFlag::track | SpeedPointFlag::switchTrack ); // zapamiętanie kierunku wraz z typem
+        if (flags & SpeedPointFlag::switchTrack && trTrack->GetSwitchState() & 1)
+			flags |= SpeedPointFlag::switchState;
 		fVelNext = trTrack->VelocityGet();
         if (trTrack->iDamageFlag & 128)
             fVelNext = 0.0; // jeśli uszkodzony, to też stój
-        if (iFlags & spEnd)
+        if (flags & SpeedPointFlag::trackEnd)
             fVelNext = trTrack->iCategoryFlag & 1 ?
                            0.0 :
                            20.0; // jeśli koniec, to pociąg stój, a samochód zwolnij
         vPos =
-            iFlags & spReverse ?
+            flags & SpeedPointFlag::reverse ?
                 trTrack->CurrentSegment()->FastGetPoint_1() :
                 trTrack->CurrentSegment()->FastGetPoint_0();
     }
@@ -520,7 +534,7 @@ bool TController::TableNotFound(basic_event const *Event, double const Distance 
             sSpeedTable.begin(),
             sSpeedTable.end(),
             [Event]( TSpeedPos const &speedpoint ){
-                return true == TestFlag(speedpoint.iFlags, spEnabled | spEvent) && speedpoint.evEvent == Event; } );
+                return true == speedpoint.flags.HasAll(SpeedPointFlag::enabled | SpeedPointFlag::event) && speedpoint.evEvent == Event; } );
 
     if (Global.iWriteLogEnabled & 8
      && lookup != sSpeedTable.end() ) {
@@ -600,12 +614,12 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
             // znaleziono semafor lub tarczę lub tor z prędkością zero, trzeba sprawdzić czy to nadał semafor
             // jeśli jest następny semafor to sprawdzamy czy to on nadał zero
             if( OrderCurrentGet() & DriverOrder::obeyTrain
-             && sSpeedTable[SemNextStopIndex].iFlags & spSemaphor ) {
+             && sSpeedTable[SemNextStopIndex].flags & SpeedPointFlag::signal ) {
                 return;
             }
             else {
                 if( false == OrderCurrentGet().HasAny(trainOrders)
-                 && sSpeedTable[SemNextStopIndex].iFlags & (spSemaphor | spShuntSemaphor | spOutsideStation) ) {
+                 && sSpeedTable[SemNextStopIndex].flags & (SpeedPointFlag::signal | SpeedPointFlag::shuntSignal | SpeedPointFlag::outsideStation) ) {
                     return;
                 }
             }
@@ -615,7 +629,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
         pTrack = lastspeedpoint.trTrack;
         assert( pTrack != nullptr );
         // flaga ustawiona, gdy Point2 toru jest blizej
-        fLastDir = (lastspeedpoint.iFlags & spReverse) != 0 ? -1.0 : 1.0;
+        fLastDir = lastspeedpoint.flags.HasAny(SpeedPointFlag::reverse) ? -1.0 : 1.0;
         fCurrentDistance = lastspeedpoint.fDist; // aktualna odleglosc do jego Point1
         fTrackLength = pTrack->Length();
     }
@@ -692,7 +706,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
                 TableAddNew();
                 sSpeedTable[ iLast ].Set(
                     pTrack, fCurrentDistance,
-                    fLastDir < 0 ? spEnabled | spReverse : spEnabled ); // dodanie odcinka do tabelki z flagą kierunku wejścia
+                    fLastDir < 0 ? SpeedPointFlag::enabled | SpeedPointFlag::reverse : SpeedPointFlag::enabled ); // dodanie odcinka do tabelki z flagą kierunku wejścia
                 if (pTrack->eType == tt_Cross) {
                     // na skrzyżowaniach trzeba wybrać segment, po którym pojedzie pojazd
                     // dopiero tutaj jest ustalany kierunek segmentu na skrzyżowaniu
@@ -710,19 +724,16 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
                     }
 */
                     auto const routewanted { pTrack->RouteDraw() };
-                    sSpeedTable[iLast].iFlags |=
-                        (pTrack->CrossSegment(fLastDir < 0 ? tLast->iPrevDirection : tLast->iNextDirection,
+                    sSpeedTable[iLast].crossRoute = signedNibble( ( static_cast<unsigned>( sSpeedTable[iLast].crossRoute ) | static_cast<unsigned>( pTrack->CrossSegment(fLastDir < 0 ? tLast->iPrevDirection : tLast->iNextDirection,
 					                                                   /*
 					                                                                                   iRouteWanted )
 					                                                   */
-					                                                   routewanted) &
-					                              0xf)
-					                             << 28; // ostatnie 4 bity pola flag
-                    sSpeedTable[iLast].iFlags &= ~spReverse; // usunięcie flagi kierunku, bo może być błędna
-                    if (sSpeedTable[iLast].iFlags < 0) {
-                        sSpeedTable[iLast].iFlags |= spReverse; // ustawienie flagi kierunku na podstawie wybranego segmentu
+					                                                   routewanted) ) ) & 0xf ); // ostatnie 4 bity pola flag
+                    sSpeedTable[iLast].flags = sSpeedTable[iLast].flags.Without(SpeedPointFlag::reverse); // usunięcie flagi kierunku, bo może być błędna
+                    if (sSpeedTable[iLast].crossRoute < 0) {
+                        sSpeedTable[iLast].flags |= SpeedPointFlag::reverse; // ustawienie flagi kierunku na podstawie wybranego segmentu
                     }
-                    if (int(fLastDir) * sSpeedTable[iLast].iFlags < 0) {
+                    if (int(fLastDir) * sSpeedTable[iLast].LegacyFlagsValue() < 0) {
                         fLastDir = -fLastDir;
                     }
 /*
@@ -738,7 +749,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
 			         TableAddNew()) // koniec łuku też jest istotny
             { // albo dla liczenia odległości przy pomocy cięciw - te usuwać po przejechaniu
 			  // dodanie odcinka do tabelki
-				sSpeedTable[iLast].Set(pTrack, fCurrentDistance, fLastDir < 0 ? spEnabled | spCurve | spReverse : spEnabled | spCurve);
+				sSpeedTable[iLast].Set(pTrack, fCurrentDistance, fLastDir < 0 ? SpeedPointFlag::enabled | SpeedPointFlag::curve | SpeedPointFlag::reverse : SpeedPointFlag::enabled | SpeedPointFlag::curve);
 			}
         }
 
@@ -746,7 +757,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
         tLast = pTrack; // odhaczenie, że sprawdzony
         fLastVel = pTrack->VelocityGet(); // prędkość na poprzednio sprawdzonym odcinku
         pTrack = pTrack->Connected(
-            pTrack->eType == tt_Cross ? sSpeedTable[iLast].iFlags >> 28 : static_cast<int>(fLastDir),
+            pTrack->eType == tt_Cross ? sSpeedTable[iLast].crossRoute : static_cast<int>(fLastDir),
             fLastDir); // może być NULL
 
         if (pTrack != nullptr )
@@ -756,7 +767,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
 				if (iLast != -1 && sSpeedTable[iLast].trTrack == tLast)
 				{
 					// if the track is already in the table we only need to mark it as relevant
-					sSpeedTable[iLast].iFlags |= spEnabled;
+					sSpeedTable[iLast].flags |= SpeedPointFlag::enabled;
 				}
 				else
 				{
@@ -764,7 +775,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
 					TableAddNew();
 					sSpeedTable[iLast].Set(tLast,
 					                       fCurrentDistance - fTrackLength, // by now the current distance points to beginning of next track
-					                       (fLastDir > 0 ? pTrack->iPrevDirection : pTrack->iNextDirection) ? spEnabled : spEnabled | spReverse);
+					                       (fLastDir > 0 ? pTrack->iPrevDirection : pTrack->iNextDirection) ? SpeedPointFlag::enabled : SpeedPointFlag::enabled | SpeedPointFlag::reverse);
 				}
 			}
             // zwiększenie skanowanej odległości tylko jeśli istnieje dalszy tor
@@ -773,21 +784,21 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
         else
         { // definitywny koniec skanowania, chyba że dalej puszczamy samochód po gruncie...
             if( iLast == -1
-             || ( false == TestFlag(sSpeedTable[iLast].iFlags, spEnabled | spEnd)
+             || ( false == sSpeedTable[iLast].flags.HasAll(SpeedPointFlag::enabled | SpeedPointFlag::trackEnd)
                && sSpeedTable[iLast].trTrack != tLast ) ) {
                 // only if we haven't already marked end of the track and if the new track doesn't duplicate last one
                 if( TableAddNew() ) {
                     // zapisanie ostatniego sprawdzonego toru
                     sSpeedTable[iLast].Set(
                         tLast, fCurrentDistance - fTrackLength, // by now the current distance points to beginning of next track,
-                        fLastDir < 0 ? spEnabled | spEnd | spReverse : spEnabled | spEnd);
+                        fLastDir < 0 ? SpeedPointFlag::enabled | SpeedPointFlag::trackEnd | SpeedPointFlag::reverse : SpeedPointFlag::enabled | SpeedPointFlag::trackEnd);
                 }
             }
             else if( sSpeedTable[iLast].trTrack == tLast && false == TestFlag(sSpeedTable[iLast].trTrack->iCategoryFlag, 0x100) ) {
                 // otherwise just mark the last added track as the final one
                 // TODO: investigate exactly how we can wind up not marking the last existing track as actual end
 				// don't mark portals, as these aren't exactly track ends, but teleport devices
-				sSpeedTable[iLast].iFlags |= spEnabled | spEnd;
+				sSpeedTable[iLast].flags |= SpeedPointFlag::enabled | SpeedPointFlag::trackEnd;
 			}
             // to ostatnia pozycja, bo NULL nic nie da, a może się podpiąć obrotnica, czy jakieś transportery
             return;
@@ -797,7 +808,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
         // zapisanie ostatniego sprawdzonego toru
         sSpeedTable[ iLast ].Set(
             pTrack, fCurrentDistance,
-            fLastDir < 0 ? spNone | spReverse : spNone );
+            fLastDir < 0 ? SpeedPointFlag::none | SpeedPointFlag::reverse : SpeedPointFlag::none );
     }
 };
 
@@ -818,9 +829,9 @@ void TController::TableCheck(double fDistance)
         MoveDistanceReset(); // kasowanie odległości po aktualizacji tabelki
         for( int i = 0; i < iLast; ++i )
         { // aktualizacja rekordów z wyjątkiem ostatniego
-            if (sSpeedTable[i].iFlags & spEnabled) // jeśli pozycja istotna
+            if (sSpeedTable[i].flags & SpeedPointFlag::enabled) // jeśli pozycja istotna
             {
-                auto const passedbefore { TestFlag( sSpeedTable[ i ].iFlags, spElapsed ) };
+                auto const passedbefore { sSpeedTable[ i ].flags.HasAll(SpeedPointFlag::elapsed) };
                 if (sSpeedTable[i].Update())
                 {
                     if( Global.iWriteLogEnabled & 8 ) {
@@ -849,30 +860,30 @@ void TController::TableCheck(double fDistance)
                 }
                 // a switch is a track, the update of a signal never ends the loop above
                 CheckSignalPassed( sSpeedTable[ i ], passedbefore );
-                if (sSpeedTable[i].iFlags & spTrack) // jeśli odcinek
+                if (sSpeedTable[i].flags & SpeedPointFlag::track) // jeśli odcinek
                 {
                     if( sSpeedTable[ i ].fDist + sSpeedTable[ i ].trTrack->Length() < -fLength ) // a skład wyjechał całą długością poza
                     { // degradacja pozycji
-						sSpeedTable[i].iFlags &= ~spEnabled; // nie liczy się
+						sSpeedTable[i].flags = sSpeedTable[i].flags.Without(SpeedPointFlag::enabled); // nie liczy się
                     }
-                    else if( (sSpeedTable[i].iFlags & 0xF0000028) == spElapsed && sSpeedTable[i].fVelNext < 0 ) {
+                    else if( sSpeedTable[i].crossRoute == 0 && ( sSpeedTable[i].flags & ( SpeedPointFlag::elapsed | SpeedPointFlag::switchTrack ) ) == SpeedPointFlag::elapsed && sSpeedTable[i].fVelNext < 0 ) {
                         // jest z tyłu (najechany) i nie jest zwrotnicą ani skrzyżowaniem
 						// a nie ma ograniczenia prędkości
-						sSpeedTable[i].iFlags = 0; // to nie ma go po co trzymać (odtykacz usunie ze środka)
+						sSpeedTable[i].ResetFlags(); // to nie ma go po co trzymać (odtykacz usunie ze środka)
 					}
                 }
-                else if (sSpeedTable[i].iFlags & spEvent && (sSpeedTable[i].iFlags & spPointVelocity) == 0 && sSpeedTable[i].fDist < (typeid(*sSpeedTable[i].evEvent) == typeid(putvalues_event) ? -fLength : 0) && mvOccupied->CategoryFlag == 2 &&
+                else if (sSpeedTable[i].flags & SpeedPointFlag::event && false == sSpeedTable[i].flags.HasAny(SpeedPointFlag::pointSpeed) && sSpeedTable[i].fDist < (typeid(*sSpeedTable[i].evEvent) == typeid(putvalues_event) ? -fLength : 0) && mvOccupied->CategoryFlag == 2 &&
 				         sSpeedTable[i].fDist < -0.75) // jeśli event
                 {
 					// jeśli jest z tyłu
 					// pociąg staje zawsze, a samochód tylko jeśli nie przejedzie całą długością (może być zaskoczony zmianą)
 					// WriteLog("TableCheck: Event is behind. Delete from table: " + sSpeedTable[i].evEvent->asName);
-					sSpeedTable[i].iFlags &= ~spEnabled; // degradacja pozycji dla samochodu;
+					sSpeedTable[i].flags = sSpeedTable[i].flags.Without(SpeedPointFlag::enabled); // degradacja pozycji dla samochodu;
 					// semafory usuwane tylko przy sprawdzaniu, bo wysyłają komendy
 				}
             }
         }
-        auto const lastpassedbefore { TestFlag( sSpeedTable[ iLast ].iFlags, spElapsed ) };
+        auto const lastpassedbefore { sSpeedTable[ iLast ].flags.HasAll(SpeedPointFlag::elapsed) };
         sSpeedTable[iLast].Update(); // aktualizacja ostatniego
         // a signal at stop often is the last, the scan doesn't go past it
         CheckSignalPassed( sSpeedTable[ iLast ], lastpassedbefore );
@@ -891,16 +902,16 @@ namespace {
 // the position is a signal showing stop (SetVelocity 0 0). SetVelocity 0 x on automatic block isn't: it may be passed after a stop
 bool is_signal_at_stop( TSpeedPos const &Point )
 {
-    return TestFlag( Point.iFlags, spEvent )
-        && TestFlag( Point.iFlags, spSemaphor )
-        && false == TestFlag( Point.iFlags, spStopOnSBL )
+    return Point.flags.HasAll(SpeedPointFlag::event)
+        && Point.flags.HasAll(SpeedPointFlag::signal)
+        && false == Point.flags.HasAll(SpeedPointFlag::stopOnAutomaticBlock)
         && std::abs( Point.fVelNext ) <= 0.0
         && Point.evEvent != nullptr;
 }
 
 void clear_signal_area_end( TSpeedPos &Point )
 {
-    if( TestFlag( Point.iFlags, spSignalAreaEnd ) ) {
+    if( Point.flags.HasAll(SpeedPointFlag::signalAreaEnd) ) {
         Point.Clear();
     }
 }
@@ -909,8 +920,8 @@ void clear_signal_area_end( TSpeedPos &Point )
 // set speed limits by the track, and the flags they get don't make them signals
 bool is_signal( TSpeedPos const &Point )
 {
-    return TestFlag( Point.iFlags, spEvent )
-        && ( TestFlag( Point.iFlags, spSemaphor ) || TestFlag( Point.iFlags, spShuntSemaphor ) )
+    return Point.flags.HasAll(SpeedPointFlag::event)
+        && ( Point.flags.HasAll(SpeedPointFlag::signal) || Point.flags.HasAll(SpeedPointFlag::shuntSignal) )
         && Point.evEvent != nullptr
         && typeid( *Point.evEvent ) == typeid( getvalues_event );
 }
@@ -918,13 +929,13 @@ bool is_signal( TSpeedPos const &Point )
 std::uint8_t passing_flags_of( TSpeedPos const &Point, double const Speedatsignal, bool const Trainmovement )
 {
     std::uint8_t flags { 0 };
-    auto const shunting { TestFlag( Point.iFlags, spShuntSemaphor ) };
+    auto const shunting { Point.flags.HasAll(SpeedPointFlag::shuntSignal) };
     if( shunting ) {
         flags |= blackbox::passing_flags::shunt;
     }
     // the speeds of the aspects are whole km/h, -1 for no limit; a shunting signal binds only the shunting
     if( std::abs( Speedatsignal ) < 0.5 && ( false == shunting || false == Trainmovement ) ) {
-        flags |= ( TestFlag( Point.iFlags, spStopOnSBL ) ? blackbox::passing_flags::automatic_block : blackbox::passing_flags::at_stop );
+        flags |= ( Point.flags.HasAll(SpeedPointFlag::stopOnAutomaticBlock) ? blackbox::passing_flags::automatic_block : blackbox::passing_flags::at_stop );
     }
     return flags;
 }
@@ -934,7 +945,7 @@ std::uint8_t passing_flags_of( TSpeedPos const &Point, double const Speedatsigna
 void TController::CheckSignalPassed( TSpeedPos const &Point, bool const Passedbefore ) const
 {
     // not bSeenAhead: found already behind the head, the train stood across it or past it, it didn't pass it
-    if( false == signal_passing::passed_now( Passedbefore, TestFlag( Point.iFlags, spElapsed ), Point.bSeenAhead )
+    if( false == signal_passing::passed_now( Passedbefore, Point.flags.HasAll(SpeedPointFlag::elapsed), Point.bSeenAhead )
      || ( mvOccupied->CategoryFlag & 1 ) == 0 ) { // railway only
         return;
     }
@@ -945,7 +956,7 @@ void TController::CheckSignalPassed( TSpeedPos const &Point, bool const Passedbe
         // the aspect the train had of it: the table keeps it once the signal is behind, while the memory cell
         // may already show stop for the train itself, past the signal on the track it guards. the stop of an
         // automatic block signal is kept as the speed allowed after it, with a flag of its own
-        auto const speedatsignal { TestFlag( Point.iFlags, spStopOnSBL ) ? 0.0 : Point.fVelNext };
+        auto const speedatsignal { Point.flags.HasAll(SpeedPointFlag::stopOnAutomaticBlock) ? 0.0 : Point.fVelNext };
         simulation::Blackbox.signal_passed(
             pVehicles[ end::front ], *Point.evEvent,
             speedatsignal, Point.evEvent->input_value( 2 ),
@@ -1022,40 +1033,40 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
 
     for( std::size_t idx = 0; idx < sSpeedTable.size(); ++idx ) {
         // o ile dana pozycja tabelki jest istotna
-        if( ( sSpeedTable[ idx ].iFlags & spEnabled ) == 0 ) { continue; }
+        if( false == sSpeedTable[ idx ].flags.HasAny(SpeedPointFlag::enabled) ) { continue; }
 
         auto &point { sSpeedTable[ idx ] };
 
-        if( TestFlag( point.iFlags, spPassengerStopPoint ) ) {
+        if( point.flags.HasAll(SpeedPointFlag::passengerStop) ) {
             if( TableUpdateStopPoint( go, point, d_to_next_sem ) ) { continue; };
         }
         v = point.fVelNext; // odczyt prędkości do zmiennej pomocniczej
-        if( TestFlag( point.iFlags, spSwitch ) ) {
+        if( point.flags.HasAll(SpeedPointFlag::switchTrack) ) {
             // zwrotnice są usuwane z tabelki dopiero po zjechaniu z nich
             drivingFlags.switchFound = true; // rozjazd z przodu/pod ogranicza np. sens skanowania wstecz
             SwitchClearDist = point.fDist + point.trTrack->Length() + fLength;
         }
-        else if ( TestFlag(point.iFlags, spEvent) && TableUpdateEvent(v, go, point, d_to_next_sem, idx) ) // W4 może się deaktywować
+        else if ( point.flags.HasAll(SpeedPointFlag::event) && TableUpdateEvent(v, go, point, d_to_next_sem, idx) ) // W4 może się deaktywować
         { // jeżeli event, może być potrzeba wysłania komendy, aby ruszył
 			continue;
 		}
 
-        auto const railwaytrackend { true == TestFlag(point.iFlags, spEnd) && is_train() };
+        auto const railwaytrackend { true == point.flags.HasAll(SpeedPointFlag::trackEnd) && is_train() };
         if( v >= 0.0 // pozycje z prędkością -1 można spokojnie pomijać
          || railwaytrackend ) {
 
             // a PointVelocity limit lies fPointDist beyond its entry and stays ahead of us until the head passes it
-            auto const ispointlimit { TestFlag( point.iFlags, spPointVelocity ) };
+            auto const ispointlimit { point.flags.HasAll(SpeedPointFlag::pointSpeed) };
             d = point.fDist + point.fPointDist;
 
             if( v >= 0.0 ) {
                 // points located in front of us can potentially affect our acceleration and target speed
                 if( d > 0.0
-                 && ( false == TestFlag(point.iFlags, spElapsed) || ispointlimit ) ) {
+                 && ( false == point.flags.HasAll(SpeedPointFlag::elapsed) || ispointlimit ) ) {
                     // sygnał lub ograniczenie z przodu (+32=przejechane)
                     // 2014-02: jeśli stoi, a ma do przejechania kawałek, to niech jedzie
                     if( mvOccupied->Vel < 0.01
-                     && true == TestFlag(point.iFlags, spEnabled | spEvent | spPassengerStopPoint)
+                     && true == point.flags.HasAll(SpeedPointFlag::enabled | SpeedPointFlag::event | SpeedPointFlag::passengerStop)
                      && false == IsAtPassengerStop ) {
                         // ma podjechać bliżej - czy na pewno w tym miejscu taki warunek?
                         a = d > passengerstopmaxdistance || drivingFlags.stopCloser ? fAcc : 0.0;
@@ -1083,7 +1094,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                     }
                 }
                 // points located behind can affect our current speed, but little else
-                else if ( point.iFlags & spTrack) // jeśli tor
+                else if ( point.flags & SpeedPointFlag::track) // jeśli tor
                 { // tor ogranicza prędkość, dopóki cały skład nie przejedzie,
                     if( v >= 1.0 && d + point.trTrack->Length() < -fLength && false == railwaytrackend ) { // EU06 się zawieszało po dojechaniu na koniec toru postojowego
 						// zapętlenie, jeśli już wyjechał za ten odcinek
@@ -1096,7 +1107,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                     if( v < VelLimitLastDist.first ) {
                         VelLimitLastDist.second = d + point.trTrack->Length() + fLength;
                     }
-                    else if( VelLimitLastDist.second > 0 && (point.iFlags & (spSwitch | spPassengerStopPoint)) == 0 ) { // the speed limit can potentially start afterwards, so don't mark it as broken too soon
+                    else if( VelLimitLastDist.second > 0 && false == point.flags.HasAny((SpeedPointFlag::switchTrack | SpeedPointFlag::passengerStop)) ) { // the speed limit can potentially start afterwards, so don't mark it as broken too soon
 						speedlimitiscontinuous = false;
 					}
                     if( false == railwaytrackend ) {
@@ -1136,7 +1147,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                 fAcc = a; // zalecane przyspieszenie (nie musi być uwzględniane przez AI)
                 fNext = v; // istotna jest prędkość na końcu tego odcinka
                 fDist = d; // dlugość odcinka
-                bStopTargetIsPassengerStop = ( v == 0.0 ) && ( ( point.iFlags & spPassengerStopPoint ) != 0 );
+                bStopTargetIsPassengerStop = ( v == 0.0 ) && ( point.flags.HasAny(SpeedPointFlag::passengerStop) );
             }
 /*
             else if ((fAcc > 0) && (v >= 0) && (v > fNext)) {
@@ -1151,7 +1162,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                 fAcc = a;
                 fNext = v;
                 fDist = d;
-                bStopTargetIsPassengerStop = ( v == 0.0 ) && ( ( point.iFlags & spPassengerStopPoint ) != 0 );
+                bStopTargetIsPassengerStop = ( v == 0.0 ) && ( point.flags.HasAny(SpeedPointFlag::passengerStop) );
             }
             // potentially update our current speed limit
             // a point limit binds only the head at its point, it neither extends nor breaks a limit over a stretch of the line
@@ -1160,11 +1171,11 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
              && ( d < 0 // the point counts as part of last speed limit either if it's behind us
                || VelLimitLastDist.second > 0 ) ) { // or if we already have the last limit ongoing
                 VelLimitLastDist.second = d + fLength;
-                if( ( point.iFlags & spTrack ) != 0 ) {
+                if( point.flags.HasAny(SpeedPointFlag::track) ) {
                     VelLimitLastDist.second += point.trTrack->Length();
                 }
             }
-            else if( ( point.iFlags & ( spSwitch | spPassengerStopPoint | spPointVelocity ) ) == 0 ) {
+            else if( false == point.flags.HasAny(( SpeedPointFlag::switchTrack | SpeedPointFlag::passengerStop | SpeedPointFlag::pointSpeed )) ) {
                 // if we found a point which isn't part of the current speed limit mark the limit as broken
                 // NOTE: we exclude switches from this rule, as speed limits generally extend through these
                 speedlimitiscontinuous = false;
@@ -1172,14 +1183,14 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
         } // if (v>=0.0)
         // finding a point which doesn't impose speed limit means any potential active speed limit can't extend through entire scan table
         // NOTE: we test actual speed value for the given point, as events may receive (v = -1) as a way to disable them in irrelevant modes
-        if( point.fVelNext < 0 && (point.iFlags & (spSwitch | spPassengerStopPoint | spPointVelocity)) == 0 ) {
+        if( point.fVelNext < 0 && false == point.flags.HasAny((SpeedPointFlag::switchTrack | SpeedPointFlag::passengerStop | SpeedPointFlag::pointSpeed)) ) {
             // NOTE: we exclude switches from this rule, as speed limits generally extend through these
             // and point limits, which say nothing of the line they lie on
 			speedlimitiscontinuous = false;
 		}
         if (fNext >= 0.0)
         { // jeśli ograniczenie
-            if( (point.iFlags & (spEnabled | spEvent)) == (spEnabled | spEvent) && (point.iFlags & spPointVelocity) == 0 && eSignNext == nullptr ) { // tylko sygnał przypisujemy (a point limit isn't one)
+            if( (point.flags & (SpeedPointFlag::enabled | SpeedPointFlag::event)) == (SpeedPointFlag::enabled | SpeedPointFlag::event) && false == point.flags.HasAny(SpeedPointFlag::pointSpeed) && eSignNext == nullptr ) { // tylko sygnał przypisujemy (a point limit isn't one)
 				// jeśli jeszcze nic nie zapisane tam
 				eSignNext = point.evEvent; // dla informacji
 			}
@@ -1249,7 +1260,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
         }
         else if( Point.fDist < -fLength ) {
             // jeśli został przejechany
-            Point.iFlags = 0; // to można usunąć (nie mogą być usuwane w skanowaniu)
+            Point.ResetFlags(); // to można usunąć (nie mogą być usuwane w skanowaniu)
         }
         return true; // ignorowanie jakby nie było tej pozycji
     }
@@ -1289,7 +1300,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                 UpdateDelayFlag();
                 TrainParams.StationIndexInc(); // przejście do następnej
                 asNextStop = TrainParams.NextStop(); // pobranie kolejnego miejsca zatrzymania
-                Point.iFlags = 0; // nie liczy się już
+                Point.ResetFlags(); // nie liczy się już
                 return true; // table entry recognized and handled
             }
         } // koniec obsługi przelotu na W4
@@ -1330,14 +1341,14 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
 					Point.fMoved = L;
                 }
                 else {
-					Point.iFlags = 0;
+					Point.ResetFlags();
                 }
             }
             // for human-driven vehicles discard the stop point if they leave it far enough behind
             if( false == AIControllFlag
              && Point.fDist < -1 * std::max(fLength + 100, 250.0) - Point.fMoved ) {
                 record_station( Point, blackbox::station_kinds::missed );
-                Point.iFlags = 0; // nie liczy się już zupełnie (nie wyśle SetVelocity)
+                Point.ResetFlags(); // nie liczy się już zupełnie (nie wyśle SetVelocity)
                 Point.fVelNext = -1; // można jechać za W4
                 if( Point.fDist <= 0.0 && eSignNext == Point.evEvent ) {
                     // sanity check, if we're held by this stop point, let us go
@@ -1427,7 +1438,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                         // ma nie podjeżdżać pod W4 po przeciwnej stronie
                         drivingFlags.stopCloser = false;
                         // ten W4 nie liczy się już zupełnie (nie wyśle SetVelocity)
-                        Point.iFlags = 0;
+                        Point.ResetFlags();
                         // jechać
                         Point.fVelNext = -1;
                         // nie analizować prędkości
@@ -1471,7 +1482,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                             drivingFlags.stopHere = false;
                         }
                         drivingFlags.stopCloser = true; // do następnego W4 podjechać blisko (z dociąganiem)
-                        Point.iFlags = 0; // nie liczy się już zupełnie (nie wyśle SetVelocity)
+                        Point.ResetFlags(); // nie liczy się już zupełnie (nie wyśle SetVelocity)
                         Point.fVelNext = -1; // można jechać za W4
                         if( Point.fDist <= 0.0 && eSignNext == Point.evEvent ) {
                             // sanity check, if we're held by this stop point, let us go
@@ -1516,7 +1527,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                         drivingFlags.stopPoint = false;
                     }
                     fLastStopExpDist = -1.0f; // nie ma rozkładu, nie ma usuwania stacji
-                    Point.iFlags = 0; // W4 nie liczy się już (nie wyśle SetVelocity)
+                    Point.ResetFlags(); // W4 nie liczy się już (nie wyśle SetVelocity)
                     Point.fVelNext = -1; // można jechać za W4
                     if( Point.fDist <= 0.0 && eSignNext == Point.evEvent ) {
                         // sanity check, if we're held by this stop point, let us go
@@ -1538,7 +1549,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
     } // koniec warunku pomijania W4 podczas zmiany czoła
     else
     { // skoro pomijanie, to jechać i ignorować W4
-        Point.iFlags = 0; // W4 nie liczy się już (nie zatrzymuje jazdy)
+        Point.ResetFlags(); // W4 nie liczy się już (nie zatrzymuje jazdy)
         Point.fVelNext = -1;
         return true; // nie analizować prędkości
     }
@@ -1551,7 +1562,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
 bool
 TController::is_road_velocity_held( TSpeedPos const &Point ) const {
 
-    return TestFlag( Point.iFlags, spRoadVel )
+    return Point.flags.HasAll(SpeedPointFlag::roadSpeed)
         && mvOccupied->CategoryFlag != 2
         && Point.fDist >= -fLength;
 }
@@ -1561,7 +1572,7 @@ void
 TController::TableDropPassedEvent( TSpeedPos &Point ) const {
 
     if( is_road_velocity_held( Point ) ) {
-        Point.iFlags |= spRoadVelHeld;
+        Point.flags |= SpeedPointFlag::roadSpeedHeld;
         return;
     }
     Point.Clear();
@@ -1574,7 +1585,7 @@ TController::held_road_velocity_beyond( TSpeedPos const &Point ) const {
 
     auto lowest { -1.0 };
     for( auto const &held : sSpeedTable ) {
-        if( ( held.iFlags & ( spEnabled | spRoadVel ) ) != ( spEnabled | spRoadVel )
+        if( ( held.flags & ( SpeedPointFlag::enabled | SpeedPointFlag::roadSpeed ) ) != ( SpeedPointFlag::enabled | SpeedPointFlag::roadSpeed )
          || held.fDist >= 0.0
          || held.fDist <= Point.fDist ) {
             continue;
@@ -1606,7 +1617,7 @@ TController::TableUpdateRoadVelocity( TSpeedPos &Point ) {
     else if( Point.fVelNext == min_speed( Point.fVelNext, VelRoad ) ) {
         VelRoad = Point.fVelNext;
     }
-    if( false == TestFlag( Point.iFlags, spRoadVelHeld ) ) {
+    if( false == Point.flags.HasAll(SpeedPointFlag::roadSpeedHeld) ) {
         return false;
     }
     if( isrearpast ) {
@@ -1763,7 +1774,7 @@ void TController::update_point_limits() {
                 sSpeedTable.begin(), sSpeedTable.end(),
                 [&]( TSpeedPos const &Point ) {
                     return Point.evEvent == Limit.source
-                        && TestFlag( Point.iFlags, spEnabled | spEvent | spPointVelocity )
+                        && Point.flags.HasAll(SpeedPointFlag::enabled | SpeedPointFlag::event | SpeedPointFlag::pointSpeed)
                         && Point.fDist > 0.0; } ); } );
 }
 
@@ -1819,13 +1830,13 @@ glm::dvec3 TController::travel_direction() const {
 bool
 TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex ) {
 
-    if( TestFlag( Point.iFlags, spSignalAreaEnd ) ) {
+    if( Point.flags.HasAll(SpeedPointFlag::signalAreaEnd) ) {
         // not a signal: it neither sends a command nor counts as the end of a speed limit in the scan
         TableUpdateSignalAreaEnd( Point );
         return true;
     }
 
-    if( TestFlag( Point.iFlags, spPointVelocity ) ) {
+    if( Point.flags.HasAll(SpeedPointFlag::pointSpeed) ) {
         // PointVelocity: no signal, no command, only the limit at its point
         // done once the head passes the point
         if( Point.fDist + Point.fPointDist < 0.0 ) {
@@ -1938,7 +1949,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
             }
         }
     }
-    if (Point.iFlags & spOutsideStation)
+    if (Point.flags & SpeedPointFlag::outsideStation)
     { // jeśli W5, to reakcja zależna od trybu jazdy
         if (OrderCurrentGet() & DriverOrder::obeyTrain)
         { // w trybie pociągowym: można przyspieszyć do wskazanej prędkości (po zjechaniu z rozjazdów)
@@ -1969,7 +1980,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
             }
         }
     }
-    else if ( Point.iFlags & spStopOnSBL) {
+    else if ( Point.flags & SpeedPointFlag::stopOnAutomaticBlock) {
         // jeśli S1 na SBL
         if( mvOccupied->Vel < 2.0 && Point.fDist < fMaxProximityDist && Obstacle.distance > 1000 ) {
             // stanąć nie musi, ale zwolnić przynajmniej
@@ -2029,13 +2040,13 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
             }
         }
     }
-    else if ( Point.iFlags & spRoadVel)
+    else if ( Point.flags & SpeedPointFlag::roadSpeed)
     { // to W27/W27a
         if( TableUpdateRoadVelocity( Point ) ) {
             return true;
         }
     }
-    else if ( Point.iFlags & spSectionVel && Point.fDist < 0)
+    else if ( Point.flags & SpeedPointFlag::sectionSpeed && Point.fDist < 0)
     { // to W9
 		// teraz trzeba sprawdzić inne warunki
 		if (Point.fSectionVelocityDist == 0.0)
@@ -2091,13 +2102,13 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 
     //sprawdzenie eventów pasywnych przed nami
     { // zawalidrogi nie ma (albo pojazd jest samochodem), sprawdzić sygnał
-        if ( Point.iFlags & spShuntSemaphor) // jeśli Tm - w zasadzie to sprawdzić komendę!
+        if ( Point.flags & SpeedPointFlag::shuntSignal) // jeśli Tm - w zasadzie to sprawdzić komendę!
         { // jeśli podana prędkość manewrowa
             if( Velocity == 0.0
              && true == OrderCurrentGet().HasAll(DriverOrder::obeyTrain) ) {
                 // jeśli tryb pociągowy a tarcze ma ShuntVelocity 0 0
                 Velocity = -1; // ignorować, chyba że prędkość stanie się niezerowa
-                if( true == TestFlag( Point.iFlags, spElapsed ) ) {
+                if( true == Point.flags.HasAll(SpeedPointFlag::elapsed) ) {
                     // a jak przejechana to można usunąć, bo podstawowy automat usuwa tylko niezerowe
                     Point.Clear();
                 }
@@ -2123,7 +2134,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 				}
 			}
         }
-        else if( ( Point.iFlags & spSectionVel ) == 0 ) {
+        else if( false == Point.flags.HasAny(SpeedPointFlag::sectionSpeed) ) {
             //jeśli jakiś event pasywny ale nie ograniczenie
             if( Command != TCommandType::cm_Unknown )
 			{
@@ -2147,7 +2158,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 						// jeśli przejechany
 						VelSignal = Velocity == 0.0 ? 0.0 : -1.0;
 						// ustawienie, gdy przejechany jest lepsze niż wcale, ale to jeszcze nie to
-						if (Point.iFlags & spEvent && (Point.evEvent != eSignSkip || Point.fVelNext != VelRestricted))
+						if (Point.flags & SpeedPointFlag::event && (Point.evEvent != eSignSkip || Point.fVelNext != VelRestricted))
 						{
 							// jeśli event
 							// ale inny niż ten, na którym minięto S1, chyba że się już zmieniło
@@ -2233,8 +2244,8 @@ void TController::TablePurger()
     // simplest approach should be good enough for start -- just copy whatever is still relevant, then swap
     auto const isexpendable = []( TSpeedPos const &Speedpoint ) {
         return
-            0 == ( Speedpoint.iFlags & spEnabled )
-         || ( ( Speedpoint.iFlags & ( spElapsed | spTrack | spCurve | spSwitch ) ) == ( spElapsed | spTrack | spCurve )
+            false == Speedpoint.flags.HasAny( SpeedPointFlag::enabled )
+         || ( ( Speedpoint.flags & ( SpeedPointFlag::elapsed | SpeedPointFlag::track | SpeedPointFlag::curve | SpeedPointFlag::switchTrack ) ) == ( SpeedPointFlag::elapsed | SpeedPointFlag::track | SpeedPointFlag::curve )
            && Speedpoint.fVelNext < 0.0 ); };
     // do a trial run first, to see if we need to bother at all
     std::size_t trimcount{ 0 };
@@ -6531,10 +6542,10 @@ int TController::CrossRoute(TTrack *tr)
     { // trzeba przejrzeć tabelę skanowania w poszukiwaniu (tr)
         // i jak się znajdzie, to zwrócić zapamiętany numer segmentu i kierunek przejazdu
         // (-6..-1,1..6)
-        if( true == TestFlag(sSpeedTable[i].iFlags, spEnabled | spTrack)
+        if( true == sSpeedTable[i].flags.HasAll(SpeedPointFlag::enabled | SpeedPointFlag::track)
          && sSpeedTable[i].trTrack == tr ) {
             // jeśli pozycja odpowiadająca skrzyżowaniu (tr)
-            return sSpeedTable[i].iFlags >> 28; // najstarsze 4 bity jako liczba -8..7
+            return sSpeedTable[i].crossRoute; // -8..7
         }
     }
     return 0; // nic nie znaleziono?
@@ -6550,9 +6561,9 @@ void TController::RouteSwitch(int d)
             // jeśli samochód
             for( std::size_t i = 0; i < sSpeedTable.size(); ++i ) {
                 // szukanie pierwszego skrzyżowania i resetowanie kierunku na nim
-                if( true == TestFlag( sSpeedTable[ i ].iFlags, spEnabled | spTrack ) ) {
+                if( true == sSpeedTable[ i ].flags.HasAll(spEnabled | spTrack) ) {
                     // jeśli pozycja istotna (1) oraz odcinek (2)
-                    if( false == TestFlag( sSpeedTable[ i ].iFlags, spElapsed ) ) {
+                    if( false == sSpeedTable[ i ].flags.HasAll(spElapsed) ) {
                         // odcinek nie może być miniętym
                         if( sSpeedTable[ i ].trTrack->eType == tt_Cross ) // jeśli skrzyżowanie
                         {

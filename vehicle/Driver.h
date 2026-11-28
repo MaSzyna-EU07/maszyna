@@ -117,32 +117,36 @@ enum class TAction : int
     actTrial // próba hamulca (na postoju)
 };
 
-enum TSpeedPosFlag
-{ // wartości dla iFlag w TSpeedPos
-    spNone = 0x0,
-    spEnabled = 0x1, // pozycja brana pod uwagę
-    spTrack = 0x2, // to jest tor
-    spReverse = 0x4, // odwrotnie
-    spSwitch = 0x8, // to zwrotnica
-    spSwitchStatus = 0x10, // stan zwrotnicy
-    spElapsed = 0x20, // pozycja minięta przez pojazd
-    spEnd = 0x40, // koniec
-    spCurve = 0x80, // łuk
-    spEvent = 0x100, // event
-    spShuntSemaphor = 0x200, // tarcza manewrowa
-    spPassengerStopPoint = 0x400, // przystanek osobowy (wskaźnik W4)
-    spStopOnSBL = 0x800, // zatrzymanie na SBL
-    spCommandSent = 0x1000, // komenda wysłana
-    spOutsideStation = 0x2000, // wskaźnik końca manewrów
-    spSemaphor = 0x4000, // semafor pociągowy
-    spRoadVel = 0x8000, // zadanie prędkości drogowej
-    spSectionVel = 0x20000, // odcinek z ograniczeniem
-    spProximityVelocity = 0x40000, // odcinek z ograniczeniem i podaną jego długościa
-    spPointVelocity = 0x80000, // ograniczenie dla czoła w punkcie fPointDist za wpisem (PointVelocity)
-    spRoadVelHeld = 0x100000, // a road speed sign passed by the head, handled, kept until the rear is past it
-    spSignalAreaEnd = 0x200000 // end of the interlocking area of the signal passed last
-//    spDontApplySpeedLimit = 0x10000 // this point won't apply its speed limit. potentially set by the scanning vehicle
+// what a position of the speed table of the AI is and what became of it
+enum class SpeedPointFlag : unsigned
+{
+    none = 0x0,
+    enabled = 0x1, // pozycja brana pod uwagę
+    track = 0x2, // to jest tor
+    reverse = 0x4, // odwrotnie
+    switchTrack = 0x8, // to zwrotnica
+    switchState = 0x10, // stan zwrotnicy
+    elapsed = 0x20, // pozycja minięta przez pojazd
+    trackEnd = 0x40, // koniec
+    curve = 0x80, // łuk
+    event = 0x100, // event
+    shuntSignal = 0x200, // tarcza manewrowa
+    passengerStop = 0x400, // przystanek osobowy (wskaźnik W4)
+    stopOnAutomaticBlock = 0x800, // zatrzymanie na SBL
+    commandSent = 0x1000, // komenda wysłana
+    outsideStation = 0x2000, // wskaźnik końca manewrów
+    signal = 0x4000, // semafor pociągowy
+    roadSpeed = 0x8000, // zadanie prędkości drogowej
+    sectionSpeed = 0x20000, // odcinek z ograniczeniem
+    proximitySpeed = 0x40000, // odcinek z ograniczeniem i podaną jego długością
+    pointSpeed = 0x80000, // ograniczenie dla czoła w punkcie fPointDist za wpisem (PointVelocity)
+    roadSpeedHeld = 0x100000, // a road speed sign passed by the head, handled, kept until the rear is past it
+    signalAreaEnd = 0x200000, // end of the interlocking area of the signal passed last
 };
+template <> struct IsEnumSetKind<SpeedPointFlag> : std::true_type
+{
+};
+using SpeedPointFlags = EnumSet<SpeedPointFlag>;
 
 class TSpeedPos
 { // pozycja tabeli prędkości dla AI
@@ -151,7 +155,8 @@ class TSpeedPos
     double fVelNext{ -1.0 }; // prędkość obowiązująca od tego miejsca
     double fSectionVelocityDist{ 0.0 }; // długość ograniczenia prędkości
     double fPointDist{ 0.0 }; // PointVelocity: o ile dalej od wpisu leży punkt, w którym czoło ma mieć fVelNext
-    int iFlags{ spNone }; // flagi typu wpisu do tabelki
+    SpeedPointFlags flags; // flagi typu wpisu do tabelki
+    int crossRoute{ 0 }; // the segment of a crossing the route takes, -8..7, the sign the direction (in the top 4 bits of the flags before)
 	bool bMoved{ false }; // czy przesunięty (dotyczy punktu zatrzymania w peronie)
 	double fMoved{ 0.0 }; // ile przesunięty (dotyczy punktu zatrzymania w peronie) 
     bool bSeenAhead{ false }; // the head of the train had it ahead once: only such a point can be passed by the train
@@ -162,9 +167,16 @@ class TSpeedPos
         basic_event *evEvent{ nullptr }; // połączenie z eventem albo komórką pamięci
     };
     void CommandCheck();
+    // the flags and the route as the one number they were before: the scan of the route reads its sign, the table its hex
+    int LegacyFlagsValue() const {
+        return static_cast<int>( ( static_cast<unsigned>( crossRoute ) << 28 ) | static_cast<unsigned>( flags.Bits() ) ); }
+    // no flags and no route: the position doesn't count any more
+    void ResetFlags() {
+        flags = {};
+        crossRoute = 0; }
 
   public:
-    TSpeedPos(TTrack *track, double dist, int flag);
+    TSpeedPos(TTrack *track, double dist, SpeedPointFlags flag);
     TSpeedPos(basic_event *event, double dist, double length, DriverOrders order);
     TSpeedPos() = default;
     void Clear();
@@ -176,7 +188,7 @@ class TSpeedPos
             fDist -= dist; }
     // Standing: the train stands, so an event found behind its head wasn't passed by it
     bool Set(basic_event *e, double d, double length, DriverOrders order = DriverOrder::waitForOrders, bool Standing = false);
-    void Set(TTrack *t, double d, int f);
+    void Set(TTrack *t, double d, SpeedPointFlags f);
     std::string TableText() const;
     std::string GetName() const;
     bool IsProperSemaphor(DriverOrders order = DriverOrder::waitForOrders);
