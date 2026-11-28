@@ -605,7 +605,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const /*Parameter*/) {
-                    return std::abs(mvControlling->Ft) > 30.0 || (OrderCurrentGet() & Disconnect) == 0; } );
+                    return std::abs(mvControlling->Ft) > 30.0 || false == OrderCurrentGet().HasAny(DriverOrder::disconnect); } );
             break;
         }
 
@@ -836,7 +836,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const /*Parameter*/) {
-                    return IsConsistBraked /*|| ( ( OrderCurrentGet() & Disconnect ) == 0 ) */; } );
+                    return IsConsistBraked /*|| ( false == OrderCurrentGet().HasAny(DriverOrder::disconnect) ) */; } );
             break;
         }
         case driver_hint::brakingforcedecrease: {

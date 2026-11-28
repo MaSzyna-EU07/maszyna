@@ -456,45 +456,45 @@ TEST_CASE("brake setting: a train creeping to a stop counts as standing, one on 
 }
 
 TEST_CASE("brake setting: a bank engine's run counts as a train, shunting doesn't") {
-	CHECK(brake_setting::runs_as_train(Obey_train));
-	CHECK(brake_setting::runs_as_train(Bank));
-	CHECK(brake_setting::runs_as_train(Obey_train | Connect));
-	CHECK(false == brake_setting::runs_as_train(Shunt));
-	CHECK(false == brake_setting::runs_as_train(Loose_shunt));
-	CHECK(false == brake_setting::runs_as_train(Connect));
-	CHECK(false == brake_setting::runs_as_train(Wait_for_orders));
+	CHECK(brake_setting::runs_as_train(DriverOrder::obeyTrain));
+	CHECK(brake_setting::runs_as_train(DriverOrder::bank));
+	CHECK(brake_setting::runs_as_train(DriverOrder::obeyTrain | DriverOrder::connect));
+	CHECK(false == brake_setting::runs_as_train(DriverOrder::shunt));
+	CHECK(false == brake_setting::runs_as_train(DriverOrder::looseShunt));
+	CHECK(false == brake_setting::runs_as_train(DriverOrder::connect));
+	CHECK(false == brake_setting::runs_as_train(DriverOrder::waitForOrders));
 
 	// a heavy consist on G banked: the wagon without G has its brake cut out, as in a train
 	test::vehicle car{passenger_car_definition()};
 	charge_and_apply(car);
-	CHECK(inspect_heavy_train(car, brake_setting::runs_as_train(Bank)) == brake_setting::cut_out);
+	CHECK(inspect_heavy_train(car, brake_setting::runs_as_train(DriverOrder::bank)) == brake_setting::cut_out);
 	CHECK(brake_setting::is_cut_out(car.mover()));
 	// shunted: it's back on P
-	CHECK(inspect_heavy_train(car, brake_setting::runs_as_train(Shunt)) == P);
+	CHECK(inspect_heavy_train(car, brake_setting::runs_as_train(DriverOrder::shunt)) == P);
 	CHECK(false == brake_setting::is_cut_out(car.mover()));
 }
 
 TEST_CASE("brake setting: the AI looks at its train under the orders it drives it under, Connect included") {
-	CHECK(brake_setting::inspects_train(Shunt, false));
-	CHECK(brake_setting::inspects_train(Loose_shunt, false));
-	CHECK(brake_setting::inspects_train(Obey_train, false));
-	CHECK(brake_setting::inspects_train(Bank, false));
+	CHECK(brake_setting::inspects_train(DriverOrder::shunt, false));
+	CHECK(brake_setting::inspects_train(DriverOrder::looseShunt, false));
+	CHECK(brake_setting::inspects_train(DriverOrder::obeyTrain, false));
+	CHECK(brake_setting::inspects_train(DriverOrder::bank, false));
 	// the run up to the wagons: a locomotive standing cold has its hand brake to release first
-	CHECK(brake_setting::inspects_train(Connect, false));
-	CHECK(brake_setting::inspects_train(Connect | Change_direction, false));
+	CHECK(brake_setting::inspects_train(DriverOrder::connect, false));
+	CHECK(brake_setting::inspects_train(DriverOrder::connect | DriverOrder::changeDirection, false));
 	// but not at the coupling: the wagons just coupled wait for the next order, which may leave some of them
-	CHECK(false == brake_setting::inspects_train(Connect, true));
-	CHECK(false == brake_setting::inspects_train(Connect | Change_direction, true));
+	CHECK(false == brake_setting::inspects_train(DriverOrder::connect, true));
+	CHECK(false == brake_setting::inspects_train(DriverOrder::connect | DriverOrder::changeDirection, true));
 	// a train run with a coupling on it is still a train run
-	CHECK(brake_setting::inspects_train(Obey_train | Connect, true));
-	CHECK(brake_setting::inspects_train(Shunt, true));
+	CHECK(brake_setting::inspects_train(DriverOrder::obeyTrain | DriverOrder::connect, true));
+	CHECK(brake_setting::inspects_train(DriverOrder::shunt, true));
 	// standing, starting or stopping the engine, turning round, uncoupling: nothing to look at
-	CHECK(false == brake_setting::inspects_train(Wait_for_orders, false));
-	CHECK(false == brake_setting::inspects_train(Prepare_engine, false));
-	CHECK(false == brake_setting::inspects_train(Release_engine, false));
-	CHECK(false == brake_setting::inspects_train(Change_direction, false));
-	CHECK(false == brake_setting::inspects_train(Disconnect, false));
-	CHECK(false == brake_setting::inspects_train(Jump_to_first_order, false));
+	CHECK(false == brake_setting::inspects_train(DriverOrder::waitForOrders, false));
+	CHECK(false == brake_setting::inspects_train(DriverOrder::prepareEngine, false));
+	CHECK(false == brake_setting::inspects_train(DriverOrder::releaseEngine, false));
+	CHECK(false == brake_setting::inspects_train(DriverOrder::changeDirection, false));
+	CHECK(false == brake_setting::inspects_train(DriverOrder::disconnect, false));
+	CHECK(false == brake_setting::inspects_train(DriverOrder::jumpToFirstOrder, false));
 }
 
 TEST_CASE("brake setting: R+Mg brakes as hard as R at speed, the rapid stage of an LSt kept") {

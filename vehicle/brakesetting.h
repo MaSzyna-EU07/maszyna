@@ -11,6 +11,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include <vector>
 
+#include "vehicle/driverorders.h"
+
 class TMoverParameters;
 
 // the brake setting (G/P/R/Mg) the virtual wagon inspector (TController::AutoRewident) chooses for every
@@ -63,7 +65,7 @@ std::vector<int> choose(std::vector<vehicle> const &Consist, bool Train);
 
 // the AI runs the consist as a train, rather than shunting it: Obey_train, or Bank, which it drives as a
 // train run too (with the braking of a train). Orders is the order of the AI (TOrders)
-bool runs_as_train(int Orders);
+bool runs_as_train(DriverOrders Orders);
 
 // the AI has the inspector look at its train (TController::AutoRewident(): the brake settings, and the hand and
 // spring brakes of the train released) under the orders it drives the train under: shunting, loose shunting, the
@@ -72,7 +74,7 @@ bool runs_as_train(int Orders);
 // (CheckVehicles(Connect)); Connect doesn't count for it, so the wagons just coupled keep their hand brakes until
 // the order after the coupling looks at the new train, as before: those of them to be left standing again
 // (Shunt x,-y) stay braked. Orders is the order of the AI (TOrders)
-bool inspects_train(int Orders, bool Coupled);
+bool inspects_train(DriverOrders Orders, bool Coupled);
 
 // the train stands for the inspector: slower than the AI takes for a deliberate movement (EU07_AI_MOVEMENT).
 // the AI looks at the train while it still creeps to a stop (at a W4, or switching from shunting to the train

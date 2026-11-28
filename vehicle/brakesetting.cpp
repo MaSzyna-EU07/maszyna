@@ -173,12 +173,12 @@ std::vector<int> choose(std::vector<vehicle> const &Consist, bool const Train) {
 	return settings;
 }
 
-bool runs_as_train(int const Orders) {
-	return (Orders & (Obey_train | Bank)) != 0;
+bool runs_as_train(DriverOrders const Orders) {
+	return Orders.HasAny(DriverOrder::obeyTrain | DriverOrder::bank);
 }
 
-bool inspects_train(int const Orders, bool const Coupled) {
-	return (Orders & (Shunt | Loose_shunt | Obey_train | Bank)) != 0 || ((Orders & Connect) != 0 && false == Coupled);
+bool inspects_train(DriverOrders const Orders, bool const Coupled) {
+	return Orders.HasAny(DriverOrder::shunt | DriverOrder::looseShunt | DriverOrder::obeyTrain | DriverOrder::bank) || (Orders.HasAny(DriverOrder::connect) && false == Coupled);
 }
 
 bool at_standstill(double const Velocity) {

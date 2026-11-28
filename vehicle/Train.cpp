@@ -8167,7 +8167,7 @@ void TTrain::OnCommand_nearestcarcouplingincrease(TTrain *Train, command_data co
 		if (Train->DynamicObject->Mechanik)
 		{
 			// aktualizacja flag kierunku w składzie
-			Train->DynamicObject->Mechanik->CheckVehicles(Connect);
+			Train->DynamicObject->Mechanik->CheckVehicles(DriverOrder::connect);
 		}
 	}
 }
@@ -8191,7 +8191,7 @@ void TTrain::OnCommand_nearestcarcouplingdisconnect(TTrain *Train, command_data 
 		if (Train->DynamicObject->Mechanik)
 		{
 			// aktualizacja flag kierunku w składzie
-			Train->DynamicObject->Mechanik->CheckVehicles(Disconnect);
+			Train->DynamicObject->Mechanik->CheckVehicles(DriverOrder::disconnect);
 		}
 	}
 }
@@ -8255,7 +8255,7 @@ void TTrain::OnCommand_occupiedcarcouplingdisconnect(TTrain *Train, command_data
 			if (Train->DynamicObject->Mechanik)
 			{
 				// aktualizacja flag kierunku w składzie
-				Train->DynamicObject->Mechanik->CheckVehicles(Disconnect);
+				Train->DynamicObject->Mechanik->CheckVehicles(DriverOrder::disconnect);
 			}
 		}
 	}
@@ -8287,7 +8287,7 @@ void TTrain::OnCommand_occupiedcarcouplingdisconnectback(TTrain *Train, command_
 			if (Train->DynamicObject->Mechanik)
 			{
 				// aktualizacja flag kierunku w składzie
-				Train->DynamicObject->Mechanik->CheckVehicles(Disconnect);
+				Train->DynamicObject->Mechanik->CheckVehicles(DriverOrder::disconnect);
 			}
 		}
 	}

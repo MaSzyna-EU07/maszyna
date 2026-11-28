@@ -436,8 +436,8 @@ void blackbox_recorder::write_cab() {
 	sample.lateral_acceleration = static_cast<float>(occupied->AccN);
 	if (owner != nullptr && owner->is_train()) {
 		auto const order{owner->order_current()};
-		sample.movement = (order & Obey_train) != 0 ? blackbox::movements::train :
-		                  (order & (Shunt | Loose_shunt | Connect)) != 0 ? blackbox::movements::shunting : blackbox::movements::other;
+		sample.movement = order.HasAny(DriverOrder::obeyTrain) ? blackbox::movements::train :
+		                  order.HasAny(DriverOrder::shunt | DriverOrder::looseShunt | DriverOrder::connect) ? blackbox::movements::shunting : blackbox::movements::other;
 		sample.light_hint_head = static_cast<std::int16_t>(owner->light_hint(end::front));
 		sample.light_hint_tail = static_cast<std::int16_t>(owner->light_hint(end::rear));
 	}

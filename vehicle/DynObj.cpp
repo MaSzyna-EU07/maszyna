@@ -3789,7 +3789,7 @@ bool TDynamicObject::Update(double dt, double dt1)
     if( TestFlag( MoverParameters->AIFlag, sound::attachcoupler ) ) {
         auto *driver{ ctOwner ? ctOwner : Mechanik };
         if( driver != nullptr ) {
-            driver->CheckVehicles( Connect );
+            driver->CheckVehicles( DriverOrder::connect );
         }
         ClearFlag( MoverParameters->AIFlag, sound::attachcoupler );
     }

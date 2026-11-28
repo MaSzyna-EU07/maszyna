@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "utilities/utilities.h"
 #include "physics/vehicletypes.h"
+#include "vehicle/driverorders.h"
 #include "audio/sound.h"
 #include "vehicle/DynObj.h"
 #include "world/mtable.h"
@@ -34,23 +35,6 @@ auto const EU07_AI_UPHILLRELEASETIME = 60.0; // [s] the longest an uphill start 
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
 auto const EU07_AI_SANDEDSTARTVELOCITY = 15.0; // [km/h] a start that slipped keeps the sand on up to this speed
 
-enum TOrders
-{ // rozkazy dla AI
-    Wait_for_orders = 0, // czekanie na dostarczenie następnych rozkazów
-    // operacje tymczasowe
-    Prepare_engine =        1 << 0, // włączenie silnika
-    Release_engine =        1 << 1, // wyłączenie silnika
-    Change_direction =      1 << 2, // zmiana kierunku (bez skanowania sygnalizacji)
-    Connect =               1 << 3, // podłączanie wagonów (z częściowym skanowaniem sygnalizacji)
-    Disconnect =            1 << 4, // odłączanie wagonów (bez skanowania sygnalizacji)
-    // jazda
-    Shunt =                 1 << 5, // tryb manewrowy
-    Loose_shunt =           1 << 6, // coupling-free shunting mode
-    Obey_train =            1 << 7, // tryb pociągowy
-    Bank =                  1 << 8, // assist mode
-    // others
-	Jump_to_first_order =   1 << 9, // zapęlenie do pierwszej pozycji (po co?)
-};
 
 // the signals the map asks the driver to show (SetSignal)
 enum TSignals
@@ -181,7 +165,7 @@ class TSpeedPos
 
   public:
     TSpeedPos(TTrack *track, double dist, int flag);
-    TSpeedPos(basic_event *event, double dist, double length, TOrders order);
+    TSpeedPos(basic_event *event, double dist, double length, DriverOrders order);
     TSpeedPos() = default;
     void Clear();
     bool Update();
@@ -191,11 +175,11 @@ class TSpeedPos
         UpdateDistance( double dist ) {
             fDist -= dist; }
     // Standing: the train stands, so an event found behind its head wasn't passed by it
-    bool Set(basic_event *e, double d, double length, TOrders order = Wait_for_orders, bool Standing = false);
+    bool Set(basic_event *e, double d, double length, DriverOrders order = DriverOrder::waitForOrders, bool Standing = false);
     void Set(TTrack *t, double d, int f);
     std::string TableText() const;
     std::string GetName() const;
-    bool IsProperSemaphor(TOrders order = Wait_for_orders);
+    bool IsProperSemaphor(DriverOrders order = DriverOrder::waitForOrders);
 };
 
 //----------------------------------------------------------------------------
@@ -281,7 +265,7 @@ public:
     // the light pattern the timetable or the scenery asks for at an end of the train, -1 the usual one
     int light_hint( int const End ) const { return m_lighthints[ End ]; }
     // the order the driver goes by now: a train run, shunting and the like
-    TOrders order_current() const { return OrderCurrentGet(); }
+    DriverOrders order_current() const { return OrderCurrentGet(); }
 private:
     // tells the black box of the train at the station of its timetable it makes for, at the stop point given
     void record_station( TSpeedPos const &Point, std::uint8_t Kind ) const;
@@ -396,7 +380,7 @@ private:
     // how far short of a stop the AI aims: in train running the middle of the 8-15 m window before a signal,
     // otherwise (a W4 stop point, shunting, coupling) half the minimum proximity distance, as before
     double stopping_margin() const {
-        return ( ( OrderCurrentGet() & Obey_train ) != 0 ) && !IsAtPassengerStop ?
+        return ( OrderCurrentGet().HasAny(DriverOrder::obeyTrain) ) && !IsAtPassengerStop ?
             fMinProximityDist + 3.5 :
             0.5 * fMinProximityDist; }
     void apply_independent_brake_only();
@@ -551,20 +535,20 @@ private:
     void RecognizeCommand(); // odczytuje komende przekazana lokomotywie
     void JumpToNextOrder( bool const Skipmergedchangedirection = false );
     void JumpToFirstOrder();
-    void OrderPush( TOrders NewOrder );
-    void OrderNext( TOrders NewOrder );
-    inline TOrders OrderCurrentGet() const;
-    inline void OrderCurrentSet( TOrders const Order );
-    inline TOrders OrderNextGet() const;
+    void OrderPush( DriverOrders NewOrder );
+    void OrderNext( DriverOrders NewOrder );
+    inline DriverOrders OrderCurrentGet() const;
+    inline void OrderCurrentSet( DriverOrders const Order );
+    inline DriverOrders OrderNextGet() const;
     void OrderCheck();
     void OrdersInit( double fVel );
     void OrdersClear();
     void OrdersDump( std::string const Neworder, bool const Verbose = true );
-    std::string Order2Str( TOrders Order ) const;
+    std::string Order2Str( DriverOrders Order ) const;
 // members
     std::string m_assignment;
     glm::dvec3 vCommandLocation; // polozenie wskaznika, sygnalizatora lub innego obiektu do ktorego odnosi sie komenda // NOTE: not used
-    TOrders OrderList[ maxorders ]; // lista rozkazów
+    DriverOrders OrderList[ maxorders ]; // lista rozkazów
     int OrderPos = 0,
         OrderTop = 0; // rozkaz aktualny oraz wolne miejsce do wstawiania nowych
 
@@ -692,7 +676,7 @@ private:
 // consist
 // methods
 public:
-    bool CheckVehicles( TOrders user = Wait_for_orders );
+    bool CheckVehicles( DriverOrders user = DriverOrder::waitForOrders );
 private:
     bool PrepareEngine();
     // tells in the log, once, of standing with the pantographs up and no voltage (eu07/maszyna#421)
@@ -778,23 +762,23 @@ private:
 
 };
 
-inline TOrders TController::OrderCurrentGet() const {
+inline DriverOrders TController::OrderCurrentGet() const {
     if( OrderPos < 0 || OrderPos >= maxorders ) {
-        return Wait_for_orders;
+        return DriverOrder::waitForOrders;
     }
     return OrderList[ OrderPos ];
 }
 
-inline void TController::OrderCurrentSet( TOrders const Order ) {
+inline void TController::OrderCurrentSet( DriverOrders const Order ) {
     if( OrderPos < 0 || OrderPos >= maxorders ) {
         return;
     }
     OrderList[ OrderPos ] = Order;
 }
 
-inline TOrders TController::OrderNextGet() const {
+inline DriverOrders TController::OrderNextGet() const {
     if( OrderPos < 0 || OrderPos >= maxorders ) {
-        return Wait_for_orders;
+        return DriverOrder::waitForOrders;
     }
     // the order list wraps around, same as in JumpToNextOrder()
     return OrderList[ ( OrderPos + 1 ) % maxorders ];
