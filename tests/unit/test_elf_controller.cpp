@@ -530,7 +530,7 @@ TEST_CASE("elf holding brake: the force of the motors at 1% against the holding 
 	unit.wait(5.0);
 	auto const holding{cab.StopBrakeDecc * mass};
 	MESSAGE("mass " << mass << " kg, holding " << holding << " N, cars with motors " << powered << ", demand " << cab.eimic_real << ", cab car Ft " << cab.Ft
-	                << " N, Fful " << cab.inductionMotor.state[eimv_Fful] << " kN, speed " << cab.Vel << " km/h after 5 s");
+	                << " N, Fful " << cab.inductionMotor.state.fullForce << " kN, speed " << cab.Vel << " km/h after 5 s");
 	CHECK(cab.eimic_real == doctest::Approx(0.01).epsilon(0.02));
 	CHECK(cab.Ft * powered < 0.1 * holding);
 }

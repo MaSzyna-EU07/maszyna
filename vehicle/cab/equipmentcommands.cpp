@@ -417,7 +417,7 @@ void TTrain::OnCommand_inverterenable(TTrain *Train, command_data const &Command
 		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
-			if (p->MoverParameters->inductionMotor.config[eimc_p_Pmax] > 1)
+			if (p->MoverParameters->inductionMotor.traction.maxPower > 1)
 			{
 				if (itemindex < p->MoverParameters->inductionMotor.inverterCount)
 				{
@@ -456,7 +456,7 @@ void TTrain::OnCommand_inverterdisable(TTrain *Train, command_data const &Comman
 		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
-			if (p->MoverParameters->inductionMotor.config[eimc_p_Pmax] > 1)
+			if (p->MoverParameters->inductionMotor.traction.maxPower > 1)
 			{
 				if (itemindex < p->MoverParameters->inductionMotor.inverterCount)
 				{
@@ -495,7 +495,7 @@ void TTrain::OnCommand_invertertoggle(TTrain *Train, command_data const &Command
 		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
-			if (p->MoverParameters->inductionMotor.config[eimc_p_Pmax] > 1)
+			if (p->MoverParameters->inductionMotor.traction.maxPower > 1)
 			{
 				if (itemindex < p->MoverParameters->inductionMotor.inverterCount)
 				{

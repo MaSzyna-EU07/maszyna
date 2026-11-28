@@ -30,12 +30,6 @@ http://mozilla.org/MPL/2.0/.
 #include "physics/components/internal.h"
 
 
-std::vector<std::string> const TMoverParameters::eimc_labels = {"dfic: ", "dfmax:", "p:    ", "scfu: ", "cim:  ", "icif: ", "Uzmax:", "Uzh:  ", "DU:   ", "I0:   ", "fcfu: ",
-                                                                "F0:   ", "a1:   ", "Pmax: ", "Fh:   ", "Ph:   ", "Vh0:  ", "Vh1:  ", "Imax: ", "abed: ", "eped: "};
-
-std::vector<std::string> const TMoverParameters::eimv_labels = {
-    "Fkrt:", "Fmax:", "ks:  ", "df:  ", "fp:  ", "Us:  ", "pole:", "Ic:  ", "If:  ", "M:   ", "Fr:  ", "Ipoj:", "Pm:  ", "Pe:  ", "eta: ", "fkr: ", "Uzsm:", "Pmax:", "Fzad:", "Imax:", "Fful:"};
-
 int DirPatch(int Coupler1, int Coupler2)
 { // poprawka dla liczenia sil przy ustawieniu przeciwnym obiektow
 	return Coupler1 != Coupler2 ? 1 : -1;
@@ -136,12 +130,6 @@ TMoverParameters::TMoverParameters(double VelInitial, std::string const &TypeNam
 		cylindermult = 0.0;
 	}
 
-	for (auto &eimcvalue : inductionMotor.config)
-	{
-		eimcvalue = 0.0;
-	}
-	inductionMotor.config[eimc_p_eped] = 1.5;
-
 	for (auto &couplerentry : Couplers)
 	{
 		couplerentry.AllowedFlag = Coupling::coupler | Coupling::brakeHose; // domyślnie hak i hamulec, inne trzeba włączyć jawnie w FIZ
@@ -161,11 +149,6 @@ TMoverParameters::TMoverParameters(double VelInitial, std::string const &TypeNam
 
 	Vel = abs(VelInitial);
 	V = VelInitial / 3.6;
-
-	for (auto &eimvvalue : inductionMotor.state)
-	{
-		eimvvalue = 0.0;
-	}
 
 	RunningShape.Len = 1.0;
 
@@ -456,7 +439,7 @@ void TMoverParameters::compute_movement_(double const Deltatime)
 	// Prad oddawany na rezystor
 
 	// Wlacz wentylator jesli prad rekuperacji przekroczy maksymalny dla pasywnego chlodzenia rezystora
-	if (double Irh = abs(inductionMotor.state[eimv_Pe]) - abs(inductionMotor.state[eimv_Ipoj]); Irh > Imaxrpc && inductionMotor.state[eimv_Ipoj] < 0)
+	if (double Irh = abs(inductionMotor.state.electricalPower) - abs(inductionMotor.state.lineCurrent); Irh > Imaxrpc && inductionMotor.state.lineCurrent < 0)
 	{
 		BRVtimer = 0;
 		BRVentilators = true;

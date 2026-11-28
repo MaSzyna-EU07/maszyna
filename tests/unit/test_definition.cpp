@@ -122,7 +122,7 @@ TEST_CASE("definition: the compressor's limits set apart for the rear cab") {
 }
 
 TEST_CASE("definition: the highest power of an induction motor drive by the speed (PmaxList)") {
-	// the drive's power limit (eimc_p_Pmax) follows the table, between its rows and, by the last two, past its end
+	// the drive's power limit (traction.maxPower) follows the table, between its rows and, by the last two, past its end
 	auto eu47{definition::fiz("e186_v2/eu47").set("PmaxList", "Size", 3).set("PmaxList", "rows", {{0, 1000}, {50, 3000}, {100, 5600}})};
 	auto const table{[](double Speed) { return Speed < 50.0 ? 1000.0 + 40.0 * Speed : 3000.0 + 52.0 * (Speed - 50.0); }};
 	for (auto const speed : {25.0, 75.0, 150.0}) {
@@ -131,7 +131,7 @@ TEST_CASE("definition: the highest power of an induction motor drive by the spee
 		auto driven{test::driving(real)};
 		test::track const line{0.0, 0.0, test::catenary_3kv};
 		REQUIRE(test::start_up(driven, line));
-		CHECK(real->inductionMotor.config[eimc_p_Pmax] == doctest::Approx(table(real->Vel)).epsilon(0.01));
+		CHECK(real->inductionMotor.traction.maxPower == doctest::Approx(table(real->Vel)).epsilon(0.01));
 	}
 }
 

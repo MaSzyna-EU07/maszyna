@@ -1095,12 +1095,14 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
 	if( mover.EngineType == TEngineType::ElectricInductionMotor ) {
 
 		Output.emplace_back( "      eimc:            eimv:            press:", Global.UITextColor );
+		auto const config{ mover.inductionMotor.ConfigListing() };
+		auto const state{ mover.inductionMotor.StateListing() };
 		for( int i = 0; i <= 20; ++i ) {
 
 			std::string parameters =
-			    TMoverParameters::eimc_labels[ i ] + to_string( mover.inductionMotor.config[ i ], 2, 9 )
+			    std::string( config[ i ].first ) + to_string( config[ i ].second, 2, 9 )
 			    + " | "
-			    + TMoverParameters::eimv_labels[ i ] + to_string( mover.inductionMotor.state[ i ], 2, 9 );
+			    + std::string( state[ i ].first ) + to_string( state[ i ].second, 2, 9 );
 
 			if( i < 10 ) {
 				parameters +=

@@ -1184,7 +1184,7 @@ void TTrain::set_cab_controls(int const Cab)
 		TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
-			if (p->MoverParameters->inductionMotor.config[eimc_p_Pmax] > 1)
+			if (p->MoverParameters->inductionMotor.traction.maxPower > 1)
 			{
 				if (itemindex < p->MoverParameters->inductionMotor.inverterCount)
 				{

@@ -1148,7 +1148,6 @@ class TMoverParameters
 	/*- dla lokomotyw z silnikami indukcyjnymi -*/
 	// the drive of induction motors (physics/components/inductionmotor.h)
 	InductionMotor inductionMotor;
-	static std::vector<std::string> const eimc_labels;
 	int Imaxrpc = 0; // Maksymalny prad rezystora hamowania chlodzonego pasywnie
 	int BRVto = 0; // Czas jaki wentylatory jeszcze dodatkowo schladzaja rezystor
 	double BRVtimer = 0; // Timer dla podtrzymania wentylatora
@@ -1480,7 +1479,6 @@ class TMoverParameters
 	bool EIMCtrlAdditionalZeros = false; /*czy ma dodatkowe zero jazdy i zero hamowania */
 	bool EIMCtrlEmergency = false; /*czy ma dodatkowe zero jazdy i zero hamowania */
 	bool EIMCtrlMainEmergency = false; /*czy zadajnik typu 2 (Elf) ma pozycje hamowania naglego ponizej swojej pozycji 0*/
-	static std::vector<std::string> const eimv_labels;
 	double SpeedCtrlTimer = 0; /*zegar dzialania tempomatu z wybieralna predkoscia*/
 	double eimicSpeedCtrl = 1; /*pozycja sugerowana przez tempomat*/
 	double eimicSpeedCtrlIntegral = 0; /*calkowany blad ustawienia predkosci*/
@@ -1670,7 +1668,7 @@ class TMoverParameters
 	bool EIMDirectionChangeAllow(void) const;
 	inline double IsVehicleEIMBrakingFactor() const
 	{
-		return DynamicBrakeFlag && ResistorsFlag ? 0.0 : inductionMotor.state[eimv_Ipoj] < 0 ? -1.0 : 1.0;
+		return DynamicBrakeFlag && ResistorsFlag ? 0.0 : inductionMotor.state.lineCurrent < 0 ? -1.0 : 1.0;
 	}
 	void BrakeLevelSet(double b);
 	bool BrakeLevelAdd(double b);

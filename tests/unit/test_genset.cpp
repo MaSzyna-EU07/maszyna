@@ -492,7 +492,7 @@ braking brake_from_60(vehicle &Dragon, track const &Track) {
 	for (auto step_count = 0L; step_count < 2000; ++step_count) {
 		step(Dragon, step_count, Track);
 		result.lowest_current = std::min(result.lowest_current, cab.Itot);
-		result.electrodynamic |= cab.inductionMotor.forceShare < 0.0 && cab.inductionMotor.state[eimv_Ipoj] < 0.0;
+		result.electrodynamic |= cab.inductionMotor.forceShare < 0.0 && cab.inductionMotor.state.lineCurrent < 0.0;
 	}
 	result.speed_lost = speed - cab.Vel;
 	return result;

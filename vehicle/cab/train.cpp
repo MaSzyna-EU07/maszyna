@@ -319,7 +319,7 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	int in = 0;
 	while (p && in < 8)
 	{
-		if (p->MoverParameters->inductionMotor.config[eimc_p_Pmax] > 1)
+		if (p->MoverParameters->inductionMotor.traction.maxPower > 1)
 		{
 			in++;
 			dict->insert("eimp_c" + std::to_string(in) + "_invno", p->MoverParameters->inductionMotor.inverterCount);

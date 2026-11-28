@@ -524,8 +524,8 @@ double TMoverParameters::DynamicBrakeRatio(void) const
 // *************************************************************************************************
 bool TMoverParameters::DynamicBrakeAvailable(void) const
 {
-	double const vh0{inductionMotor.config[eimc_p_Vh0]};
-	if (double const vh1{inductionMotor.config[eimc_p_Vh1]}; vh1 <= 0.001)
+	double const vh0{inductionMotor.braking.offSpeed};
+	if (double const vh1{inductionMotor.braking.fullSpeed}; vh1 <= 0.001)
 	{
 		// brak zdefiniowanej strefy - ED dziala zawsze
 		return true;
@@ -1070,7 +1070,7 @@ void TMoverParameters::InductionMotorTractionForce(double dt)
 		inductionMotor.inverterRatio = ActiveInverters / (double)inductionMotor.inverterCount;
 		if (inductionMotor.maxPowerTable.size() > 1)
 		{
-			inductionMotor.config[eimc_p_Pmax] = TableInterpolation(inductionMotor.maxPowerTable, Vel);
+			inductionMotor.traction.maxPower = TableInterpolation(inductionMotor.maxPowerTable, Vel);
 		}
 		InductionMotorSpeedControl(dt);
 		InductionMotorBrakeBlending(ActiveInverters, PosRatio, tmp);
@@ -1195,7 +1195,7 @@ void TMoverParameters::SpeedControlByTime(double dt)
 void TMoverParameters::InductionMotorBrakeBlending(double const ActiveInverters, double &PosRatio, double &tmp)
 {
 	InductionMotorDynamicBrakeFlag();
-	auto const edBCP{Hamulec->GetEDBCP() * inductionMotor.config[eimc_p_abed]}; // stala napedu
+	auto const edBCP{Hamulec->GetEDBCP() * inductionMotor.braking.cylinderPressureGain}; // stala napedu
 	if (DynamicBrakeFlag)
 	{
 		PosRatio = InductionMotorBrakeRatio(ActiveInverters, edBCP);
@@ -1204,9 +1204,9 @@ void TMoverParameters::InductionMotorBrakeBlending(double const ActiveInverters,
 	else
 	{
 		PosRatio = std::max(eimic_real, 0.);
-		inductionMotor.state[eimv_Fzad] = PosRatio;
-		if (Flat && inductionMotor.config[eimc_p_F0] * inductionMotor.state[eimv_Fful] > 0)
-			PosRatio = std::min(PosRatio * inductionMotor.config[eimc_p_F0] / inductionMotor.state[eimv_Fful], 1.);
+		inductionMotor.state.forceDemand = PosRatio;
+		if (Flat && inductionMotor.traction.startingForce * inductionMotor.state.fullForce > 0)
+			PosRatio = std::min(PosRatio * inductionMotor.traction.startingForce / inductionMotor.state.fullForce, 1.);
 		/*                    if (ScndCtrlActualPos > 0) //speed control
 		                        if (Vmax < 250)
 		                            PosRatio = std::min(PosRatio, std::max(-1, 0.5 * (ScndCtrlActualPos - Vel)));
@@ -1248,9 +1248,9 @@ double TMoverParameters::InductionMotorBrakeRatio(double const ActiveInverters, 
 {
 	double PosRatio;
 	// ustalanie współczynnika blendingu do luzowania hamulca PN
-	if (inductionMotor.state[eimv_Fmax] * Sign(V) * DirAbsolute < -1)
+	if (inductionMotor.state.maxForce * Sign(V) * DirAbsolute < -1)
 	{
-		PosRatio = -Sign(V) * DirAbsolute * inductionMotor.state[eimv_Fr] / (inductionMotor.config[eimc_p_Fh] * std::max(edBCP, std::max(0.01, Hamulec->GetEDBCP())) / MaxBrakePress[0]);
+		PosRatio = -Sign(V) * DirAbsolute * inductionMotor.state.force / (inductionMotor.braking.maxForce * std::max(edBCP, std::max(0.01, Hamulec->GetEDBCP())) / MaxBrakePress[0]);
 		PosRatio = std::clamp(PosRatio, 0.0, 1.0);
 	}
 	else
@@ -1262,27 +1262,27 @@ double TMoverParameters::InductionMotorBrakeRatio(double const ActiveInverters, 
 		PosRatio *= 0.9;
 	Hamulec->SetED(std::max(0.0, std::min(PosRatio, 1.0))); // ustalenie stopnia zmniejszenia ciśnienia
 	// ustalanie siły hamowania ED
-	if (Hamulec->GetEDBCP() > 0.25 && inductionMotor.config[eimc_p_abed] < 0.001 || ActiveInverters < inductionMotor.inverterCount) // jeśli PN wyłącza ED
+	if (Hamulec->GetEDBCP() > 0.25 && inductionMotor.braking.cylinderPressureGain < 0.001 || ActiveInverters < inductionMotor.inverterCount) // jeśli PN wyłącza ED
 	{
 		PosRatio = 0;
-		inductionMotor.state[eimv_Fzad] = 0;
+		inductionMotor.state.forceDemand = 0;
 	}
 	else
 	{
 		// strefa wylaczenia ED (Vh0..Vh1) - mnoznik 0..1 zaleznie od predkosci
-		double const vhRamp = std::max(0.0, std::min(1.0, (Vel - inductionMotor.config[eimc_p_Vh0]) / (inductionMotor.config[eimc_p_Vh1] - inductionMotor.config[eimc_p_Vh0])));
+		double const vhRamp = std::max(0.0, std::min(1.0, (Vel - inductionMotor.braking.offSpeed) / (inductionMotor.braking.fullSpeed - inductionMotor.braking.offSpeed)));
 		if (SplitEDPneumaticBrake)
 		{
 			// w trybie split LocalBrake nie zaleca ED; uzywany jest DynamicBrakeCtrl
 			// oraz zwykle zapotrzebowanie z hamulca zespolonego (edBCP)
 			double const edLeverDemand = DynamicBrakeRatio();
 			PosRatio = -std::max(std::max(edLeverDemand, std::min(edBCP / MaxBrakePress[0], 1.0)), AnPos) * vhRamp;
-			inductionMotor.state[eimv_Fzad] = -std::min(1.0, std::max(edLeverDemand, edBCP / MaxBrakePress[0]));
+			inductionMotor.state.forceDemand = -std::min(1.0, std::max(edLeverDemand, edBCP / MaxBrakePress[0]));
 		}
 		else
 		{
 			PosRatio = -std::max(std::min(edBCP * 1.0 / MaxBrakePress[0], 1.0), AnPos) * vhRamp;
-			inductionMotor.state[eimv_Fzad] = -std::min(1.0, std::max(LocalBrakeRatio(), edBCP / MaxBrakePress[0]));
+			inductionMotor.state.forceDemand = -std::min(1.0, std::max(LocalBrakeRatio(), edBCP / MaxBrakePress[0]));
 		}
 	}
 	return PosRatio;
@@ -1293,30 +1293,30 @@ void TMoverParameters::InductionMotorDrive(double dt)
 {
 	double tmp;
 	if (DynamicBrakeFlag)
-		tmp = inductionMotor.config[eimc_f_Uzh];
+		tmp = inductionMotor.converter.brakingLinkVoltage;
 	else
-		tmp = inductionMotor.config[eimc_f_Uzmax];
+		tmp = inductionMotor.converter.maxLinkVoltage;
 
-	auto f_cfu{DynamicBrakeFlag ? inductionMotor.config[eimc_f_cfuH] : inductionMotor.config[eimc_f_cfu]};
+	auto f_cfu{DynamicBrakeFlag ? inductionMotor.converter.brakingVoltsPerHertz : inductionMotor.converter.voltsPerHertz};
 
-	inductionMotor.state[eimv_Uzsmax] = std::min(EngineVoltage - inductionMotor.config[eimc_f_DU], tmp);
-	inductionMotor.state[eimv_fkr] = inductionMotor.state[eimv_Uzsmax] / f_cfu;
+	inductionMotor.state.linkVoltage = std::min(EngineVoltage - inductionMotor.converter.voltageDrop, tmp);
+	inductionMotor.state.criticalFrequency = inductionMotor.state.linkVoltage / f_cfu;
 	if (inductionMotor.forceShare < 0)
 	{
-		inductionMotor.state[eimv_Pmax] = inductionMotor.config[eimc_p_Ph];
+		inductionMotor.state.powerLimit = inductionMotor.braking.maxPower;
 	}
 	else
 	{
-		inductionMotor.state[eimv_Pmax] = std::min(inductionMotor.config[eimc_p_Pmax], 0.001 * EngineVoltage * (inductionMotor.config[eimc_p_Imax] - inductionMotor.config[eimc_f_I0]) * Pirazy2 * inductionMotor.config[eimc_s_cim] / inductionMotor.config[eimc_s_p] / inductionMotor.config[eimc_s_cfu]);
+		inductionMotor.state.powerLimit = std::min(inductionMotor.traction.maxPower, 0.001 * EngineVoltage * (inductionMotor.traction.maxCurrent - inductionMotor.converter.noLoadCurrent) * Pirazy2 * inductionMotor.motor.torquePerCurrent / inductionMotor.motor.polePairs / inductionMotor.motor.voltsPerHertz);
 		if (GensetSelected())
 		{
 			// on the genset of a dual-mode vehicle the traction takes no more than the genset gives
-			inductionMotor.state[eimv_Pmax] = std::min(inductionMotor.state[eimv_Pmax], GensetTractionPowerLimit());
+			inductionMotor.state.powerLimit = std::min(inductionMotor.state.powerLimit, GensetTractionPowerLimit());
 		}
 	}
-	inductionMotor.state[eimv_FMAXMAX] = 0.001 *
-	                     square(std::min(1.0, inductionMotor.state[eimv_fkr] / std::max(abs(enrot) * inductionMotor.config[eimc_s_p] + inductionMotor.config[eimc_s_dfmax] * inductionMotor.state[eimv_ks], inductionMotor.config[eimc_s_dfmax])) * f_cfu / inductionMotor.config[eimc_s_cfu]) *
-	                     (inductionMotor.config[eimc_s_dfmax] * inductionMotor.config[eimc_s_dfic] * inductionMotor.config[eimc_s_cim]) * Transmision.Ratio * NPoweredAxles * 2.0 / WheelDiameter;
+	inductionMotor.state.absoluteMaxForce = 0.001 *
+	                     square(std::min(1.0, inductionMotor.state.criticalFrequency / std::max(abs(enrot) * inductionMotor.motor.polePairs + inductionMotor.motor.maxSlipFrequency * inductionMotor.state.slipShare, inductionMotor.motor.maxSlipFrequency)) * f_cfu / inductionMotor.motor.voltsPerHertz) *
+	                     (inductionMotor.motor.maxSlipFrequency * inductionMotor.motor.currentPerSlip * inductionMotor.motor.torquePerCurrent) * Transmision.Ratio * NPoweredAxles * 2.0 / WheelDiameter;
 	InductionMotorForceLimits();
 	for (auto &inv : inductionMotor.inverters)
 	{
@@ -1324,26 +1324,26 @@ void TMoverParameters::InductionMotorDrive(double dt)
 		inv.Error = inv.Failure_Const || (inv.Failure_Drive && inv.Request != 0);
 		inv.IsActive = inv.Activate && !inv.Error;
 	}
-	inductionMotor.state[eimv_ks] = inductionMotor.state[eimv_Fr] / inductionMotor.state[eimv_FMAXMAX];
-	inductionMotor.state[eimv_df] = inductionMotor.state[eimv_ks] * inductionMotor.config[eimc_s_dfmax];
-	inductionMotor.state[eimv_fp] = DirAbsolute * enrot * inductionMotor.config[eimc_s_p] + inductionMotor.state[eimv_df]; // do przemyslenia dzialanie pp z tmpV
-	//         inductionMotor.state[eimv_U]:=std::max(inductionMotor.state[eimv_Uzsmax],std::min(inductionMotor.config[eimc_f_cfu]*inductionMotor.state[eimv_fp],inductionMotor.state[eimv_Uzsmax]));
-	//         inductionMotor.state[eimv_pole]:=inductionMotor.state[eimv_U]/(inductionMotor.state[eimv_fp]*inductionMotor.config[eimc_s_cfu]);
-	if (abs(inductionMotor.state[eimv_fp]) <= inductionMotor.state[eimv_fkr])
-		inductionMotor.state[eimv_pole] = f_cfu / inductionMotor.config[eimc_s_cfu];
+	inductionMotor.state.slipShare = inductionMotor.state.force / inductionMotor.state.absoluteMaxForce;
+	inductionMotor.state.slipFrequency = inductionMotor.state.slipShare * inductionMotor.motor.maxSlipFrequency;
+	inductionMotor.state.supplyFrequency = DirAbsolute * enrot * inductionMotor.motor.polePairs + inductionMotor.state.slipFrequency; // do przemyslenia dzialanie pp z tmpV
+	//         inductionMotor.state.voltage:=std::max(inductionMotor.state.linkVoltage,std::min(inductionMotor.converter.voltsPerHertz*inductionMotor.state.supplyFrequency,inductionMotor.state.linkVoltage));
+	//         inductionMotor.state.flux:=inductionMotor.state.voltage/(inductionMotor.state.supplyFrequency*inductionMotor.motor.voltsPerHertz);
+	if (abs(inductionMotor.state.supplyFrequency) <= inductionMotor.state.criticalFrequency)
+		inductionMotor.state.flux = f_cfu / inductionMotor.motor.voltsPerHertz;
 	else
-		inductionMotor.state[eimv_pole] = inductionMotor.state[eimv_Uzsmax] / inductionMotor.config[eimc_s_cfu] / abs(inductionMotor.state[eimv_fp]);
-	inductionMotor.state[eimv_U] = inductionMotor.state[eimv_pole] * inductionMotor.state[eimv_fp] * inductionMotor.config[eimc_s_cfu];
-	inductionMotor.state[eimv_Ic] = (inductionMotor.state[eimv_fp] - DirAbsolute * enrot * inductionMotor.config[eimc_s_p]) * inductionMotor.config[eimc_s_dfic] * inductionMotor.state[eimv_pole];
-	inductionMotor.state[eimv_If] = inductionMotor.state[eimv_Ic] * inductionMotor.config[eimc_s_icif];
-	inductionMotor.state[eimv_M] = inductionMotor.state[eimv_pole] * inductionMotor.state[eimv_Ic] * inductionMotor.config[eimc_s_cim];
-	inductionMotor.state[eimv_Ipoj] = inductionMotor.state[eimv_Ic] * NPoweredAxles * inductionMotor.inverterRatio * inductionMotor.state[eimv_U] / (EngineVoltage - inductionMotor.config[eimc_f_DU]) + inductionMotor.config[eimc_f_I0];
-	inductionMotor.state[eimv_Pm] = DirActive * inductionMotor.state[eimv_M] * NPoweredAxles * inductionMotor.inverterRatio * enrot * Pirazy2 / 1000;
-	inductionMotor.state[eimv_Pe] = inductionMotor.state[eimv_Ipoj] * EngineVoltage / 1000;
-	inductionMotor.state[eimv_eta] = inductionMotor.state[eimv_Pm] / inductionMotor.state[eimv_Pe];
+		inductionMotor.state.flux = inductionMotor.state.linkVoltage / inductionMotor.motor.voltsPerHertz / abs(inductionMotor.state.supplyFrequency);
+	inductionMotor.state.voltage = inductionMotor.state.flux * inductionMotor.state.supplyFrequency * inductionMotor.motor.voltsPerHertz;
+	inductionMotor.state.torqueCurrent = (inductionMotor.state.supplyFrequency - DirAbsolute * enrot * inductionMotor.motor.polePairs) * inductionMotor.motor.currentPerSlip * inductionMotor.state.flux;
+	inductionMotor.state.fieldCurrent = inductionMotor.state.torqueCurrent * inductionMotor.motor.fieldCurrentRatio;
+	inductionMotor.state.torque = inductionMotor.state.flux * inductionMotor.state.torqueCurrent * inductionMotor.motor.torquePerCurrent;
+	inductionMotor.state.lineCurrent = inductionMotor.state.torqueCurrent * NPoweredAxles * inductionMotor.inverterRatio * inductionMotor.state.voltage / (EngineVoltage - inductionMotor.converter.voltageDrop) + inductionMotor.converter.noLoadCurrent;
+	inductionMotor.state.mechanicalPower = DirActive * inductionMotor.state.torque * NPoweredAxles * inductionMotor.inverterRatio * enrot * Pirazy2 / 1000;
+	inductionMotor.state.electricalPower = inductionMotor.state.lineCurrent * EngineVoltage / 1000;
+	inductionMotor.state.efficiency = inductionMotor.state.mechanicalPower / inductionMotor.state.electricalPower;
 
-	Im = inductionMotor.state[eimv_If];
-	if (inductionMotor.state[eimv_Ipoj] >= 0)
+	Im = inductionMotor.state.fieldCurrent;
+	if (inductionMotor.state.lineCurrent >= 0)
 		Vadd *= 1.0 - 2.0 * dt;
 	else if (GensetSelected())
 		Vadd = 1.0; // the genset of a dual-mode vehicle takes nothing back: all the braking energy to the resistors
@@ -1351,17 +1351,17 @@ void TMoverParameters::InductionMotorDrive(double dt)
 		Vadd *= 1.0 - dt;
 	else
 		Vadd = std::max(Vadd * (1.0 - 0.2 * dt), 0.007 * (std::abs(EngineVoltage) - (EnginePowerSource.CollectorParameters.MaxV - 100)));
-	Itot = inductionMotor.state[eimv_Ipoj] * (0.01 + std::min(0.99, 0.99 - Vadd));
+	Itot = inductionMotor.state.lineCurrent * (0.01 + std::min(0.99, 0.99 - Vadd));
 
-	EnginePower = abs(inductionMotor.state[eimv_Ic] * inductionMotor.state[eimv_U] * NPoweredAxles) / 1000;
+	EnginePower = abs(inductionMotor.state.torqueCurrent * inductionMotor.state.voltage * NPoweredAxles) / 1000;
 	// power inverters
 	UpdateInverterFrequency();
 
-	Mm = inductionMotor.state[eimv_M] * DirAbsolute;
+	Mm = inductionMotor.state.torque * DirAbsolute;
 	Mw = Mm * Transmision.Ratio * Transmision.Efficiency;
 	Fw = Mw * 2.0 / WheelDiameter;
 	Ft = Fw * NPoweredAxles * inductionMotor.inverterRatio;
-	inductionMotor.state[eimv_Fr] = DirAbsolute * Ft / 1000;
+	inductionMotor.state.force = DirAbsolute * Ft / 1000;
 }
 
 // the force the motors give at full and at the setting (inductionMotor.forceShare), braking within the power and the force of the
@@ -1370,38 +1370,38 @@ void TMoverParameters::InductionMotorForceLimits()
 {
 	if (inductionMotor.forceShare < 0)
 	{
-		inductionMotor.state[eimv_Fful] = std::min(inductionMotor.config[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(inductionMotor.config[eimc_p_Fh], inductionMotor.state[eimv_FMAXMAX]));
-		inductionMotor.state[eimv_Fmax] = -Sign(V) * DirAbsolute*std::min(inductionMotor.config[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-inductionMotor.config[eimc_p_Fh] * inductionMotor.forceShare, inductionMotor.state[eimv_FMAXMAX]));
+		inductionMotor.state.fullForce = std::min(inductionMotor.braking.maxPower * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(inductionMotor.braking.maxForce, inductionMotor.state.absoluteMaxForce));
+		inductionMotor.state.maxForce = -Sign(V) * DirAbsolute*std::min(inductionMotor.braking.maxPower * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-inductionMotor.braking.maxForce * inductionMotor.forceShare, inductionMotor.state.absoluteMaxForce));
 		double pr = inductionMotor.forceShare;
 		if (inductionMotor.logForce)
 			pr = -log(1 - 4 * pr) / log(5);
-		inductionMotor.state[eimv_Fr] = -Sign(V) * DirAbsolute*std::min(inductionMotor.config[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-inductionMotor.config[eimc_p_Fh] * pr, inductionMotor.state[eimv_FMAXMAX]));
+		inductionMotor.state.force = -Sign(V) * DirAbsolute*std::min(inductionMotor.braking.maxPower * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-inductionMotor.braking.maxForce * pr, inductionMotor.state.absoluteMaxForce));
 		if (inductionMotor.inverterRatio < 1.0)
-			inductionMotor.state[eimv_Fful] = 0;
-		//*std::min(1,(Vel-inductionMotor.config[eimc_p_Vh0])/(inductionMotor.config[eimc_p_Vh1]-inductionMotor.config[eimc_p_Vh0]))
+			inductionMotor.state.fullForce = 0;
+		//*std::min(1,(Vel-inductionMotor.braking.offSpeed)/(inductionMotor.braking.fullSpeed-inductionMotor.braking.offSpeed))
 	}
 	else
 	{
-		inductionMotor.state[eimv_Fful] = std::min(std::min(3.6 * inductionMotor.state[eimv_Pmax] / std::max(Vel, 1.), inductionMotor.config[eimc_p_F0] - Vel * inductionMotor.config[eimc_p_a1]), inductionMotor.state[eimv_FMAXMAX]);
+		inductionMotor.state.fullForce = std::min(std::min(3.6 * inductionMotor.state.powerLimit / std::max(Vel, 1.), inductionMotor.traction.startingForce - Vel * inductionMotor.traction.forceDropPerSpeed), inductionMotor.state.absoluteMaxForce);
 		//           if(not Flat)then
-		inductionMotor.state[eimv_Fmax] = inductionMotor.state[eimv_Fful] * inductionMotor.forceShare;
+		inductionMotor.state.maxForce = inductionMotor.state.fullForce * inductionMotor.forceShare;
 		//           else
-		//             inductionMotor.state[eimv_Fmax]:=std::min(inductionMotor.config[eimc_p_F0]*inductionMotor.forceShare,inductionMotor.state[eimv_Fful]);
+		//             inductionMotor.state.maxForce:=std::min(inductionMotor.traction.startingForce*inductionMotor.forceShare,inductionMotor.state.fullForce);
 		double pr = inductionMotor.forceShare;
 		if (inductionMotor.logForce)
 			pr = log(1 + 4 * pr) / log(5);
-		inductionMotor.state[eimv_Fr] = inductionMotor.state[eimv_Fful] * pr;
+		inductionMotor.state.force = inductionMotor.state.fullForce * pr;
 	}
 }
 
 // the frequency of the inverters at the motors' slip frequency, from the list of the drive or of its brake
 void TMoverParameters::UpdateInverterFrequency()
 {
-	auto const tmpV{std::abs(inductionMotor.state[eimv_fp])};
+	auto const tmpV{std::abs(inductionMotor.state.supplyFrequency)};
 	auto const useFFEDList = FFEDListSize > 0 && DynamicBrakeFlag;
 	auto const list = useFFEDList ? FFEDlist : FFlist;
 
-	if (auto const listSize = useFFEDList ? FFEDListSize : FFListSize; listSize > 0 && std::abs(inductionMotor.state[eimv_If]) > 1.0 && tmpV > 0.0001)
+	if (auto const listSize = useFFEDList ? FFEDListSize : FFListSize; listSize > 0 && std::abs(inductionMotor.state.fieldCurrent) > 1.0 && tmpV > 0.0001)
 	{
 
 		int i = 0;
@@ -1434,8 +1434,7 @@ void TMoverParameters::InductionMotorOff()
 	inductionMotor.forceShare = 0.0;
 	EnginePower = 0.0;
 	{
-		for (auto &eimvvalue : inductionMotor.state)
-			eimvvalue = 0.0;
+		inductionMotor.state = {};
 	}
 	Hamulec->SetED(0.0);
 	inductionMotor.inverterFrequency = 0.0; //(Hamulec as TLSt).SetLBP(LocBrakePress);
