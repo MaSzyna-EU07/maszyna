@@ -80,7 +80,8 @@ file(GLOB HEADERS "*.h"
 "model/*.h"
 "utilities/*.h"
 "world/*.h"
-"vehicle/*.h")
+"vehicle/*.h"
+"vehicle/ai/*.h")
 
 set(GLOBAL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(GLOBAL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/global_include")
@@ -170,7 +171,20 @@ set(SOURCES
 "model/AnimModel.cpp"
 "vehicle/Button.cpp"
 "vehicle/Camera.cpp"
-"vehicle/Driver.cpp"
+"vehicle/ai/consist.cpp"
+"vehicle/ai/controls.cpp"
+"vehicle/ai/doors.cpp"
+"vehicle/ai/driver.cpp"
+"vehicle/ai/engine.cpp"
+"vehicle/ai/force.cpp"
+"vehicle/ai/obstacles.cpp"
+"vehicle/ai/orders.cpp"
+"vehicle/ai/physicslog.cpp"
+"vehicle/ai/routescan.cpp"
+"vehicle/ai/situation.cpp"
+"vehicle/ai/speed.cpp"
+"vehicle/ai/speedpos.cpp"
+"vehicle/ai/speedtable.cpp"
 "vehicle/crewchange.cpp"
 "application/driverhints.cpp"
 "vehicle/DynObj.cpp"
