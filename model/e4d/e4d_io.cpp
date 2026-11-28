@@ -12,9 +12,14 @@ http://mozilla.org/MPL/2.0/.
 #include "model/e4d/e4d_io.h"
 #include "model/e4d/e4d_dump.h"
 
+#include "meshoptimizer.h"
 #include "zstd.h"
 
 #include <format>
+#include <iterator>
+#include <limits>
+#include <thread>
+#include <type_traits>
 #include <span>
 
 namespace e4d {
@@ -103,12 +108,57 @@ template <typename Type_> void append_array(std::vector<std::byte> &Output, std:
 	std::memcpy(Output.data() + offset, Values.data(), Values.size() * sizeof(Type_));
 }
 
+// which codec of meshoptimizer a stream may go through
+enum class stream_codec {
+	none,
+	vertices,
+	indices
+};
+
 struct pending_section {
 	std::uint32_t id{0};
 	std::uint32_t flags{0};
 	std::size_t alignment{section_alignment};
 	std::vector<std::byte> data;
+	stream_codec codec{stream_codec::none};
+	std::size_t element{0}; // the size of an element of the stream
 };
+
+// the sections smaller than this stay as they are, unpacking them costs more than reading them
+constexpr std::size_t packing_threshold{512};
+
+// the vertex codec of meshoptimizer, version 1, level 2
+constexpr int vertex_codec_version{1};
+constexpr int vertex_codec_level{2};
+
+template <typename Index_> std::size_t encode_indices(std::vector<std::byte> const &Data, std::vector<std::byte> &Encoded) {
+	std::vector<Index_> indices(Data.size() / sizeof(Index_));
+	std::memcpy(indices.data(), Data.data(), indices.size() * sizeof(Index_));
+	auto const last{std::ranges::max(indices)};
+	Encoded.resize(meshopt_encodeIndexSequenceBound(indices.size(), std::size_t{last} + 1));
+	return meshopt_encodeIndexSequence(reinterpret_cast<unsigned char *>(Encoded.data()), Encoded.size(), indices.data(), indices.size());
+}
+
+// the stream in its codec. false when it has none, is too small, or the codec doesn't make it smaller
+bool encode_stream(pending_section const &Section, std::vector<std::byte> &Encoded) {
+	if (Section.codec == stream_codec::none || Section.data.size() < packing_threshold || Section.data.size() % Section.element != 0)
+		return false;
+	auto const count{Section.data.size() / Section.element};
+	std::size_t size{0};
+	if (Section.codec == stream_codec::vertices) {
+		Encoded.resize(meshopt_encodeVertexBufferBound(count, Section.element));
+		size = meshopt_encodeVertexBufferLevel(reinterpret_cast<unsigned char *>(Encoded.data()), Encoded.size(), Section.data.data(), count, Section.element, vertex_codec_level,
+		    vertex_codec_version);
+	}
+	else if (Section.element == sizeof(std::uint16_t))
+		size = encode_indices<std::uint16_t>(Section.data, Encoded);
+	else
+		size = encode_indices<std::uint32_t>(Section.data, Encoded);
+	if (size == 0 || size >= Section.data.size())
+		return false;
+	Encoded.resize(size);
+	return true;
+}
 
 class file_builder {
   public:
@@ -120,12 +170,14 @@ class file_builder {
 		append_array(data, Records);
 		add(Id, Required, section_alignment, std::move(data));
 	}
-	template <typename Type_> void stream(std::uint32_t const Id, std::vector<Type_> const &Values, bool const Required) {
+	template <typename Type_> void stream(std::uint32_t const Id, std::vector<Type_> const &Values, bool const Required, stream_codec const Codec = stream_codec::none) {
 		if (Values.empty() && false == Required)
 			return;
 		std::vector<std::byte> data;
 		append_array(data, Values);
 		add(Id, Required, gpu_alignment, std::move(data));
+		m_sections.back().codec = Codec;
+		m_sections.back().element = sizeof(Type_);
 	}
 	void raw(std::uint32_t const Id, std::uint32_t const Flags, std::vector<std::byte> Data) {
 		m_sections.push_back({Id, Flags & section_flags::required, section_alignment, std::move(Data)});
@@ -140,18 +192,17 @@ class file_builder {
 		while (Output.size() % Alignment != 0)
 			Output.push_back(std::byte{0});
 	}
-	static bool compress(pending_section const &Section, std::vector<std::byte> &Packed, int const Level);
+	static bool compress(std::span<std::byte const> Data, std::vector<std::byte> &Packed, int Level);
 
 	std::vector<pending_section> m_sections;
 };
 
-bool file_builder::compress(pending_section const &Section, std::vector<std::byte> &Packed, int const Level) {
-	// small sections stay as they are, unpacking them costs more than reading them
-	if (Section.data.size() < 512)
+bool file_builder::compress(std::span<std::byte const> const Data, std::vector<std::byte> &Packed, int const Level) {
+	if (Data.size() < packing_threshold)
 		return false;
-	Packed.resize(ZSTD_compressBound(Section.data.size()));
-	auto const size{ZSTD_compress(Packed.data(), Packed.size(), Section.data.data(), Section.data.size(), Level)};
-	if (ZSTD_isError(size) || size > Section.data.size() - Section.data.size() / 8)
+	Packed.resize(ZSTD_compressBound(Data.size()));
+	auto const size{ZSTD_compress(Packed.data(), Packed.size(), Data.data(), Data.size(), Level)};
+	if (ZSTD_isError(size) || size > Data.size() - Data.size() / 8)
 		return false;
 	Packed.resize(size);
 	return true;
@@ -162,6 +213,7 @@ std::vector<std::byte> file_builder::finish(model const &Model, write_options co
 	std::vector<section_entry> entries;
 	entries.reserve(m_sections.size());
 	std::vector<std::byte> packed;
+	std::vector<std::byte> encoded;
 	for (auto const &section : m_sections) {
 		pad_to(output, section.alignment);
 		section_entry entry;
@@ -169,13 +221,17 @@ std::vector<std::byte> file_builder::finish(model const &Model, write_options co
 		entry.flags = section.flags;
 		entry.offset = output.size();
 		entry.size = section.data.size();
-		if (Options.compress && compress(section, packed, Options.level)) {
+		std::span<std::byte const> bytes{section.data};
+		auto const coded{Options.codec && encode_stream(section, encoded)};
+		if (coded) {
+			entry.flags |= section_flags::meshopt;
+			bytes = encoded;
+		}
+		if (Options.compress && (false == coded || Options.compress_streams) && compress(bytes, packed, Options.level)) {
 			entry.flags |= section_flags::zstd;
-			output.insert(output.end(), packed.begin(), packed.end());
+			bytes = packed;
 		}
-		else {
-			output.insert(output.end(), section.data.begin(), section.data.end());
-		}
+		output.insert(output.end(), bytes.begin(), bytes.end());
 		entry.stored_size = output.size() - entry.offset;
 		entries.push_back(entry);
 	}
@@ -294,6 +350,11 @@ class file_reader {
 	bool read_entries(file_header const &Header, std::vector<section_entry> &Entries);
 	bool unpack(section_entry const &Entry, std::vector<std::byte> &Storage, std::span<std::byte const> &Bytes);
 	bool dispatch(section_entry const &Entry, section_bytes const &Section, model &Model);
+	bool vertex_stream(section_entry const &Entry, model &Model, bool &Handled);
+	bool read_streams(std::vector<section_entry> const &Sections, model &Model);
+	template <typename Type_> bool unpack_into(section_entry const &Entry, std::vector<Type_> &Output, stream_codec Codec);
+	bool unzstd(section_entry const &Entry, std::size_t Limit, std::vector<std::byte> &Output);
+	bool decode(section_entry const &Entry, std::span<std::byte const> Encoded, void *Output, std::size_t Element, stream_codec Codec);
 	bool fail(std::string Error) {
 		m_error = std::move(Error);
 		return false;
@@ -342,6 +403,8 @@ bool file_reader::read_entries(file_header const &Header, std::vector<section_en
 
 bool file_reader::unpack(section_entry const &Entry, std::vector<std::byte> &Storage, std::span<std::byte const> &Bytes) {
 	auto const stored{m_file.subspan(Entry.offset, Entry.stored_size)};
+	if ((Entry.flags & section_flags::meshopt) != 0)
+		return fail(std::format("section {} is in a codec only the vertex and index streams may be in", fourcc_name(Entry.id)));
 	if ((Entry.flags & section_flags::zstd) == 0) {
 		if (Entry.stored_size != Entry.size)
 			return fail(std::format("section {} has {} bytes stored and {} declared", fourcc_name(Entry.id), Entry.stored_size, Entry.size));
@@ -356,6 +419,125 @@ bool file_reader::unpack(section_entry const &Entry, std::vector<std::byte> &Sto
 	if (ZSTD_isError(size) || size != Entry.size)
 		return fail(std::format("section {} doesn't unpack to its {} bytes", fourcc_name(Entry.id), Entry.size));
 	Bytes = Storage;
+	return true;
+}
+
+// the zstd frame of the section, of at most Limit bytes
+bool file_reader::unzstd(section_entry const &Entry, std::size_t const Limit, std::vector<std::byte> &Output) {
+	auto const stored{m_file.subspan(Entry.offset, Entry.stored_size)};
+	auto const size{ZSTD_getFrameContentSize(stored.data(), stored.size())};
+	if (size == ZSTD_CONTENTSIZE_UNKNOWN || size == ZSTD_CONTENTSIZE_ERROR || size > Limit)
+		return fail(std::format("section {} doesn't unpack to a size its codec can have", fourcc_name(Entry.id)));
+	Output.resize(static_cast<std::size_t>(size));
+	auto const unpacked{ZSTD_decompress(Output.data(), Output.size(), stored.data(), stored.size())};
+	if (ZSTD_isError(unpacked) || unpacked != size)
+		return fail(std::format("section {} doesn't unpack to its {} bytes", fourcc_name(Entry.id), size));
+	return true;
+}
+
+bool file_reader::decode(section_entry const &Entry, std::span<std::byte const> const Encoded, void *const Output, std::size_t const Element, stream_codec const Codec) {
+	auto const count{static_cast<std::size_t>(Entry.size) / Element};
+	auto const *data{reinterpret_cast<unsigned char const *>(Encoded.data())};
+	auto const result{Codec == stream_codec::vertices ? meshopt_decodeVertexBuffer(Output, count, Element, data, Encoded.size())
+	                                                  : meshopt_decodeIndexSequence(Output, count, Element, data, Encoded.size())};
+	if (result != 0)
+		return fail(std::format("section {} doesn't decode to its {} bytes", fourcc_name(Entry.id), Entry.size));
+	return true;
+}
+
+// a stream unpacked straight into its vector, without a copy in between: the vertices and the indices are most of the file
+template <typename Type_> bool file_reader::unpack_into(section_entry const &Entry, std::vector<Type_> &Output, stream_codec const Codec) {
+	if (Entry.size % sizeof(Type_) != 0)
+		return fail(std::format("section {} of {} bytes isn't a whole number of elements of {} bytes", fourcc_name(Entry.id), Entry.size, sizeof(Type_)));
+	auto const stored{m_file.subspan(Entry.offset, Entry.stored_size)};
+	if ((Entry.flags & section_flags::meshopt) != 0) {
+		auto const count{static_cast<std::size_t>(Entry.size) / sizeof(Type_)};
+		// the result of the codec is never larger than its bound, which caps what a broken zstd frame can claim
+		std::size_t bound{0};
+		if constexpr (std::is_integral_v<Type_>)
+			bound = meshopt_encodeIndexSequenceBound(count, std::size_t{std::numeric_limits<Type_>::max()});
+		else
+			bound = meshopt_encodeVertexBufferBound(count, sizeof(Type_));
+		std::vector<std::byte> unpacked;
+		if ((Entry.flags & section_flags::zstd) != 0 && false == unzstd(Entry, bound, unpacked))
+			return false;
+		auto const encoded{(Entry.flags & section_flags::zstd) != 0 ? std::span<std::byte const>{unpacked} : stored};
+		Output.resize(count);
+		return decode(Entry, encoded, Output.data(), sizeof(Type_), Codec);
+	}
+	if ((Entry.flags & section_flags::zstd) == 0) {
+		if (Entry.stored_size != Entry.size)
+			return fail(std::format("section {} has {} bytes stored and {} declared", fourcc_name(Entry.id), Entry.stored_size, Entry.size));
+		Output.resize(Entry.size / sizeof(Type_));
+		if (false == Output.empty())
+			std::memcpy(Output.data(), stored.data(), Entry.size);
+		return true;
+	}
+	if (ZSTD_getFrameContentSize(stored.data(), stored.size()) != Entry.size)
+		return fail(std::format("section {} doesn't unpack to its {} bytes", fourcc_name(Entry.id), Entry.size));
+	Output.resize(Entry.size / sizeof(Type_));
+	auto const size{ZSTD_decompress(Output.data(), Entry.size, stored.data(), stored.size())};
+	if (ZSTD_isError(size) || size != Entry.size)
+		return fail(std::format("section {} doesn't unpack to its {} bytes", fourcc_name(Entry.id), Entry.size));
+	return true;
+}
+
+bool file_reader::vertex_stream(section_entry const &Entry, model &Model, bool &Handled) {
+	using enum stream_codec;
+	Handled = true;
+	switch (Entry.id) {
+		case section::positions: return unpack_into(Entry, Model.positions, vertices);
+		case section::attributes: return unpack_into(Entry, Model.vertex_attributes, vertices);
+		case section::skin_weights: return unpack_into(Entry, Model.weights, vertices);
+		case section::skin_weights_wide: return unpack_into(Entry, Model.weights_wide, vertices);
+		case section::userdata: return unpack_into(Entry, Model.vertex_userdata, vertices);
+		case section::bindings: return unpack_into(Entry, Model.bindings, vertices);
+		case section::indices16: return unpack_into(Entry, Model.indices16, indices);
+		case section::indices32: return unpack_into(Entry, Model.indices32, indices);
+		default: Handled = false; return true;
+	}
+}
+
+bool is_vertex_stream(std::uint32_t const Id) {
+	switch (Id) {
+		case section::positions:
+		case section::attributes:
+		case section::skin_weights:
+		case section::skin_weights_wide:
+		case section::userdata:
+		case section::bindings:
+		case section::indices16:
+		case section::indices32: return true;
+		default: return false;
+	}
+}
+
+// a stream of this size or more unpacks on a thread of its own, beside the others
+constexpr std::uint64_t parallel_stream_size{std::uint64_t{1} << 20};
+
+// the vertex and index streams, the big ones at once: each goes into a vector of its own, and the errors are kept apart
+// and told in the order of the sections
+bool file_reader::read_streams(std::vector<section_entry> const &Sections, model &Model) {
+	std::vector<section_entry> streams;
+	std::ranges::copy_if(Sections, std::back_inserter(streams), [](section_entry const &Entry) { return is_vertex_stream(Entry.id); });
+	std::vector<std::string> errors(streams.size());
+	auto const unpack_one{[this, &streams, &errors, &Model](std::size_t const Index) {
+		file_reader worker{m_file, m_options};
+		bool handled{false};
+		if (false == worker.vertex_stream(streams[Index], Model, handled))
+			errors[Index] = std::move(worker.m_error);
+	}};
+	{
+		std::vector<std::jthread> workers;
+		for (std::size_t idx = 0; idx < streams.size(); ++idx) {
+			if (streams[idx].size >= parallel_stream_size)
+				workers.emplace_back(unpack_one, idx);
+			else
+				unpack_one(idx);
+		}
+	} // the workers join here
+	if (auto const failed{std::ranges::find_if(errors, [](std::string const &Error) { return false == Error.empty(); })}; failed != errors.end())
+		return fail(*failed);
 	return true;
 }
 
@@ -412,7 +594,13 @@ read_result file_reader::run(model &Model) {
 	Model.flags = header.flags;
 	Model.source_hash = header.source_hash;
 	std::vector<std::byte> storage;
+	if (false == read_streams(sections, Model)) {
+		Model = model{};
+		return {false, m_error};
+	}
 	for (auto const &entry : sections) {
+		if (is_vertex_stream(entry.id))
+			continue;
 		std::span<std::byte const> bytes;
 		if (false == unpack(entry, storage, bytes) || false == dispatch(entry, section_bytes{entry.id, bytes}, Model)) {
 			Model = model{};
@@ -587,6 +775,10 @@ bool valid_payload(model const &Model, component_record const &Record, std::span
 		}
 		case component::legacy_animation: return valid_fixed<payload::legacy_animation>(reader);
 		case component::legacy_stars: return valid_stars(Model, Record, reader);
+		case component::legacy_material: {
+			payload::legacy_material material;
+			return reader.get(material) && material.material < Model.materials.size();
+		}
 		default: return true; // a type of a later version, or a marker without data (LTXT)
 	}
 }
@@ -642,6 +834,8 @@ void validator::node(std::uint32_t const Index, node_record const &Node) {
 		fault(std::format("node {} has mesh {} out of range", Index, Node.mesh));
 	if ((Node.flags & node_flags::matrix) != 0 && std::ranges::none_of(m_model.transforms, [Index](transform_record const &Transform) { return Transform.node == Index; }))
 		fault(std::format("node {} has no matrix in XFRM", Index));
+	if ((Node.flags & node_flags::matrix) != 0 && (Node.flags & node_flags::no_transform) != 0)
+		fault(std::format("node {} has a matrix in XFRM and no transform at once", Index));
 	component_ranges(Node.component_first, Node.component_count, target_kind::node, Index, std::format("node {}", Index));
 }
 
@@ -910,15 +1104,15 @@ std::vector<std::byte> write(model const &Model, write_options const &Options) {
 		builder.add(section::component_data, false, section_alignment, Model.component_data);
 	builder.table(section::bounds, Model.bounds, false);
 	builder.table(section::edit, Model.edit, false);
-	builder.stream(section::positions, Model.positions, true);
-	builder.stream(section::attributes, Model.vertex_attributes, true);
-	builder.stream(section::skin_weights, Model.weights, false);
-	builder.stream(section::skin_weights_wide, Model.weights_wide, false);
-	builder.stream(section::userdata, Model.vertex_userdata, false);
+	builder.stream(section::positions, Model.positions, true, stream_codec::vertices);
+	builder.stream(section::attributes, Model.vertex_attributes, true, stream_codec::vertices);
+	builder.stream(section::skin_weights, Model.weights, false, stream_codec::vertices);
+	builder.stream(section::skin_weights_wide, Model.weights_wide, false, stream_codec::vertices);
+	builder.stream(section::userdata, Model.vertex_userdata, false, stream_codec::vertices);
 	// required once present: the primitives which follow it draw wrong without it
-	builder.stream(section::bindings, Model.bindings, false == Model.bindings.empty());
-	builder.stream(section::indices16, Model.indices16, false);
-	builder.stream(section::indices32, Model.indices32, false);
+	builder.stream(section::bindings, Model.bindings, false == Model.bindings.empty(), stream_codec::vertices);
+	builder.stream(section::indices16, Model.indices16, false, stream_codec::indices);
+	builder.stream(section::indices32, Model.indices32, false, stream_codec::indices);
 	for (auto const &section : Model.unknown)
 		builder.raw(section.id, section.flags, section.data);
 	return builder.finish(Model, Options);

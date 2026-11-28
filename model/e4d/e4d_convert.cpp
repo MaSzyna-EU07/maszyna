@@ -21,8 +21,11 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "utilities/wholefile.h"
 
+#include <algorithm>
+#include <chrono>
 #include <format>
 #include <iostream>
+#include <tuple>
 
 namespace e4d {
 
@@ -55,6 +58,7 @@ class converter {
 	void indices(TSubModel const &Submodel, gfx::index_array const &Indices, primitive_record &Primitive);
 	void stars(gfx::vertex_array const &Vertices, std::uint32_t Node);
 	std::uint32_t material(TSubModel const &Submodel);
+	static bool has_geometry(TSubModel const &Submodel);
 	void light_slots();
 	bool any_userdata(TSubModel const *First) const;
 
@@ -114,8 +118,10 @@ void converter::node(TSubModel &Submodel, std::int32_t const Parent) {
 
 void converter::transform(TSubModel const &Submodel, std::uint32_t const Node) {
 	auto const *matrix{Submodel.GetMatrix()};
-	if (matrix == nullptr)
+	if (matrix == nullptr) {
+		m_model.nodes[Node].flags |= node_flags::no_transform;
 		return;
+	}
 	auto const transform{glm::make_mat4(matrix->readArray())};
 	if (set_transform(m_model.nodes[Node], transform))
 		return;
@@ -150,6 +156,16 @@ void converter::components(TSubModel const &Submodel, std::uint32_t const Node) 
 		m_model.add_component(component::legacy_animation, target_kind::node, Node, payload_writer{}.put(payload::legacy_animation{static_cast<std::uint32_t>(Submodel.b_Anim)}).data());
 	if (Submodel.eType == TP_TEXT)
 		m_model.add_component(component::legacy_text, target_kind::node, Node, {});
+	if (false == has_geometry(Submodel)) {
+		// a light point or a rotator: E3D keeps the material and the colours of every submodel, and the lights use them
+		auto const index{material(Submodel)};
+		m_model.add_component(component::legacy_material, target_kind::node, Node, payload_writer{}.put(payload::legacy_material{index}).data());
+	}
+}
+
+bool converter::has_geometry(TSubModel const &Submodel) {
+	auto const drawable{(Submodel.eType >= 0 && Submodel.eType <= gl_primitive_last) || Submodel.eType == TP_STARS};
+	return drawable && Submodel.m_geometry.handle != null_handle && Submodel.m_geometry.vertex_count > 0 && false == GfxRenderer->Vertices(Submodel.m_geometry.handle).empty();
 }
 
 std::uint32_t converter::material(TSubModel const &Submodel) {
@@ -214,12 +230,9 @@ void converter::stars(gfx::vertex_array const &Vertices, std::uint32_t const Nod
 }
 
 void converter::geometry(TSubModel const &Submodel, std::uint32_t const Node) {
-	auto const drawable{(Submodel.eType >= 0 && Submodel.eType <= gl_primitive_last) || Submodel.eType == TP_STARS};
-	if (false == drawable || Submodel.m_geometry.handle == null_handle || Submodel.m_geometry.vertex_count <= 0)
+	if (false == has_geometry(Submodel))
 		return;
 	auto const &vertexdata{GfxRenderer->Vertices(Submodel.m_geometry.handle)};
-	if (vertexdata.empty())
-		return;
 	primitive_record primitive;
 	primitive.base_vertex = static_cast<std::uint32_t>(m_model.positions.size());
 	primitive.vertex_count = static_cast<std::uint32_t>(vertexdata.size());
@@ -271,6 +284,187 @@ std::string extension_of(std::string const &Path) {
 	return dot == std::string::npos ? std::string{} : ToLower(Path.substr(dot));
 }
 
+// the model loaded the way the converter and the comparison take it: with the null renderer, which keeps the geometry
+// Milliseconds gets the time of reading the file into the submodels, without Init()
+bool load_source(std::string const &Input, bool const Dynamic, TModel3d &Source, double *Milliseconds = nullptr) {
+	auto const start{std::chrono::steady_clock::now()};
+	if (extension_of(Input) == ".e3d")
+		Source.LoadFromBinFile(Input, Dynamic);
+	else if (extension_of(Input) == ".e4d")
+		Source.LoadFromE4D(Input, Dynamic);
+	else
+		Source.LoadFromTextFile(Input, Dynamic);
+	if (Milliseconds != nullptr)
+		*Milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+	Source.Init();
+	if (Source.GetSMRoot() == nullptr) {
+		std::cerr << std::format("can't load model \"{}\"\n", Input);
+		return false;
+	}
+	return true;
+}
+
+void start_tools(int const Argc, char *Argv[]) {
+	Global.iConvertModels = Argc > 6 ? std::stoi(Argv[6]) : 0;
+	Global.iWriteLogEnabled = 2;
+	GfxRenderer = gfx_renderer_factory::get_instance()->create("null");
+}
+
+// the differences between two loaded models, submodel by submodel in the order of the tree
+class model_diff {
+  public:
+	void compare(TSubModel *Left, TSubModel *Right);
+	std::vector<std::string> differences;
+	std::size_t submodels{0};
+	std::size_t vertices{0};
+	float matrix{0.f}; // the largest difference of an element of a transform
+	float normal{0.f}; // the largest angle between normals, in degrees
+	float tangent{0.f}; // the same for the tangents
+	std::size_t bent{0}; // the vertices whose normal turned by more than half a degree
+
+  private:
+	void fields(TSubModel const &Left, TSubModel const &Right);
+	void light(TSubModel const &Left, TSubModel const &Right);
+	void geometry(TSubModel const &Left, TSubModel const &Right);
+	void vertex(TSubModel const &Left, gfx::basic_vertex const &A, gfx::basic_vertex const &B, std::size_t Index);
+	template <typename Type_> void check(TSubModel const &Submodel, std::string_view What, Type_ const &A, Type_ const &B);
+	void report(TSubModel const &Submodel, std::string_view What);
+};
+
+void model_diff::report(TSubModel const &Submodel, std::string_view const What) {
+	if (differences.size() < 50)
+		differences.push_back(std::format("submodel {} \"{}\": {}", submodels, Submodel.pName, What));
+}
+
+template <typename Type_> void model_diff::check(TSubModel const &Submodel, std::string_view const What, Type_ const &A, Type_ const &B) {
+	if (false == (A == B))
+		report(Submodel, What);
+}
+
+void model_diff::compare(TSubModel *Left, TSubModel *Right) {
+	while (Left != nullptr && Right != nullptr) {
+		++submodels;
+		fields(*Left, *Right);
+		compare(Left->Child, Right->Child);
+		if ((Left->Child == nullptr) != (Right->Child == nullptr))
+			report(*Left, "children differ");
+		Left = Left->Next;
+		Right = Right->Next;
+	}
+	if ((Left == nullptr) != (Right == nullptr))
+		differences.emplace_back("the trees differ in the number of submodels");
+}
+
+void model_diff::fields(TSubModel const &Left, TSubModel const &Right) {
+	check(Left, "name", Left.pName, Right.pName);
+	check(Left, "type", Left.eType, Right.eType);
+	check(Left, "flags", Left.iFlags, Right.iFlags);
+	check(Left, "visibility", Left.iVisible, Right.iVisible);
+	check(Left, "animation", Left.b_Anim, Right.b_Anim);
+	check(Left, "material name", Left.m_materialname, Right.m_materialname);
+	// the null renderer gives each fetch of a material a handle of its own, so a fetched material is told by its name
+	if (Left.m_material > 0 && Right.m_material > 0)
+		check(Left, "material", GfxRenderer->Material(Left.m_material)->GetName(), GfxRenderer->Material(Right.m_material)->GetName());
+	else
+		check(Left, "material", Left.m_material, Right.m_material);
+	check(Left, "selfillum", Left.fLight, Right.fLight);
+	check(Left, "colours", std::tie(Left.f4Ambient, Left.f4Diffuse, Left.f4Specular, Left.f4Emision), std::tie(Right.f4Ambient, Right.f4Diffuse, Right.f4Specular, Right.f4Emision));
+	check(Left, "ranges", std::tie(Left.fSquareMinDist, Left.fSquareMaxDist), std::tie(Right.fSquareMinDist, Right.fSquareMaxDist));
+	check(Left, "normalisation", Left.m_normalizenormals, Right.m_normalizenormals);
+	check(Left, "matrix present", Left.GetMatrix() == nullptr, Right.GetMatrix() == nullptr);
+	if (Left.GetMatrix() != nullptr && Right.GetMatrix() != nullptr) {
+		for (int idx = 0; idx < 16; ++idx)
+			matrix = std::max(matrix, std::abs(Left.GetMatrix()->e[idx] - Right.GetMatrix()->e[idx]));
+	}
+	if (Left.eType == TP_FREESPOTLIGHT)
+		light(Left, Right);
+	geometry(Left, Right);
+}
+
+void model_diff::light(TSubModel const &Left, TSubModel const &Right) {
+	check(Left, "light power and size", std::tie(Left.fHotspotPower, Left.fLightRadius), std::tie(Right.fHotspotPower, Right.fLightRadius));
+	check(Left, "light attenuation", std::tie(Left.fNearAttenStart, Left.fNearAttenEnd, Left.bUseNearAtten, Left.iFarAttenDecay, Left.fFarDecayRadius),
+	    std::tie(Right.fNearAttenStart, Right.fNearAttenEnd, Right.bUseNearAtten, Right.iFarAttenDecay, Right.fFarDecayRadius));
+	check(Left, "light cones", std::tie(Left.fCosFalloffAngle, Left.fCosHotspotAngle), std::tie(Right.fCosFalloffAngle, Right.fCosHotspotAngle));
+	check(Left, "light flags", std::tie(Left.bShadeSelf, Left.bCastShadows, Left.bSoftFalloff, Left.bLightOnly),
+	    std::tie(Right.bShadeSelf, Right.bCastShadows, Right.bSoftFalloff, Right.bLightOnly));
+}
+
+float angle_between(glm::vec3 const &A, glm::vec3 const &B) {
+	auto const lengths{glm::length(A) * glm::length(B)};
+	if (lengths < 1e-12f)
+		return glm::length(A - B) < 1e-6f ? 0.f : 180.f;
+	return glm::degrees(std::acos(std::clamp(glm::dot(A, B) / lengths, -1.f, 1.f)));
+}
+
+void model_diff::vertex(TSubModel const &Left, gfx::basic_vertex const &A, gfx::basic_vertex const &B, std::size_t const Index) {
+	if (A.position != B.position || A.texture != B.texture) {
+		report(Left, std::format("vertex {} has another position or uv", Index));
+		return;
+	}
+	if (Left.eType == TP_STARS) {
+		// the colour of a star, kept in 8 bits a channel
+		if (glm::any(glm::greaterThan(glm::abs(A.normal - B.normal), glm::vec3{0.5f / 255.f + 1e-6f})))
+			report(Left, std::format("star {} has another colour", Index));
+		return;
+	}
+	auto const turned{angle_between(A.normal, B.normal)};
+	normal = std::max(normal, turned);
+	if (turned > 0.5f)
+		++bent;
+	tangent = std::max(tangent, angle_between(glm::vec3{A.tangent}, glm::vec3{B.tangent}));
+}
+
+void model_diff::geometry(TSubModel const &Left, TSubModel const &Right) {
+	auto const lefthandle{Left.m_geometry.handle};
+	auto const righthandle{Right.m_geometry.handle};
+	auto const &leftvertices{lefthandle != null_handle ? GfxRenderer->Vertices(lefthandle) : gfx::vertex_array{}};
+	auto const &rightvertices{righthandle != null_handle ? GfxRenderer->Vertices(righthandle) : gfx::vertex_array{}};
+	auto const drawable{(Left.eType >= 0 && Left.eType <= gl_primitive_last) || Left.eType == TP_STARS};
+	if (false == drawable)
+		return;
+	if (leftvertices.size() != rightvertices.size()) {
+		report(Left, std::format("{} vertices against {}", leftvertices.size(), rightvertices.size()));
+		return;
+	}
+	auto const &leftindices{lefthandle != null_handle ? GfxRenderer->Indices(lefthandle) : gfx::index_array{}};
+	auto const &rightindices{righthandle != null_handle ? GfxRenderer->Indices(righthandle) : gfx::index_array{}};
+	check(Left, "indices", leftindices, rightindices);
+	auto const &leftuser{lefthandle != null_handle ? GfxRenderer->UserData(lefthandle) : gfx::userdata_array{}};
+	auto const &rightuser{righthandle != null_handle ? GfxRenderer->UserData(righthandle) : gfx::userdata_array{}};
+	auto const sameuser{std::ranges::equal(leftuser, rightuser, [](gfx::vertex_userdata const &A, gfx::vertex_userdata const &B) { return A.data == B.data; })};
+	// a model with user data gives the submodels without any of their own the default value
+	if (false == sameuser && false == leftuser.empty())
+		report(Left, "user data");
+	for (std::size_t idx = 0; idx < leftvertices.size(); ++idx)
+		vertex(Left, leftvertices[idx], rightvertices[idx], idx);
+	vertices += leftvertices.size();
+}
+
+int command_diff(int const Argc, char *Argv[]) {
+	if (Argc < 5) {
+		std::cerr << "usage: -e4d diff <model.e3d|model.t3d> <model.e4d> [dynamic 0|1]\n";
+		return 2;
+	}
+	start_tools(Argc, Argv);
+	auto const dynamic{Argc > 5 && std::string_view{Argv[5]} == "1"};
+	TModel3d source;
+	TModel3d converted;
+	double sourcetime{0.0};
+	double convertedtime{0.0};
+	if (false == load_source(Argv[3], dynamic, source, &sourcetime) || false == load_source(Argv[4], dynamic, converted, &convertedtime))
+		return 1;
+	model_diff diff;
+	diff.compare(source.GetSMRoot(), converted.GetSMRoot());
+	for (auto const &difference : diff.differences)
+		std::cout << difference << '\n';
+	std::cout << std::format("{}: {} submodels, {} vertices, {} differences; transforms within {:.2g}, normals within {:.3f} deg ({} past 0.5 deg), tangents within {:.3f} deg\n", Argv[4],
+	    diff.submodels, diff.vertices, diff.differences.size(), diff.matrix, diff.normal, diff.bent, diff.tangent);
+	// with the files in the system's cache or not, as they came: a run right after another one of the same files finds them there
+	std::cout << std::format("load: source {:.2f} ms, e4d {:.2f} ms\n", sourcetime, convertedtime);
+	return diff.differences.empty() ? 0 : 1;
+}
+
 int command_convert(int const Argc, char *Argv[]) {
 	if (Argc < 5) {
 		std::cerr << "usage: -e4d convert <model.e3d|model.t3d> <model.e4d> [dynamic 0|1] [convertmodels flags]\n";
@@ -279,19 +473,10 @@ int command_convert(int const Argc, char *Argv[]) {
 	std::string const input{Argv[3]};
 	std::string const output{Argv[4]};
 	auto const dynamic{Argc > 5 && std::string_view{Argv[5]} == "1"};
-	Global.iConvertModels = Argc > 6 ? std::stoi(Argv[6]) : 0;
-	Global.iWriteLogEnabled = 2;
-	GfxRenderer = gfx_renderer_factory::get_instance()->create("null");
+	start_tools(Argc, Argv);
 	TModel3d source;
-	if (extension_of(input) == ".e3d")
-		source.LoadFromBinFile(input, dynamic);
-	else
-		source.LoadFromTextFile(input, dynamic);
-	source.Init();
-	if (source.GetSMRoot() == nullptr) {
-		std::cerr << std::format("can't load model \"{}\"\n", input);
+	if (false == load_source(input, dynamic, source))
 		return 1;
-	}
 	std::vector<std::string> faults;
 	auto converted{convert(source, faults)};
 	for (auto const &fault : faults)
@@ -352,7 +537,9 @@ int run_command_line(int const Argc, char *Argv[]) {
 		return command_read(Argc, Argv, true);
 	if (command == "validate")
 		return command_read(Argc, Argv, false);
-	std::cerr << "usage: -e4d convert|dump|validate ...\n";
+	if (command == "diff")
+		return command_diff(Argc, Argv);
+	std::cerr << "usage: -e4d convert|dump|validate|diff ...\n";
 	return 2;
 }
 

@@ -121,6 +121,7 @@ struct global_settings {
 	int file_binary_terrain_skipped{0}; // number of terrain includes left out by the parser during the current scenery load
     // logs
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
+	bool modelformat_e4d{false}; // modelformat e4d: models are loaded from their .e4d files where there are some
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów
     bool MultipleLogs{ false };
     bool crashdump_full{ false }; // crash dump with the whole memory of the process instead of the small one

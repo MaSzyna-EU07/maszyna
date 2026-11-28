@@ -139,17 +139,33 @@ std::array<std::int16_t, 4> encode_qtangent(tangent_frame const &Frame) {
 }
 
 tangent_frame decode_qtangent(std::array<std::int16_t, 4> const &Packed) {
-	glm::quat rotation{Packed[3] / snorm16_scale, Packed[0] / snorm16_scale, Packed[1] / snorm16_scale, Packed[2] / snorm16_scale};
+	// the first and the third column of the rotation matrix of the quaternion, which 2 / |q|^2 makes unit without a square root:
+	// what glm::mat3_cast(glm::normalize(q)) gives, for the two columns needed, at a part of the cost (this runs for every vertex)
+	auto const x{Packed[0] / snorm16_scale};
+	auto const y{Packed[1] / snorm16_scale};
+	auto const z{Packed[2] / snorm16_scale};
+	auto const w{Packed[3] / snorm16_scale};
 	tangent_frame frame;
-	frame.handedness = rotation.w < 0.f ? -1.f : 1.f;
-	auto const matrix{glm::mat3_cast(glm::normalize(rotation))};
-	frame.tangent = matrix[0];
-	frame.normal = matrix[2];
+	frame.handedness = w < 0.f ? -1.f : 1.f;
+	auto const norm{x * x + y * y + z * z + w * w};
+	if (norm < 1e-12f)
+		return frame;
+	auto const s{2.f / norm};
+	frame.tangent = {1.f - s * (y * y + z * z), s * (x * y + w * z), s * (x * z - w * y)};
+	frame.normal = {s * (x * z + w * y), s * (y * z - w * x), 1.f - s * (x * x + y * y)};
 	return frame;
 }
 
 glm::mat4 local_transform(model const &Model, std::uint32_t const Node) {
 	return node_transform(Model, Node, matrix_lookup(Model));
+}
+
+std::vector<glm::mat4> local_transforms(model const &Model) {
+	auto const matrices{matrix_lookup(Model)};
+	std::vector<glm::mat4> transforms(Model.nodes.size());
+	for (std::uint32_t idx = 0; idx < Model.nodes.size(); ++idx)
+		transforms[idx] = node_transform(Model, idx, matrices);
+	return transforms;
 }
 
 std::vector<glm::mat4> model_transforms(model const &Model) {

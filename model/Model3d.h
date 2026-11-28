@@ -311,6 +311,8 @@ private:
     bool m_lodboundsfound { false };
     std::uint32_t m_stateversion { 0 }; // see state_version()
 
+    void finish_binary( bool dynamic, bool hastangents );
+
 public:
     TModel3d() = default;
     ~TModel3d();
@@ -336,6 +338,9 @@ public:
 	void AddTo(TSubModel *tmp, TSubModel *SubModel);
 	void LoadFromTextFile(std::string const &FileName, bool dynamic);
 	void LoadFromBinFile(std::string const &FileName, bool dynamic);
+	// the model from an E4D file (model/e4d/e4d_load.cpp), as LoadFromBinFile builds it from E3D. returns false, with the reason
+	// in the log and nothing loaded, when the file can't be read or isn't valid
+	bool LoadFromE4D(std::string const &FileName, bool dynamic);
     bool LoadFromFile(std::string const &FileName, bool dynamic);
     TSubModel *AppendChildFromGeometry(const std::string &name, const std::string &parent, const gfx::vertex_array &vertices, const gfx::index_array &indices);
 	void SaveToBinFile(std::string const &FileName);

@@ -78,6 +78,7 @@ constexpr std::uint32_t collision{fourcc("COLL")};
 constexpr std::uint32_t legacy_animation{fourcc("LANM")};
 constexpr std::uint32_t legacy_text{fourcc("LTXT")};
 constexpr std::uint32_t legacy_stars{fourcc("STAR")};
+constexpr std::uint32_t legacy_material{fourcc("LMAT")};
 } // namespace component
 
 struct file_header {
@@ -111,6 +112,9 @@ static_assert(sizeof(section_entry) == 32);
 namespace section_flags {
 constexpr std::uint32_t required{0x1}; // a reader which doesn't know the section refuses the file
 constexpr std::uint32_t zstd{0x2};
+// a vertex stream in the vertex codec of meshoptimizer (version 1), an index stream in its index sequence codec; zstd, when
+// set too, packs the result of the codec. only the vertex and index streams may have it
+constexpr std::uint32_t meshopt{0x4};
 }
 
 // the head of a section holding a table of records. the stride lets a later version add fields at the end of a record
@@ -131,6 +135,7 @@ namespace node_flags {
 constexpr std::uint32_t animated{0x1}; // moved at run time, keeps its own transform
 constexpr std::uint32_t hidden{0x2}; // not drawn until something shows it
 constexpr std::uint32_t matrix{0x4}; // the transform is the matrix in XFRM, the TRS fields are only an approximation
+constexpr std::uint32_t no_transform{0x8}; // no transform of its own (an E3D submodel without a matrix); the TRS fields are the identity
 }
 
 struct node_record {
@@ -560,6 +565,13 @@ struct legacy_stars {
 };
 static_assert(sizeof(legacy_stars) == 4);
 // STAR: the count, then count packed RGB colours (std::uint32_t), one for each vertex of the mesh of the node
+
+// LMAT: the material of a node without geometry, which E3D keeps in every submodel: the light threshold, the colours and the
+// material a light point or a rotator carries
+struct legacy_material {
+	std::uint32_t material{no_index}; // in MATL
+};
+static_assert(sizeof(legacy_material) == 4);
 
 } // namespace payload
 

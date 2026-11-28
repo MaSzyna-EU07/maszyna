@@ -30,6 +30,8 @@ tangent_frame decode_qtangent(std::array<std::int16_t, 4> const &Packed);
 
 // the transform of the node within its parent: the matrix of XFRM, or T * R * S
 glm::mat4 local_transform(model const &Model, std::uint32_t Node);
+// the transforms of all nodes within their parents
+std::vector<glm::mat4> local_transforms(model const &Model);
 // the transforms of all nodes within the model, in one pass (the parents come first)
 std::vector<glm::mat4> model_transforms(model const &Model);
 
