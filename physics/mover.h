@@ -1485,7 +1485,7 @@ class TMoverParameters
 	double LimPipePress = 0.0; /*stabilizator cisnienia*/
 	double ActFlowSpeed = 0.0; /*szybkosc stabilizatora*/
 
-	int DamageFlag = 0; // kombinacja bitowa stalych dtrain_* }
+	DamageSet DamageFlag; // the damage of the vehicle
 	int EngDmgFlag = 0; // kombinacja bitowa stalych usterek}
 
 	// EndSignalsFlag: byte;  {ABu 060205: zmiany - koncowki: 1/16 - swiatla prz/tyl, 2/31 - blachy prz/tyl}
@@ -1787,7 +1787,7 @@ class TMoverParameters
 	void derail(derailment::verdict const &Verdict, derailment::vehicle_state const &Vehicle, derailment::track_state const &Track, std::string const *TrackName = nullptr);
 	// height of the centre of gravity above the rail with the load [m]
 	double centre_of_gravity() const;
-	// the vehicle is back on the rails (resetconsist, SetDamage taking dtrain_out off): not derailed any more, and the
+	// the vehicle is back on the rails (resetconsist, SetDamage taking VehicleDamage::derailed off): not derailed any more, and the
 	// criteria of derailment start from scratch, so a later derailment goes the way its model has it
 	void rerail();
 	// what resetconsist does to a vehicle: no damage of any kind, the alarm chain released, back on the rails

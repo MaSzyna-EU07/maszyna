@@ -64,7 +64,7 @@ std::vector<test::channel> state() {
 	    {"PantsValve", [](auto const &M) { return flag(M.PantsValve.is_enabled) + 2 * flag(M.PantsValve.is_disabled); }},
 	    {"MaxCurrentHigh", [](auto const &M) { return flag(M.MotorOverloadRelayHighThreshold); }},
 	    {"Imin", [](auto const &M) { return M.Imin; }},
-	    {"DamageFlag", [](auto const &M) { return M.DamageFlag; }},
+	    {"DamageFlag", [](auto const &M) { return M.DamageFlag.Bits(); }},
 	    {"RadioStop", [](auto const &M) { return flag(M.RadioStopFlag); }},
 	    {"BrakeDelayFlag", [](auto const &M) { return M.BrakeDelayFlag; }},
 	    {"SandDose", [](auto const &M) { return flag(M.SandDose); }},

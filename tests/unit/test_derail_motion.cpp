@@ -441,7 +441,7 @@ TEST_CASE("derail motion: the vehicle leaves the track with physics.derailment n
 		vehicle eu07vehicle{definition::fiz("4e_v1/4e"), 40.0};
 		eu07vehicle.damage_track(dtrack_norail);
 		eu07vehicle.step();
-		REQUIRE(TestFlag(eu07vehicle->DamageFlag, dtrain_out));
+		REQUIRE(eu07vehicle->DamageFlag.HasAll(VehicleDamage::derailed));
 		CHECK(eu07vehicle->Derailed == dr::outcome::off_rails);
 		CHECK(eu07vehicle->DerailCause == dm::cause::end_of_track);
 		CHECK(eu07vehicle->leaves_track());
@@ -450,7 +450,7 @@ TEST_CASE("derail motion: the vehicle leaves the track with physics.derailment n
 		model_setting const physical{global_settings::derailment_model::physical};
 		vehicle pulled{definition::fiz("4e_v1/4e"), 40.0};
 		pulled->pull_off(-1, 5.0, "test");
-		CHECK(TestFlag(pulled->DamageFlag, dtrain_out));
+		CHECK(pulled->DamageFlag.HasAll(VehicleDamage::derailed));
 		CHECK(pulled->Derailed == dr::outcome::off_rails);
 		CHECK(pulled->DerailCause == dm::cause::pulled_off);
 		CHECK(pulled->DerailSide == -1);
@@ -473,7 +473,7 @@ TEST_CASE("derail motion: with physics.derailment monitor and old the vehicle st
 		for (int step = 0; step < 600; ++step) {
 			fast.step(curve);
 		}
-		REQUIRE(TestFlag(fast->DamageFlag, dtrain_out));
+		REQUIRE(fast->DamageFlag.HasAll(VehicleDamage::derailed));
 		CHECK(fast->Derailed == dr::outcome::none);
 		CHECK_FALSE(fast->leaves_track());
 		CHECK_FALSE(fast->OffTrack.active());
@@ -482,13 +482,13 @@ TEST_CASE("derail motion: with physics.derailment monitor and old the vehicle st
 		vehicle ending{definition::fiz("4e_v1/4e"), 40.0};
 		ending.damage_track(dtrack_norail);
 		ending.step();
-		REQUIRE(TestFlag(ending->DamageFlag, dtrain_out));
+		REQUIRE(ending->DamageFlag.HasAll(VehicleDamage::derailed));
 		CHECK(ending->Derailed == dr::outcome::none);
 		CHECK_FALSE(ending->leaves_track());
 		// nor is a vehicle pulled off it
 		vehicle pulled{definition::fiz("4e_v1/4e"), 40.0};
 		pulled->pull_off(1, 5.0, "test");
-		CHECK_FALSE(TestFlag(pulled->DamageFlag, dtrain_out));
+		CHECK_FALSE(pulled->DamageFlag.HasAll(VehicleDamage::derailed));
 	}
 }
 

@@ -514,7 +514,7 @@ TEST_CASE("controls: a locomotive running into a standing wagon") {
 		// slow, the locomotive pushes the wagon off, the buffers only touching, and both roll to a stop; fast,
 		// the wagon derails where it stands
 		auto const derailed{speed > 30.0};
-		CHECK(TestFlag(wagon.DamageFlag, dtrain_out) == derailed);
+		CHECK(wagon.DamageFlag.HasAll(VehicleDamage::derailed) == derailed);
 		CHECK((std::abs(wagon.DistCounter) > 0.0001) != derailed);
 		CHECK(stopped(scenario));
 		scenario.check();

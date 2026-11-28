@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <string>
 
+#include "utilities/enumset.h"
+
 #include "physics/vehiclecommand.h"
 
 /// <summary>Global counter incremented when a string-to-numeric conversion fails during config parsing.</summary>
@@ -65,31 +67,27 @@ static int const dtrack_nomove = 64;
 /// <summary>Track damage flag: rails missing entirely.</summary>
 static int const dtrack_norail = 128;
 
-/*uszkodzenia taboru*/
-/// <summary>Vehicle damage flag: thin wheel (locomotives).</summary>
-static int const dtrain_thinwheel = 1; /*dla lokomotyw*/
-/// <summary>Vehicle damage flag: shifted load (wagons).</summary>
-static int const dtrain_loadshift = 1; /*dla wagonow*/
-/// <summary>Vehicle damage flag: wheel wear.</summary>
-static int const dtrain_wheelwear = 2;
-/// <summary>Vehicle damage flag: bearing failure.</summary>
-static int const dtrain_bearing = 4;
-/// <summary>Vehicle damage flag: coupling damage.</summary>
-static int const dtrain_coupling = 8;
-/// <summary>Vehicle damage flag: ventilator failure (electric locomotive).</summary>
-static int const dtrain_ventilator = 16; /*dla lokomotywy el.*/
-/// <summary>Vehicle damage flag: load damage (wagons).</summary>
-static int const dtrain_loaddamage = 16; /*dla wagonow*/
-/// <summary>Vehicle damage flag: engine failure (locomotives).</summary>
-static int const dtrain_engine = 32; /*dla lokomotyw*/
-/// <summary>Vehicle damage flag: load destroyed (wagons).</summary>
-static int const dtrain_loaddestroyed = 32; /*dla wagonow*/
-/// <summary>Vehicle damage flag: axle damage.</summary>
-static int const dtrain_axle = 64;
-/// <summary>Vehicle damage flag: derailment.</summary>
-static int const dtrain_out = 128; /*wykolejenie*/
-/// <summary>Vehicle damage flag: broken pantograph.</summary>
-static int const dtrain_pantograph = 256; /*polamanie pantografu*/
+/// <summary>The damage of a vehicle, DamageFlag. A bit means one thing for a locomotive and another for a wagon,
+/// where two values share it. The numbers are the ones of the SetDamage command of the scenery.</summary>
+enum class VehicleDamage : unsigned
+{
+	thinWheel = 0x1, // a locomotive: a wheel worn thin
+	loadShift = 0x1, // a wagon: the load shifted
+	wheelWear = 0x2, // the wheels worn
+	bearing = 0x4, // a bearing failed
+	coupling = 0x8, // the coupling broken
+	ventilator = 0x10, // an electric locomotive: a ventilator failed
+	loadDamage = 0x10, // a wagon: the load damaged
+	engine = 0x20, // a locomotive: the engine failed
+	loadDestroyed = 0x20, // a wagon: the load destroyed
+	axle = 0x40, // an axle broken
+	derailed = 0x80, // off the rails
+	pantograph = 0x100, // a pantograph broken
+};
+template <> struct IsEnumSetKind<VehicleDamage> : std::true_type
+{
+};
+using DamageSet = EnumSet<VehicleDamage>;
 
 /// <summary>Reason for a derailment event.</summary>
 enum DerailReason
@@ -165,111 +163,12 @@ enum class Coupling : unsigned
 };
 
 /// <summary>A set of the kinds of connection of a coupling: what a coupling joins, what a vehicle allows, what a
-/// command needs to pass. Read from and written to the numbers of the files only through FromBits() and Bits().</summary>
-class CouplingSet
+/// command needs to pass.</summary>
+template <> struct IsEnumSetKind<Coupling> : std::true_type
 {
-public:
-	constexpr CouplingSet() = default;
-	constexpr CouplingSet(Coupling const kind) : bits{static_cast<unsigned>(kind)} {} // NOSONAR: a kind is a set of one
-	// the set the number of a file gives (the sum of the numbers of the kinds)
-	static constexpr CouplingSet FromBits(int const number)
-	{
-		CouplingSet set;
-		set.bits = static_cast<unsigned>(number);
-		return set;
-	}
-	// every kind of coupling: a coupling of any kind has one of them
-	static constexpr CouplingSet All()
-	{
-		return FromBits(-1);
-	}
-	// any kind at all: as the old number was true when it wasn't zero
-	constexpr explicit operator bool() const
-	{
-		return bits != 0;
-	}
-	// the number of the set, for the files and the log
-	constexpr int Bits() const
-	{
-		return static_cast<int>(bits);
-	}
-	constexpr bool Empty() const
-	{
-		return bits == 0;
-	}
-	// all the kinds of the other set are in this one
-	constexpr bool HasAll(CouplingSet const other) const
-	{
-		return (bits & other.bits) == other.bits;
-	}
-	// any of the kinds of the other set is in this one
-	constexpr bool HasAny(CouplingSet const other) const
-	{
-		return (bits & other.bits) != 0;
-	}
-	// adds the kinds; returns whether any of them was missing
-	constexpr bool Set(CouplingSet const other)
-	{
-		if (HasAll(other))
-		{
-			return false;
-		}
-		bits |= other.bits;
-		return true;
-	}
-	// takes the kinds away, where all of them are there; returns whether it did
-	constexpr bool Clear(CouplingSet const other)
-	{
-		if (false == HasAll(other))
-		{
-			return false;
-		}
-		bits &= ~other.bits;
-		return true;
-	}
-	// this set without the kinds of the other
-	constexpr CouplingSet Without(CouplingSet const other) const
-	{
-		return FromBits(static_cast<int>(bits & ~other.bits));
-	}
-	constexpr CouplingSet &operator|=(CouplingSet const other)
-	{
-		bits |= other.bits;
-		return *this;
-	}
-	constexpr CouplingSet &operator&=(CouplingSet const other)
-	{
-		bits &= other.bits;
-		return *this;
-	}
-	friend constexpr CouplingSet operator|(CouplingSet left, CouplingSet const right)
-	{
-		return left |= right;
-	}
-	friend constexpr CouplingSet operator&(CouplingSet left, CouplingSet const right)
-	{
-		return left &= right;
-	}
-	// the kinds in one of the sets and not in the other: what changed between them
-	constexpr CouplingSet &operator^=(CouplingSet const other)
-	{
-		bits ^= other.bits;
-		return *this;
-	}
-	friend constexpr CouplingSet operator^(CouplingSet left, CouplingSet const right)
-	{
-		return left ^= right;
-	}
-	friend constexpr bool operator==(CouplingSet const &left, CouplingSet const &right) = default;
-
-private:
-	unsigned bits{0};
 };
+using CouplingSet = EnumSet<Coupling>;
 
-constexpr CouplingSet operator|(Coupling const left, Coupling const right)
-{
-	return CouplingSet{left} | CouplingSet{right};
-}
 /// <summary>Range of effect for a control command (mutually exclusive).</summary>
 enum class range_t
 {

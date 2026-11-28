@@ -50,7 +50,7 @@ namespace
 // whatever pushes it, and the train behind it stopped at once against it, in a hit no train had
 bool legacy_derailed_slides(TMoverParameters const &Vehicle)
 {
-	return Global.collisions == global_settings::collision_model::physical && TestFlag(Vehicle.CategoryFlag, 1) && TestFlag(Vehicle.DamageFlag, dtrain_out) &&
+	return Global.collisions == global_settings::collision_model::physical && TestFlag(Vehicle.CategoryFlag, 1) && Vehicle.DamageFlag.HasAll(VehicleDamage::derailed) &&
 	       Vehicle.Derailed == derailment::outcome::none;
 }
 
@@ -210,7 +210,7 @@ void TMoverParameters::change_train_velocity(double const Change)
 double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam const &Track, TTractionParam const &ElectricTraction, TLocation const &NewLoc, TRotation const &NewRot)
 {
 
-	if (!TestFlag(DamageFlag, dtrain_out))
+	if (!DamageFlag.HasAll(VehicleDamage::derailed))
 	{ // Ra: to przepisywanie tu jest bez sensu
 		RunningShape = Shape;
 		RunningTrack = Track;
@@ -234,7 +234,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 
 	if (CategoryFlag == 4)
 		OffsetTrackV = TotalMass / (Dim.L * Dim.W * 1000.0);
-	else if (TestFlag(CategoryFlag, 1) && TestFlag(RunningTrack.CategoryFlag, 1) && TestFlag(DamageFlag, dtrain_out))
+	else if (TestFlag(CategoryFlag, 1) && TestFlag(RunningTrack.CategoryFlag, 1) && DamageFlag.HasAll(VehicleDamage::derailed))
 	{
 		OffsetTrackV = -0.2;
 		OffsetTrackH = Sign(RunningShape.R) * 0.2;
@@ -253,7 +253,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 
 		// a vehicle derailed by the physical criteria slides on with the friction of ComputeTotalForce(), and so does one
 		// derailed the legacy way with physics.collisions new
-		if (TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none && false == legacy_derailed_slides(*this))
+		if (DamageFlag.HasAll(VehicleDamage::derailed) && Derailed == derailment::outcome::none && false == legacy_derailed_slides(*this))
 			AccS = -Sign(V) * g * 1; // random(0.0, 0.1)
 		// stuck in the ballast: the friction holds a derailed vehicle once it stopped, until the forces on it are larger
 		auto const stuck{(Derailed != derailment::outcome::none || legacy_derailed_slides(*this)) && V == 0.0 && std::abs(FTrain) <= std::abs(FStand)};
@@ -365,7 +365,7 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 		AccS = std::lerp(AccSprev, FTotal / TotalMass, 0.5);
 		// std::clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
 
-		if (TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none && false == legacy_derailed_slides(*this))
+		if (DamageFlag.HasAll(VehicleDamage::derailed) && Derailed == derailment::outcome::none && false == legacy_derailed_slides(*this))
 			AccS = -Sign(V) * g * 1; // * random(0.0, 0.1)
 		auto const stuck{(Derailed != derailment::outcome::none || legacy_derailed_slides(*this)) && V == 0.0 && std::abs(FTrain) <= std::abs(FStand)};
 		if (stuck)
@@ -392,7 +392,7 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 
 		// a vehicle derailed by the physical criteria slides on with the friction of ComputeTotalForce(), and so does one
 		// derailed the legacy way with physics.collisions new
-		if (true == TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none && false == legacy_derailed_slides(*this) && Vel < 1.0)
+		if (true == DamageFlag.HasAll(VehicleDamage::derailed) && Derailed == derailment::outcome::none && false == legacy_derailed_slides(*this) && Vel < 1.0)
 		{
 			V = 0.0;
 			AccS = 0.0;
@@ -717,7 +717,7 @@ void TMoverParameters::ComputeConstans(void)
 	double Curvature; // Ra 2014-07: odwrotność promienia
 
 	TotalMassxg = TotalMass * g; // TotalMass*g
-	BearingF = (DamageFlag & dtrain_bearing) != 0 ? 2.0 : 0;
+	BearingF = DamageFlag.HasAny(VehicleDamage::bearing) ? 2.0 : 0;
 
 	HideModifier = 0; // int(Couplers[0].CouplingFlag>0)+int(Couplers[1].CouplingFlag>0);
 
@@ -763,8 +763,8 @@ void TMoverParameters::ComputeConstans(void)
 		Curvature = 0.0;
 	}
 	// opór składu na łuku (youBy): +(500*TrackW/R)*TotalMassxg*0.001 do FrictConst2s/d
-	FrictConst2s = TotalMassxg * (500.0 * TrackW * Curvature + 2.5 - HideModifier + 2 * BearingF / dtrain_bearing) * 0.001;
-	FrictConst2d = TotalMassxg * (500.0 * TrackW * Curvature + 2.0 - HideModifier + BearingF / dtrain_bearing) * 0.001;
+	FrictConst2s = TotalMassxg * (500.0 * TrackW * Curvature + 2.5 - HideModifier + 2 * BearingF / 4.0) * 0.001;
+	FrictConst2d = TotalMassxg * (500.0 * TrackW * Curvature + 2.0 - HideModifier + BearingF / 4.0) * 0.001;
 }
 
 // *************************************************************************************************
@@ -839,7 +839,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 
 	// juz zoptymalizowane:
 	FStand = FrictionForce(); // siła oporów ruchu
-	if (true == TestFlag(DamageFlag, dtrain_out))
+	if (true == DamageFlag.HasAll(VehicleDamage::derailed))
 	{
 		if (Derailed != derailment::outcome::none)
 		{
@@ -1220,50 +1220,50 @@ std::string TMoverParameters::EngineDescription(int what) const
 	std::string outstr{"OK"};
 	if (what == 0)
 	{
-		if (DamageFlag == 255)
+		if (DamageFlag == DamageSet::FromBits(255)) // every damage but the pantograph
 		{
 			outstr = "WRECKED";
 		}
 		else
 		{
-			if (TestFlag(DamageFlag, dtrain_thinwheel))
+			if (DamageFlag.HasAll(VehicleDamage::thinWheel))
 			{
 				if (Power > 0.1)
 					outstr = "Thin wheel";
 				else
 					outstr = "Load shifted";
 			}
-			if (WheelFlat > 5.0 || TestFlag(DamageFlag, dtrain_wheelwear))
+			if (WheelFlat > 5.0 || DamageFlag.HasAll(VehicleDamage::wheelWear))
 			{
 				outstr = "Wheel wear";
 			}
-			if (TestFlag(DamageFlag, dtrain_bearing))
+			if (DamageFlag.HasAll(VehicleDamage::bearing))
 			{
 				outstr = "Bearing damaged";
 			}
-			if (TestFlag(DamageFlag, dtrain_coupling))
+			if (DamageFlag.HasAll(VehicleDamage::coupling))
 			{
 				outstr = "Coupler broken";
 			}
-			if (TestFlag(DamageFlag, dtrain_loaddamage))
+			if (DamageFlag.HasAll(VehicleDamage::loadDamage))
 			{
 				if (Power > 0.1)
 					outstr = "Ventilator damaged";
 				else
 					outstr = "Load damaged";
 			}
-			if (TestFlag(DamageFlag, dtrain_loaddestroyed))
+			if (DamageFlag.HasAll(VehicleDamage::loadDestroyed))
 			{
 				if (Power > 0.1)
 					outstr = "Engine damaged";
 				else
 					outstr = "LOAD DESTROYED";
 			}
-			if (TestFlag(DamageFlag, dtrain_axle))
+			if (DamageFlag.HasAll(VehicleDamage::axle))
 			{
 				outstr = "Axle broken";
 			}
-			if (TestFlag(DamageFlag, dtrain_out))
+			if (DamageFlag.HasAll(VehicleDamage::derailed))
 			{
 				outstr = "DERAILED";
 			}

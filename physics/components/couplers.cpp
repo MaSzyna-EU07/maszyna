@@ -126,7 +126,7 @@ int TMoverParameters::DettachStatus(int ConnectNo)
 		return 0; // nie ma nic, to rozłączanie jest OK
 	if (false == Couplers[ConnectNo].CouplingFlag.HasAny(Coupling::coupler))
 		return -Couplers[ConnectNo].CouplingFlag.Bits(); // hak nie połączony - rozłączanie jest OK
-	if (TestFlag(DamageFlag, dtrain_coupling))
+	if (DamageFlag.HasAll(VehicleDamage::coupling))
 		return -Couplers[ConnectNo].CouplingFlag.Bits(); // hak urwany - rozłączanie jest OK
 	//    CouplerDist(ConnectNo);
 	if (Couplers[ConnectNo].type() != TCouplerType::Screw || Neighbours[ConnectNo].distance < 0.01)

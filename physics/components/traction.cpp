@@ -250,10 +250,10 @@ void TMoverParameters::MotorFailuresCheck(double const n)
 	{
 		if (FuzzyLogic(abs(n), nmax * 1.1, p_elengproblem) && MainSwitch(false))
 			EventFlag = true; /*zbyt duze obroty - wywalanie wskutek ognia okreznego*/
-		if (TestFlag(DamageFlag, dtrain_engine) && FuzzyLogic(MotorCurrent, (double)ImaxLo / 10.0, p_elengproblem) && MainSwitch(false))
+		if (DamageFlag.HasAll(VehicleDamage::engine) && FuzzyLogic(MotorCurrent, (double)ImaxLo / 10.0, p_elengproblem) && MainSwitch(false))
 			EventFlag = true; /*uszkodzony silnik (uplywy)*/
 		/*       or FuzzyLogic(Abs(U/Mn),2*NominalVoltage,1)) then */ /*poprawic potem*/
-		if ((FuzzyLogic(abs(Im), Imax * 2, p_elengproblem) || FuzzyLogic(abs(n), nmax * 1.11, p_elengproblem)) && SetFlag(DamageFlag, dtrain_engine))
+		if ((FuzzyLogic(abs(Im), Imax * 2, p_elengproblem) || FuzzyLogic(abs(n), nmax * 1.11, p_elengproblem)) && DamageFlag.Set(VehicleDamage::engine))
 			EventFlag = true;
 		/*! dorobic grzanie oporow rozruchowych i silnika*/
 	}
@@ -1573,9 +1573,9 @@ double TMoverParameters::v2n(void)
 	        SlippingWheels = false; // wygaszenie poslizgu */ //poslizg jest w innym miejscu wygaszany też
 	if (SlippingWheels) // nie ma zwiazku z predkoscia liniowa V
 	{ // McZapkie-221103: uszkodzenia kol podczas poslizgu
-		if (deltan > dmgn && FuzzyLogic(deltan, dmgn, p_slippdmg) && SetFlag(DamageFlag, dtrain_wheelwear)) // podkucie
+		if (deltan > dmgn && FuzzyLogic(deltan, dmgn, p_slippdmg) && DamageFlag.Set(VehicleDamage::wheelWear)) // podkucie
 			EventFlag = true;
-		if (deltan < -dmgn && FuzzyLogic(-deltan, dmgn, p_slippdmg) && SetFlag(DamageFlag, dtrain_thinwheel)) // wycieranie sie obreczy
+		if (deltan < -dmgn && FuzzyLogic(-deltan, dmgn, p_slippdmg) && DamageFlag.Set(VehicleDamage::thinWheel)) // wycieranie sie obreczy
 			EventFlag = true;
 		n = nrot; // predkosc obrotowa nie zalezy od predkosci liniowej
 	}
@@ -1617,7 +1617,7 @@ double TMoverParameters::MomentumF(double I, double Iw, int SCP) const
 bool TMoverParameters::CutOffEngine(void)
 {
 	bool COE = false; // Ra: wartość domyślna, sprawdzić to trzeba
-	if (NPoweredAxles > 0 && CabActive == 0 && EngineType == TEngineType::ElectricSeriesMotor && SetFlag(DamageFlag, -dtrain_engine))
+	if (NPoweredAxles > 0 && CabActive == 0 && EngineType == TEngineType::ElectricSeriesMotor && DamageFlag.Clear(VehicleDamage::engine))
 	{
 		NPoweredAxles = NPoweredAxles / 2; // bylo div czyli mod?
 		COE = true;

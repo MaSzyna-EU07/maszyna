@@ -710,6 +710,26 @@ void TMoverParameters::DoorRemoteCommand(bool const Open, double const CValue1, 
 	}
 }
 
+namespace
+{
+
+// the number of SetDamage on the set of the damage, as SetFlag() did on the number: a positive one adds its values, a
+// negative one takes them away where all of them are there; returns whether it changed the set
+bool setOrClear(DamageSet &damage, int const number)
+{
+	if (number > 0)
+	{
+		return damage.Set(DamageSet::FromBits(number));
+	}
+	if (number < 0)
+	{
+		return damage.Clear(DamageSet::FromBits(-number));
+	}
+	return false;
+}
+
+} // namespace
+
 // RunCommand() for the load and the damage; returns whether the command is one of them
 bool TMoverParameters::RunLoadCommand(VehicleCommand const Command, double CValue1, double CValue2, std::string_view const Argument, bool &OK)
 {
@@ -753,13 +773,13 @@ bool TMoverParameters::RunLoadCommand(VehicleCommand const Command, double CValu
 	else if (Command == VehicleCommand::setDamage)
 	{
 		if (CValue2 == 1)
-			OK = SetFlag(DamageFlag, static_cast<int>(floor(CValue1)));
+			OK = setOrClear(DamageFlag, static_cast<int>(floor(CValue1)));
 		if (CValue2 == -1)
 		{
-			auto const derailed{TestFlag(DamageFlag, dtrain_out)};
-			OK = SetFlag(DamageFlag, static_cast<int>(-floor(CValue1)));
+			auto const derailed{DamageFlag.HasAll(VehicleDamage::derailed)};
+			OK = setOrClear(DamageFlag, static_cast<int>(-floor(CValue1)));
 			// taking the derailment off puts the vehicle back on the rails, with what the criteria of derailment held
-			if (derailed && false == TestFlag(DamageFlag, dtrain_out))
+			if (derailed && false == DamageFlag.HasAll(VehicleDamage::derailed))
 				rerail();
 		}
 	}

@@ -24,7 +24,7 @@ vehicle heavy_automatic_wagon(double Velocity, std::string const &Name) {
 }
 
 bool derailed(vehicle &Vehicle) {
-	return TestFlag(Vehicle->DamageFlag, dtrain_out);
+	return Vehicle->DamageFlag.HasAll(VehicleDamage::derailed);
 }
 
 // runs the pair for Seconds, returns whether the vehicles were coupled at any point

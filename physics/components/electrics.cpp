@@ -1019,7 +1019,7 @@ bool TMoverParameters::MainSwitchCheck() const
 	       (HasCamshaft                       ? IsMainCtrlActualNoPowerPos() :
 	        LineBreakerClosesOnlyAtNoPowerPos ? IsMainCtrlNoPowerPos() :
 	                                            true) &&
-	       false == TestFlag(DamageFlag, dtrain_out) && false == TestFlag(EngDmgFlag, 1) && false == EmergencyBrakeHoldsMainOff();
+	       false == DamageFlag.HasAll(VehicleDamage::derailed) && false == TestFlag(EngDmgFlag, 1) && false == EmergencyBrakeHoldsMainOff();
 }
 
 // *************************************************************************************************

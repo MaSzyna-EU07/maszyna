@@ -141,13 +141,13 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 		}
 
 		// HACK: limit excessive speed derailment checks to vehicles which aren't part of the same consist
-		auto const outsideconsist{thiscoupler.CouplingFlag == Coupling::none || true == TestFlag(othervehicle->DamageFlag, dtrain_out)};
+		auto const outsideconsist{thiscoupler.CouplingFlag == Coupling::none || true == othervehicle->DamageFlag.HasAll(VehicleDamage::derailed)};
 		auto const velocitydifference{outsideconsist ? CollisionVelocity(End, *othervehicle, otherend) : 0.0};
 
 		if (velocitydifference > SafeCollisionVelocity)
 		{
 			// HACK: crude estimation for potential derail, will take place with velocity difference > 15 km/h adjusted for vehicle mass ratio
-			if (false == TestFlag(DamageFlag, dtrain_out) || false == TestFlag(othervehicle->DamageFlag, dtrain_out))
+			if (false == DamageFlag.HasAll(VehicleDamage::derailed) || false == othervehicle->DamageFlag.HasAll(VehicleDamage::derailed))
 			{
 				WriteLog("Bad driving: " + Name + " and " + othervehicle->Name + " collided with velocity " + to_string(velocitydifference, 0) + " km/h");
 			}
@@ -171,7 +171,7 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	// the crush, the vehicles coupled to the wall push it on (crush_hit())
 	auto const coupled{thiscoupler.CouplingFlag != Coupling::none};
 	auto const wall = [crushing, coupled](TMoverParameters const &Vehicle) {
-		return TestFlag(Vehicle.DamageFlag, dtrain_out) && (false == crushing || (Vehicle.Derailed == derailment::outcome::none && false == coupled));
+		return Vehicle.DamageFlag.HasAll(VehicleDamage::derailed) && (false == crushing || (Vehicle.Derailed == derailment::outcome::none && false == coupled));
 	};
 	if (false == wall(*this))
 	{
@@ -198,7 +198,7 @@ void TMoverParameters::damage_coupler(int const End)
 		return;
 	} // HACK: don't break articulated couplings no matter what
 
-	if (SetFlag(DamageFlag, dtrain_coupling))
+	if (DamageFlag.Set(VehicleDamage::coupling))
 		EventFlag = true;
 
 	auto const hosetorn{thiscoupler.CouplingFlag.HasAll(Coupling::brakeHose)};
@@ -254,7 +254,7 @@ double TMoverParameters::buffer_height_at(int const End) const
 
 void TMoverParameters::derail_in_collision(DerailReason const Reason, std::string const &Why)
 {
-	if (false == SetFlag(DamageFlag, dtrain_out))
+	if (false == DamageFlag.Set(VehicleDamage::derailed))
 	{
 		return;
 	}
@@ -378,8 +378,8 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	// train. the vehicles coupled to it push it on, as the train behind a derailed vehicle does: a wall to them, it
 	// stopped the whole train at once, and the vehicles behind it crushed by the energy of the train
 	auto const coupled{thiscoupler.CouplingFlag != Coupling::none};
-	auto const wall{false == coupled && TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none};
-	auto const otherwall{false == coupled && TestFlag(othervehicle->DamageFlag, dtrain_out) && othervehicle->Derailed == derailment::outcome::none};
+	auto const wall{false == coupled && DamageFlag.HasAll(VehicleDamage::derailed) && Derailed == derailment::outcome::none};
+	auto const otherwall{false == coupled && othervehicle->DamageFlag.HasAll(VehicleDamage::derailed) && othervehicle->Derailed == derailment::outcome::none};
 	if (wall && otherwall)
 	{
 		return false;
@@ -547,7 +547,7 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 
 void TMoverParameters::check_pushed_off(double const dt, double const Distance)
 {
-	if (Global.collisions != global_settings::collision_model::physical || false == Global.crash_damage || TestFlag(DamageFlag, dtrain_out) || false == TestFlag(CategoryFlag, 1) ||
+	if (Global.collisions != global_settings::collision_model::physical || false == Global.crash_damage || DamageFlag.HasAll(VehicleDamage::derailed) || false == TestFlag(CategoryFlag, 1) ||
 	    DebugModeFlag)
 	{
 		pushed_off_monitor.reset();
@@ -645,7 +645,7 @@ void repair(TMoverParameters &Vehicle, TCoupling &Coupler)
 	{
 		return;
 	}
-	ClearFlag(Vehicle.DamageFlag, dtrain_coupling);
+	Vehicle.DamageFlag.Clear(VehicleDamage::coupling);
 	// either vehicle of the pair may have been braking through the torn hose
 	Vehicle.AlarmChainFlag = false;
 }
@@ -683,7 +683,7 @@ double TMoverParameters::centre_of_gravity() const
 
 void TMoverParameters::check_derailment(TTrackShape const &Shape, TTrackParam const &Track, double const Distance)
 {
-	if (TestFlag(DamageFlag, dtrain_out) || false == TestFlag(CategoryFlag, 1) || DebugModeFlag)
+	if (DamageFlag.HasAll(VehicleDamage::derailed) || false == TestFlag(CategoryFlag, 1) || DebugModeFlag)
 	{
 		derailment_monitor.reset();
 		return;
@@ -736,7 +736,7 @@ void TMoverParameters::check_derailment(TTrackShape const &Shape, TTrackParam co
 
 void TMoverParameters::derail(derailment::verdict const &Verdict, derailment::vehicle_state const &Vehicle, derailment::track_state const &Track, std::string const *TrackName)
 {
-	if (false == SetFlag(DamageFlag, dtrain_out))
+	if (false == DamageFlag.Set(VehicleDamage::derailed))
 	{
 		return;
 	}
@@ -759,7 +759,7 @@ void TMoverParameters::derail(derailment::verdict const &Verdict, derailment::ve
 
 void TMoverParameters::rerail()
 {
-	ClearFlag(DamageFlag, dtrain_out);
+	DamageFlag.Clear(VehicleDamage::derailed);
 	Derailed = derailment::outcome::none;
 	// and back on the track; what derailed it before has no say in how it leaves the track the next time
 	OffTrack.reset();
@@ -787,7 +787,7 @@ void TMoverParameters::rerail()
 
 void TMoverParameters::repair_damage()
 {
-	DamageFlag = 0;
+	DamageFlag = {};
 	EngDmgFlag = 0;
 	WheelFlat = 0.0;
 	AlarmChainFlag = false;
@@ -801,7 +801,7 @@ void TMoverParameters::repair_damage()
 
 void TMoverParameters::Derail(DerailReason const Reason)
 {
-	if (SetFlag(DamageFlag, dtrain_out))
+	if (DamageFlag.Set(VehicleDamage::derailed))
 	{
 		EventFlag = true;
 		MainSwitch(false, range_t::local);
@@ -852,13 +852,13 @@ void TMoverParameters::Derail(DerailReason const Reason)
 
 bool TMoverParameters::leaves_track() const
 {
-	return Global.derailment == global_settings::derailment_model::physical && TestFlag(CategoryFlag, 1) && TestFlag(DamageFlag, dtrain_out) && Derailed != derailment::outcome::none &&
+	return Global.derailment == global_settings::derailment_model::physical && TestFlag(CategoryFlag, 1) && DamageFlag.HasAll(VehicleDamage::derailed) && Derailed != derailment::outcome::none &&
 	       false == OffTrack.active();
 }
 
 void TMoverParameters::pull_off(int const Side, double const Acceleration, std::string const &Why)
 {
-	if (Global.derailment != global_settings::derailment_model::physical || false == SetFlag(DamageFlag, dtrain_out))
+	if (Global.derailment != global_settings::derailment_model::physical || false == DamageFlag.Set(VehicleDamage::derailed))
 	{
 		return;
 	}

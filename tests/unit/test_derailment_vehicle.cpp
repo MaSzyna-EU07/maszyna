@@ -47,7 +47,7 @@ TEST_CASE("derailment: a vehicle too fast in a curve") {
 		for (int step = 0; step < 300; ++step) {
 			eu07vehicle.step(curve);
 		}
-		CHECK_FALSE(TestFlag(eu07vehicle->DamageFlag, dtrain_out));
+		CHECK_FALSE(eu07vehicle->DamageFlag.HasAll(VehicleDamage::derailed));
 		CHECK(eu07vehicle->Derailed == dr::outcome::none);
 	}
 	SUBCASE("over it, it falls over and slides to a stop on its side") {
@@ -57,7 +57,7 @@ TEST_CASE("derailment: a vehicle too fast in a curve") {
 		for (int step = 0; step < 10; ++step) {
 			eu07vehicle.step(curve);
 		}
-		REQUIRE(TestFlag(eu07vehicle->DamageFlag, dtrain_out));
+		REQUIRE(eu07vehicle->DamageFlag.HasAll(VehicleDamage::derailed));
 		CHECK(eu07vehicle->Derailed == dr::outcome::overturned);
 		CHECK_FALSE(eu07vehicle->Mains);
 		// not stopped dead as the legacy model has it: it slows down at half of g on the 80 of its 96 t
@@ -116,7 +116,7 @@ TEST_CASE("derailment: the model of eu07.ini") {
 		for (int step = 0; step < 300; ++step) {
 			eu07vehicle.step(curve);
 		}
-		CHECK_FALSE(TestFlag(eu07vehicle->DamageFlag, dtrain_out));
+		CHECK_FALSE(eu07vehicle->DamageFlag.HasAll(VehicleDamage::derailed));
 	}
 	SUBCASE("old: the legacy draw stops the vehicle dead") {
 		model_setting const old{global_settings::derailment_model::old};
@@ -125,7 +125,7 @@ TEST_CASE("derailment: the model of eu07.ini") {
 			eu07vehicle.step(curve);
 		}
 		// far over its threshold the draw comes out at once
-		CHECK(TestFlag(eu07vehicle->DamageFlag, dtrain_out));
+		CHECK(eu07vehicle->DamageFlag.HasAll(VehicleDamage::derailed));
 		CHECK(eu07vehicle->Derailed == dr::outcome::none);
 		CHECK(eu07vehicle->V == doctest::Approx(0.0).epsilon(0.01));
 	}
@@ -180,7 +180,7 @@ TEST_CASE("derailment: a repaired vehicle is back on the rails") {
 	REQUIRE(repaired->Derailed == dr::outcome::overturned);
 	REQUIRE(repaired->V == 0.0);
 	repaired->repair_damage();
-	CHECK(repaired->DamageFlag == 0);
+	CHECK(repaired->DamageFlag.Empty());
 	CHECK(repaired->Derailed == dr::outcome::none);
 	CHECK(repaired->derailment_distance == 0.0);
 	CHECK(repaired->OffsetTrackH == 0.0);
@@ -235,11 +235,11 @@ TEST_CASE("derailment: SetDamage taking the derailment off puts the vehicle back
 	}
 	REQUIRE(eu07vehicle->Derailed == dr::outcome::overturned);
 	// another flag taken off leaves it derailed
-	eu07vehicle->RunCommand(VehicleCommand::setDamage, dtrain_engine, 1);
-	eu07vehicle->RunCommand(VehicleCommand::setDamage, dtrain_engine, -1);
+	eu07vehicle->RunCommand(VehicleCommand::setDamage, DamageSet{VehicleDamage::engine}.Bits(), 1);
+	eu07vehicle->RunCommand(VehicleCommand::setDamage, DamageSet{VehicleDamage::engine}.Bits(), -1);
 	CHECK(eu07vehicle->Derailed == dr::outcome::overturned);
-	CHECK(eu07vehicle->RunCommand(VehicleCommand::setDamage, dtrain_out, -1));
-	CHECK_FALSE(TestFlag(eu07vehicle->DamageFlag, dtrain_out));
+	CHECK(eu07vehicle->RunCommand(VehicleCommand::setDamage, DamageSet{VehicleDamage::derailed}.Bits(), -1));
+	CHECK_FALSE(eu07vehicle->DamageFlag.HasAll(VehicleDamage::derailed));
 	CHECK(eu07vehicle->Derailed == dr::outcome::none);
 }
 
@@ -274,7 +274,7 @@ TEST_CASE("derailment: monitor, the legacy draw decides and the log tells what t
 	for (int step = 0; step < 100; ++step) {
 		eu07vehicle.step(curve);
 	}
-	CHECK_FALSE(TestFlag(eu07vehicle->DamageFlag, dtrain_out));
+	CHECK_FALSE(eu07vehicle->DamageFlag.HasAll(VehicleDamage::derailed));
 	CHECK(eu07vehicle->Derailed == dr::outcome::none);
 	// once on a track, however long it stays over the criteria
 	CHECK(eu07vehicle->derailment_reports == 1);
@@ -287,7 +287,7 @@ TEST_CASE("derailment: monitor, the legacy draw decides and the log tells what t
 		eu07vehicle.step(next);
 	}
 	CHECK(eu07vehicle->derailment_reports == 2);
-	CHECK_FALSE(TestFlag(eu07vehicle->DamageFlag, dtrain_out));
+	CHECK_FALSE(eu07vehicle->DamageFlag.HasAll(VehicleDamage::derailed));
 
 	SUBCASE("under the criteria nothing is told") {
 		vehicle slower{definition::fiz("4e_v1/4e"), critical - 5.0};
@@ -301,7 +301,7 @@ TEST_CASE("derailment: monitor, the legacy draw decides and the log tells what t
 		for (int step = 0; step < 600; ++step) {
 			faster.step(curve);
 		}
-		CHECK(TestFlag(faster->DamageFlag, dtrain_out));
+		CHECK(faster->DamageFlag.HasAll(VehicleDamage::derailed));
 		CHECK(faster->Derailed == dr::outcome::none);
 		CHECK(faster->V == doctest::Approx(0.0).epsilon(0.01));
 	}

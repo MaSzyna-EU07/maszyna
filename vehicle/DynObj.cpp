@@ -3279,7 +3279,7 @@ void TDynamicObject::pull_neighbours( double const Distance ) {
         auto const &coupler { MoverParameters->Couplers[ end ] };
         auto *neighbour { MoverParameters->Neighbours[ end ].vehicle };
         if( coupler.CouplingFlag == Coupling::none || neighbour == nullptr || neighbour->MoverParameters->OffTrack.active()
-         || TestFlag( neighbour->MoverParameters->DamageFlag, dtrain_out ) ) {
+         || neighbour->MoverParameters->DamageFlag.HasAll(VehicleDamage::derailed) ) {
             m_pulledoff[ end ].reset();
             continue;
         }
@@ -5807,7 +5807,7 @@ void TDynamicObject::RenderSounds() {
 // special events
     if( MoverParameters->EventFlag ) {
         // McZapkie: w razie wykolejenia
-        if( true == TestFlag( MoverParameters->DamageFlag, dtrain_out ) ) {
+        if( true == MoverParameters->DamageFlag.HasAll(VehicleDamage::derailed) ) {
             rsDerailment.play( sound_flags::exclusive );
         }
 
@@ -9950,7 +9950,7 @@ vehicle_table::update_off_track_contacts( double const Deltatime ) {
             // one on the rails: along them into its speed, across them on its wheels, as a coupling pulls them off
             auto &othermover { *other->MoverParameters };
             othermover.V += glm::dot( impulse, otherbody.guide ) / std::max( othermover.TotalMass, 1.0 );
-            if( TestFlag( othermover.DamageFlag, dtrain_out ) ) {
+            if( othermover.DamageFlag.HasAll(VehicleDamage::derailed) ) {
                 continue;
             }
             glm::dvec3 const otherleft { otherbody.guide.z, 0.0, -otherbody.guide.x };

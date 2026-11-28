@@ -90,7 +90,7 @@ TEST_CASE("couplers: a screw coupler uncoupled with the buffers apart, or with t
 		auto &wagon{train.add(definition::fiz("3wl_v2/3wl"), 0, Coupling::none, 0.0, gap).mover()};
 		REQUIRE(locomotive.Attach(end::rear, end::front, &wagon, couplingtype, true));
 		if (damaged) {
-			SetFlag(locomotive.DamageFlag, dtrain_coupling);
+			locomotive.DamageFlag.Set(VehicleDamage::coupling);
 		}
 		train.step();
 		CHECK((locomotive.DettachStatus(end::rear) < 0) == apart);
@@ -145,20 +145,20 @@ TEST_CASE("couplers: a coupler broken, with its brake hose torn off") {
 	auto &wagon{train.add(definition::fiz("3wl_v2/3wl")).mover()};
 	REQUIRE(locomotive.Couplers[end::rear].Connected == &wagon);
 	locomotive.damage_coupler(end::rear);
-	CHECK(TestFlag(locomotive.DamageFlag, dtrain_coupling));
+	CHECK(locomotive.DamageFlag.HasAll(VehicleDamage::coupling));
 	CHECK(locomotive.AlarmChainFlag);
 	CHECK(locomotive.Couplers[end::rear].CouplingFlag == Coupling::none);
 	CHECK(wagon.Couplers[end::front].CouplingFlag == Coupling::none);
 	// the front coupler of the wagon, broken on its own: no hose to tear
 	wagon.damage_coupler(end::front);
-	CHECK(TestFlag(wagon.DamageFlag, dtrain_coupling));
+	CHECK(wagon.DamageFlag.HasAll(VehicleDamage::coupling));
 	CHECK_FALSE(wagon.AlarmChainFlag);
 	// articulated couplers don't break
 	consist articulated;
 	auto &unit{articulated.add(definition::fiz("impuls_v1/31we-a_pr")).mover()};
 	articulated.add(definition::fiz("impuls_v1/31we-b_pr"));
 	unit.damage_coupler(end::rear);
-	CHECK_FALSE(TestFlag(unit.DamageFlag, dtrain_coupling));
+	CHECK_FALSE(unit.DamageFlag.HasAll(VehicleDamage::coupling));
 	CHECK(unit.Couplers[end::rear].CouplingFlag != Coupling::none);
 }
 
@@ -186,8 +186,8 @@ TEST_CASE("couplers: collisions fast enough to derail") {
 		scenario.add(frontpath, 0, consist::full_coupling, frontspeed);
 		scenario.add(back, 0, Coupling::none, backspeed, 20.0);
 		scenario.wait(10.0);
-		CHECK(TestFlag(scenario.vehicle(0).DamageFlag, dtrain_out) == frontout);
-		CHECK(TestFlag(scenario.vehicle(1).DamageFlag, dtrain_out) == backout);
+		CHECK(scenario.vehicle(0).DamageFlag.HasAll(VehicleDamage::derailed) == frontout);
+		CHECK(scenario.vehicle(1).DamageFlag.HasAll(VehicleDamage::derailed) == backout);
 		scenario.check();
 	}
 }

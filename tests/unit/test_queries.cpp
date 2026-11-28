@@ -16,23 +16,23 @@ TEST_CASE("queries: the damage of a vehicle as the driver's panel describes it")
 	REQUIRE(wagon->Power < 0.1);
 
 	struct damage {
-		int flag;
+		DamageSet flag;
 		char const *locomotive;
 		char const *wagon;
 	};
 	for (auto const &[flag, locomotivetext, wagontext] : {
-	         damage{0, "OK", "OK"},
-	         damage{dtrain_thinwheel, "Thin wheel", "Load shifted"},
-	         damage{dtrain_wheelwear, "Wheel wear", "Wheel wear"},
-	         damage{dtrain_bearing, "Bearing damaged", "Bearing damaged"},
-	         damage{dtrain_coupling, "Coupler broken", "Coupler broken"},
-	         damage{dtrain_loaddamage, "Ventilator damaged", "Load damaged"},
-	         damage{dtrain_loaddestroyed, "Engine damaged", "LOAD DESTROYED"},
-	         damage{dtrain_axle, "Axle broken", "Axle broken"},
-	         damage{dtrain_out, "DERAILED", "DERAILED"},
+	         damage{{}, "OK", "OK"},
+	         damage{VehicleDamage::thinWheel, "Thin wheel", "Load shifted"},
+	         damage{VehicleDamage::wheelWear, "Wheel wear", "Wheel wear"},
+	         damage{VehicleDamage::bearing, "Bearing damaged", "Bearing damaged"},
+	         damage{VehicleDamage::coupling, "Coupler broken", "Coupler broken"},
+	         damage{VehicleDamage::loadDamage, "Ventilator damaged", "Load damaged"},
+	         damage{VehicleDamage::loadDestroyed, "Engine damaged", "LOAD DESTROYED"},
+	         damage{VehicleDamage::axle, "Axle broken", "Axle broken"},
+	         damage{VehicleDamage::derailed, "DERAILED", "DERAILED"},
 	         // the last flag of the list wins
-	         damage{dtrain_bearing | dtrain_axle, "Axle broken", "Axle broken"},
-	         damage{255, "WRECKED", "WRECKED"},
+	         damage{VehicleDamage::bearing | VehicleDamage::axle, "Axle broken", "Axle broken"},
+	         damage{DamageSet::FromBits(255), "WRECKED", "WRECKED"},
 	     }) {
 		CAPTURE(flag);
 		locomotive->DamageFlag = flag;
@@ -41,7 +41,7 @@ TEST_CASE("queries: the damage of a vehicle as the driver's panel describes it")
 		CHECK(wagon->EngineDescription(0) == wagontext);
 	}
 	// flat wheels count as worn ones
-	wagon->DamageFlag = 0;
+	wagon->DamageFlag = {};
 	wagon->WheelFlat = 6.0;
 	CHECK(wagon->EngineDescription(0) == "Wheel wear");
 	// nothing else is described

@@ -618,7 +618,7 @@ debug_panel::render() {
         }
         // sections
         ImGui::Separator();
-        if (true == render_section( "Vehicle", m_vehiclelines ) && DebugModeFlag && m_input.mover && m_input.mover->DamageFlag != 0 && true == ImGui::Button( "Stop and repair consist" )) {
+        if (true == render_section( "Vehicle", m_vehiclelines ) && DebugModeFlag && m_input.mover && false == m_input.mover->DamageFlag.Empty() && true == ImGui::Button( "Stop and repair consist" )) {
             command_relay commandrelay;
             commandrelay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
         }

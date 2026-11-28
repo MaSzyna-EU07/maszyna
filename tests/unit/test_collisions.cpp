@@ -112,7 +112,7 @@ cl::crush_curve const locomotive_curve{cl::default_crush(cl::vehicle_kind::locom
 // ---- trains of real vehicles
 
 bool derailed(TMoverParameters const &Vehicle) {
-	return TestFlag(Vehicle.DamageFlag, dtrain_out);
+	return Vehicle.DamageFlag.HasAll(VehicleDamage::derailed);
 }
 
 double crush_of(TMoverParameters const &Vehicle) {
@@ -689,7 +689,7 @@ TEST_CASE("collisions: a repaired vehicle has its ends rebuilt and is back on th
 	for (auto *vehicle : {&wagon, &locomotive}) {
 		auto &mover{vehicle->mover()};
 		mover.repair_damage();
-		CHECK(mover.DamageFlag == 0);
+		CHECK(mover.DamageFlag.Empty());
 		CHECK(mover.Derailed == derailment::outcome::none);
 		CHECK(mover.CollisionDerail == NONE);
 		CHECK(mover.pushed_off_monitor.distance() == 0.0);
@@ -712,12 +712,12 @@ TEST_CASE("collisions: the repair of a coupler torn off by the crush rebuilds it
 	coupler.crush = 0.3;
 	coupler.broken = true;
 	coupler.hit_force = 2.0e6;
-	SetFlag(wagon->DamageFlag, dtrain_coupling);
+	wagon->DamageFlag.Set(VehicleDamage::coupling);
 	REQUIRE(wagon->repair_coupler(end::rear));
 	CHECK(coupler.crush == 0.0);
 	CHECK(coupler.hit_force == 0.0);
 	CHECK_FALSE(coupler.broken);
-	CHECK_FALSE(TestFlag(wagon->DamageFlag, dtrain_coupling));
+	CHECK_FALSE(wagon->DamageFlag.HasAll(VehicleDamage::coupling));
 }
 
 TEST_CASE("collisions: SetDamage taking the derailment off clears the collision's") {
@@ -725,10 +725,10 @@ TEST_CASE("collisions: SetDamage taking the derailment off clears the collision'
 	wagon->derail_in_collision(COLLISION_PUSHED_OFF, "test");
 	REQUIRE(wagon->CollisionDerail == COLLISION_PUSHED_OFF);
 	REQUIRE(wagon->Derailed == derailment::outcome::off_rails);
-	wagon->RunCommand(VehicleCommand::setDamage, dtrain_out, -1);
+	wagon->RunCommand(VehicleCommand::setDamage, DamageSet{VehicleDamage::derailed}.Bits(), -1);
 	CHECK(wagon->CollisionDerail == NONE);
 	CHECK(wagon->Derailed == derailment::outcome::none);
-	CHECK_FALSE(TestFlag(wagon->DamageFlag, dtrain_out));
+	CHECK_FALSE(wagon->DamageFlag.HasAll(VehicleDamage::derailed));
 }
 
 // ---- the model of eu07.ini

@@ -164,17 +164,17 @@ TEST_CASE("cab: damaged motors cut off in a car without a driver") {
 	vehicle driven{definition::fiz("ew58_v1/ew58-sa"), 0.0, "test", 1};
 	driven->BatterySwitch(true);
 	REQUIRE(driven->CabActivisation());
-	driven->DamageFlag |= dtrain_engine;
+	driven->DamageFlag |= VehicleDamage::engine;
 	CHECK_FALSE(driven->CutOffEngine());
 	vehicle car{definition::fiz("ew58_v1/ew58-sa")};
 	auto const axles{car->NPoweredAxles};
 	CHECK_FALSE(car->CutOffEngine());
-	car->DamageFlag |= dtrain_engine;
+	car->DamageFlag |= VehicleDamage::engine;
 	CHECK(car->CutOffEngine());
 	CHECK(car->NPoweredAxles == axles / 2);
-	CHECK_FALSE(TestFlag(car->DamageFlag, dtrain_engine));
+	CHECK_FALSE(car->DamageFlag.HasAll(VehicleDamage::engine));
 	vehicle wagon{definition::fiz("3wl_v2/3wl")};
-	wagon->DamageFlag |= dtrain_engine;
+	wagon->DamageFlag |= VehicleDamage::engine;
 	CHECK_FALSE(wagon->CutOffEngine());
 }
 

@@ -279,7 +279,7 @@ vehicle loose_wagon(double Slack, double Velocity, std::string const &Name) {
 }
 
 bool coupler_damaged(vehicle &Vehicle) {
-	return TestFlag(Vehicle->DamageFlag, dtrain_coupling);
+	return Vehicle->DamageFlag.HasAll(VehicleDamage::coupling);
 }
 
 } // namespace
@@ -448,7 +448,7 @@ TEST_CASE("coupler physics: automatic couplers still catch a wagon rolling into 
 	REQUIRE(pair.coupled());
 	pair.run(2.0);
 	CHECK(moving.speed() == doctest::Approx(standing.speed()).epsilon(0.1));
-	CHECK_FALSE(TestFlag(moving->DamageFlag, dtrain_out));
+	CHECK_FALSE(moving->DamageFlag.HasAll(VehicleDamage::derailed));
 }
 
 TEST_CASE("couplers: a broken coupling of vehicles facing each other uncouples the ends coupled") {
@@ -479,7 +479,7 @@ TEST_CASE("couplers: a broken coupler is repaired alone, with the one of the veh
 	REQUIRE(second->Couplers[end::front].broken);
 	REQUIRE(first->Couplers[end::rear].broken);
 	REQUIRE(third->Couplers[end::front].broken);
-	REQUIRE(TestFlag(second->DamageFlag, dtrain_coupling));
+	REQUIRE(second->DamageFlag.HasAll(VehicleDamage::coupling));
 
 	// nothing to repair at the far end of the first wagon
 	CHECK_FALSE(first->repair_coupler(end::front));
@@ -491,12 +491,12 @@ TEST_CASE("couplers: a broken coupler is repaired alone, with the one of the veh
 	CHECK(second->Couplers[end::rear].broken);
 	CHECK(third->Couplers[end::front].broken);
 	// the second wagon keeps its damage, and its emergency braking, while a coupler of it is broken
-	CHECK(TestFlag(second->DamageFlag, dtrain_coupling));
+	CHECK(second->DamageFlag.HasAll(VehicleDamage::coupling));
 	CHECK(second->AlarmChainFlag);
 
 	CHECK(third->repair_coupler(end::front));
 	CHECK_FALSE(second->Couplers[end::rear].broken);
-	CHECK_FALSE(TestFlag(second->DamageFlag, dtrain_coupling));
+	CHECK_FALSE(second->DamageFlag.HasAll(VehicleDamage::coupling));
 	CHECK_FALSE(second->AlarmChainFlag);
 	// repaired, not coupled: the vehicles are coupled again as usual
 	CHECK(second->Couplers[end::rear].CouplingFlag == Coupling::none);
@@ -560,7 +560,7 @@ TEST_CASE("coupler physics: a hit on a braked train runs through it as a wave, w
 		CAPTURE(i);
 		CAPTURE(peak[i]);
 		REQUIRE(started[i] >= 0.0);
-		CHECK_FALSE(TestFlag(train[i]->DamageFlag, dtrain_out));
+		CHECK_FALSE(train[i]->DamageFlag.HasAll(VehicleDamage::derailed));
 	}
 	// the wagon hit first takes less than the hit, the one at the far end the least
 	CHECK(peak[wagons - 1] < 12.0);

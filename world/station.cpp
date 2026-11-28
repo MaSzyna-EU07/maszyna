@@ -58,7 +58,7 @@ basic_station::update_load( TDynamicObject *First, Mtable::TTrainParameters &Sch
             // NOTE: for the time being we're doing simple, random load change calculation
             // TODO: exchange driven by station parameters and time of the day
             auto unloadcount = static_cast<int>(
-                TestFlag( parameters.DamageFlag, dtrain_out ) ? parameters.LoadAmount :
+                parameters.DamageFlag.HasAll(VehicleDamage::derailed) ? parameters.LoadAmount :
                 laststop ? parameters.LoadAmount :
                 firststop ? 0 :
                 maintenancestop ? 0 :
@@ -66,7 +66,7 @@ basic_station::update_load( TDynamicObject *First, Mtable::TTrainParameters &Sch
                     parameters.LoadAmount,
                     static_cast<float>(Random( parameters.MaxLoad * 0.15f * stationsizemodifier )) ) );
             auto loadcount = static_cast<int>(
-                TestFlag( parameters.DamageFlag, dtrain_out ) ? 0 :
+                parameters.DamageFlag.HasAll(VehicleDamage::derailed) ? 0 :
                 laststop ? 0 :
                 maintenancestop ? 0 :
                 Random( parameters.MaxLoad * 0.15f * stationsizemodifier ) );
