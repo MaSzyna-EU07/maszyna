@@ -623,6 +623,13 @@ bool global_settings::ConfigParseTest(cParser& Parser, std::string_view const To
         return true;
     }
 
+    if (Token == "test.noassets")
+    {
+        // no models, textures nor sounds in the test mode (eu07/maszyna#507); a scenery can't change it, see ini_only_settings
+        ParseOne(Parser, test.no_assets);
+        return true;
+    }
+
     return false;
 }
 
@@ -2733,6 +2740,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "test.pass_on_standstill", test.pass_on_standstill );
     export_as_text( Output, "test.fail_if_stop_overran", test.fail_if_stop_overran );
     export_as_text( Output, "test.no_movement_before_pass", test.no_movement_before_pass );
+    export_as_text( Output, "test.noassets", test.no_assets );
     for( auto const &vehicle : test.vehicles ) {
         export_as_text( Output, "test.vehicle", vehicle );
     }

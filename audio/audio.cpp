@@ -359,7 +359,15 @@ audio::buffer_handle
 buffer_manager::emplace( std::string Filename ) {
 
     buffer_handle const handle { m_buffers.size() };
-    if( true == Global.AudioAsyncLoad ) {
+    if( true == Global.test.skip_assets() ) {
+        // a test run without the assets (test.noassets) finds the file but doesn't decode it. the sound is there, silent as
+        // with the sound off: whoever asks whether a vehicle has a sound (the AI waits for the guard's whistle it has) gets
+        // the same answer as with the assets
+        openal_buffer buffer;
+        buffer.name = Filename;
+        m_buffers.emplace_back( std::move( buffer ) );
+    }
+    else if( true == Global.AudioAsyncLoad ) {
         // the file is decoded in the background, the AL buffer is made once the data is ready or when the buffer is needed
         WriteLog( "sound: loading file: " + Filename );
         openal_buffer buffer;

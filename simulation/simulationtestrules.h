@@ -44,6 +44,7 @@ struct test_command_line {
 	bool enabled{false}; // --test
 	std::optional<double> timeout; // --test-timeout <seconds of simulation time>
 	std::optional<double> wall_timeout; // --test-wall-timeout <seconds of real time>
+	bool no_assets{false}; // --test-no-assets: no models, textures nor sounds (eu07/maszyna#507); with --test only
 	std::string error; // what's wrong with them; empty if nothing
 };
 

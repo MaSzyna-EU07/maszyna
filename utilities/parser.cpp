@@ -514,6 +514,14 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 		return;
 	}
 
+	if (isTerrain && Global.test.skip_assets()) {
+		// a test run without the assets (test.noassets) leaves the terrain files out unread, as the game does when the geometry
+		// comes from the binary terrain above. they hold the terrain and the decoration: triangles, lines, model instances
+		WriteLog("Terrain include: " + includefile + " left out (test.noassets)");
+		readParameters(srcParser); // the parameters of the include go with it
+		return;
+	}
+
 	if (Global.ParserLogIncludes) {
 		if (isTerrain) WriteLog("including terrain: " + includefile);
 		else {

@@ -13,7 +13,7 @@ The runner drives the simulator's test mode (eu07/maszyna#541), which works with
 runner too and is meant for scenery authors as well:
 
 ```
-eu07 --test -s <scenery.scn> [--test-timeout <seconds>] [--test-wall-timeout <seconds>] [-seed <number|word>] [-ini <settings file>]
+eu07 --test -s <scenery.scn> [--test-timeout <seconds>] [--test-wall-timeout <seconds>] [--test-no-assets] [-seed <number|word>] [-ini <settings file>]
 ```
 
 With `--test` the simulator:
@@ -23,7 +23,8 @@ With `--test` the simulator:
   order), not the player's own `eu07.ini` in `%APPDATA%\MaSzyna` (`~/.config/MaSzyna` on Linux),
   so a test runs the same for whoever runs it,
 - draws nothing: the null renderer loads the 3D models (the physics needs some of their
-  data) but no textures, and the window stays hidden,
+  data) but no textures, and the window stays hidden; with `--test-no-assets` it loads even
+  less, see [Without the assets](#without-the-assets),
 - has no sound, no network, no python, no pause (not even one set by the scenery), and
   no crash dialog,
 - takes no input from outside: keys and mouse sent to its window, gamepad, UART (a cab
@@ -82,6 +83,45 @@ A crash ends with the system's code instead (on Windows e.g. `0xC0000005`, -1073
 codes of the test mode keep clear of the ones a process gets when it goes wrong on its own: 1
 (killed with `TerminateProcess`, or a plain failure of most programs), 3 (`abort()` on Windows),
 126-127 (a shell that can't run the program) and 128 + a signal number (killed, on Linux).
+
+### Without the assets
+
+`--test-no-assets` on the command line, or `test.noassets yes` in `eu07.ini` or a `-ini` file
+(eu07/maszyna#507), makes a test run load only what the simulation goes by. It counts with `--test`
+only: without it the option is an error and the key changes nothing, so a game started for play
+loads everything as always. A scenery's `config` block can't change it, as the scenery is loading
+with it already (it's kept as the settings files say, and the log says so). With it:
+
+- no texture nor material file is read (no texture is read in the test mode anyway, the null
+  renderer hands out an empty one), and the files of the replaceable skins aren't looked for,
+- no sound file is decoded: a sound whose file is there is made silent, without its data, so what
+  the AI goes by stays the same (it waits for the guard's whistle only of a vehicle that has one),
+- no model of the scenery is read. An instance with a name stays in the scenery, without its
+  model, for the events: its model is read, for the layout of its parts only (the submodels, their
+  names and transforms; the geometry, most of the file, is passed over on the disk), when an
+  `animation` event animates one of its parts, so a turntable turns and the events done when an
+  animation ends still come. A `lights` event changes nothing, there's nothing it'd be seen on. An
+  instance without a name (`node ... none model ...`: trees, buildings, the decoration) is left
+  out: the events reach the instances by their names only. The models of the vehicles (anything
+  in `dynamic/`) are read whole: the height of a pantograph is measured off the geometry of its
+  shoe,
+- there is no terrain: the terrain includes (`*_ter.scm`, left out unread, as the game does when an
+  `.sbt` file holds the geometry; they hold triangles, lines and decoration only), the `terrain`
+  files (`.txtf`, `.btf`, `.sbt`), the 3D terrain models, the `triangles` and `lines` of the scenery
+  and the `heightmap_terrain` are left out, and the geometry cache of the scenery (`<scenery>.sbt`)
+  is neither read nor written,
+- the script screens of the vehicles (`luascreens`, `wasm`) are off, and the interface has the font
+  of imgui instead of those of the game (rasterizing their chinese glyphs took a second).
+
+A node left out takes the random numbers its uuid would, so a case runs as it does with the assets:
+the physicslogs of the cases on td.scn come out byte for byte the same with `--test-no-assets` and
+without it, but for the ones a derailed train leaves the track in. What is lost: a vehicle derailed
+with `physics.derailment new` that leaves the track has no ground but the level of the top of the
+ballast (it moves over the terrain the scenery's triangles make otherwise). The cases which need the
+terrain are marked `needs_models`. The terrain includes are left out unread, so their nodes take no
+random numbers: on a scenery with them a run with `--test-no-assets` draws other random numbers than
+one without (as a run with the `.sbt` of the scenery does), and the instances with names in them
+(the game's have names the editor gave them, `editor_...`) are gone for the events.
 
 The limits go in a `config` block of the scenery:
 
@@ -148,6 +188,9 @@ Python 3.10+, no extra packages. Options:
   simulator loads a whole scenery. A case on a mission of the base scenery with physicslog on
   (`vehicle` given) removes every physicslog written in the game dir meanwhile, so with `-j N`
   it runs alone, after the others.
+- `--no-assets` runs the simulator with `--test-no-assets` (see
+  [Without the assets](#without-the-assets)). With no cases named, the cases marked
+  `needs_models` are skipped (and listed); a case named on the command line always runs.
 - `--seed N` (a number or a word) runs the cases with another seed of the simulator's random
   numbers (`randomseed`) than the fixed one of the test mode, for a bug that shows up only
   sometimes: run the case with a few seeds. A seed repeats a run only in the test mode, see
@@ -230,6 +273,7 @@ to `logs/`.
 | `replace` | literal replacements in the text of the base scenery, a list of `[old, new]`, e.g. to put another locomotive on a mission; an `old` the scenery doesn't have is an error |
 | `physicslog` | `false` turns the physicslogs (and the black box) off for the run: on a scenery with dozens of AI trains each of them would write 3-4 kB per second of simulation into the game dir. Such a case has the result of the test mode and the log checks only (default `true`) |
 | `slow` | `true` marks a case that takes many minutes: skipped unless named or run with `--slow` |
+| `needs_models` | marks a case that can't pass without the models and the terrain, with the reason as its text, e.g. `"the derailed train slides down the embankment of the fragment's triangles"`: skipped with `--no-assets` unless named |
 | `xfail` | marks a case that fails because of a known, reported bug, with the reference and the reason as its text, e.g. `"eu07/maszyna#524: the AI never couples"`. Its failure is reported as `XFAIL` and doesn't fail the run; when it passes (`XPASS`) the run fails until the mark is removed |
 | `time` | replace the scenery start time, `HH:MM` |
 | `track_friction` | set the friction of every track of the base scenery (default in the sceneries is 0.15), e.g. for slippery rail |

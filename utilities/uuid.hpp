@@ -27,6 +27,12 @@ public:
         return u;
     }
 
+    // takes from the random numbers of the simulation what random() would, without making the uuid: for a node which is
+    // left out (a test run without the assets), so the numbers drawn after it come out as they would with the node
+    static void pass_over() {
+        Global.random_engine.discard(2);
+    }
+
     std::string to_string() const {
         // NOTE: done by hand as the text is made for each model instance of a scenery, and a string stream took a few microseconds each
         static constexpr char digits[] = "0123456789abcdef";

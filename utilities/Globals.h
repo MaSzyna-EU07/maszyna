@@ -110,6 +110,12 @@ struct global_settings {
         bool timeout_from_command_line{ false }; // --test-timeout given, the scenery doesn't override it
         std::optional<double> wall_timeout; // [s] of real time since the start; none = test.timeout + time for the loading, 0 = no limit
         bool wall_timeout_from_command_line{ false }; // --test-wall-timeout given, the scenery doesn't override it
+        // test.noassets, --test-no-assets (eu07/maszyna#507): no textures, sounds, terrain nor models of the scenery are loaded
+        // (a model is read for the layout of its parts when an event animates one; the vehicles are read whole), and the model
+        // instances without a name are left out. read from eu07.ini and the -ini files, not from a scenery, which loads with it
+        bool no_assets{ false };
+        // the assets are left out: test.noassets counts in the test mode only, a game started without --test loads them all
+        bool skip_assets() const { return enabled && no_assets; }
     };
     test_settings test;
     bool editor_tracks{ false }; // F3 track workspace: draw and pick tracks without the scenery draw-range cap

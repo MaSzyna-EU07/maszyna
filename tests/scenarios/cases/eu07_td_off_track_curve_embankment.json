@@ -1,5 +1,6 @@
 {
   "description": "physics.derailment new: an EU07 without a driver runs at 150 km/h into a curve of R 300 m without cant, a track of 150 m laid on its own in the fields of td.scn (autotest_curve), on an embankment 4 m high with slopes of 1:1.5 (triangles of the fragment). Over its overturning speed (about 120 km/h) it overturns out of the curve: it falls on its side over the edge of the embankment, slides down its slope and on over the level ground at its foot, 4 m lower.",
+  "needs_models": "the derailed EU07 goes down the embankment, triangles of the fragment, which a run without the assets leaves out (it slides over level ground)",
   "base_scenery": "td.scn",
   "time": "10:34",
   "fragment": "td_off_track_curve_embankment.scn",

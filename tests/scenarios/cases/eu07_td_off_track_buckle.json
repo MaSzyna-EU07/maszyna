@@ -1,5 +1,6 @@
 {
   "description": "physics.derailment new: EU07 with three coaches on td.scn on the td/rozklad timetable; at 10:35, as it leaves, the curve tdo_n222 about 950 m ahead buckles hard with a trackbuckle event (600 mm out of the curve over a main lobe of 8 m). The AI runs into it at the 33-35 km/h it has there with the coaches (46 km/h alone): the locomotive overturns on the buckle, goes off the track towards the bulge, falls on its side and stops on the ground some 30 m on; the coupling pulls the first coach off the rails.",
+  "needs_models": "the derailed EU07 falls on its side on the terrain of td.scn, which a run without the assets leaves out: it stays upright and slides on",
   "base_scenery": "td.scn",
   "time": "10:34",
   "fragment": "td_buckle_event.scn",

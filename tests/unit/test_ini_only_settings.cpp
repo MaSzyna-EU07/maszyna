@@ -152,3 +152,23 @@ TEST_CASE("ini only settings: a scenery's config block doesn't change the period
 	CHECK(settings->odometer_expiry == 730);
 	CHECK(changed == std::vector<std::string_view>{"odometer.expiry"});
 }
+
+TEST_CASE("ini only settings: a scenery's config block doesn't change what a test run loads (test.noassets)") {
+	auto const settings{std::make_unique<global_settings>()};
+	SUBCASE("the assets left out by the settings files stay out") {
+		settings->test.no_assets = true;
+		ini_only_settings const ini{*settings};
+		// "config test.noassets no endconfig" in the .scn, read after part of the scenery loaded without the models
+		settings->test.no_assets = false;
+		auto const changed{ini.restore(*settings)};
+		CHECK(settings->test.no_assets);
+		CHECK(changed == std::vector<std::string_view>{"test.noassets"});
+	}
+	SUBCASE("and the ones loaded stay in") {
+		ini_only_settings const ini{*settings};
+		settings->test.no_assets = true;
+		auto const changed{ini.restore(*settings)};
+		CHECK_FALSE(settings->test.no_assets);
+		CHECK(changed == std::vector<std::string_view>{"test.noassets"});
+	}
+}

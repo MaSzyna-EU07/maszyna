@@ -310,6 +310,7 @@ private:
     std::vector<float> m_lodbounds; // filled on first use, see lod_bounds()
     bool m_lodboundsfound { false };
     std::uint32_t m_stateversion { 0 }; // see state_version()
+    bool m_layoutonly { false }; // read without the geometry, see LoadFromBinFile()
 
 public:
     TModel3d() = default;
@@ -349,6 +350,10 @@ public:
 	int TerrainCount() const;
 	TSubModel * TerrainSquare(int n);
 	void deserialize(std::istream &s, size_t size, bool dynamic);
+    // the model holds the submodels, their names and transforms, but none of their geometry (a model of the scenery in a
+    // test run with test.noassets)
+    bool layout_only() const {
+        return m_layoutonly; }
 };
 
 //---------------------------------------------------------------------------

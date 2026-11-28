@@ -2,6 +2,8 @@
 #include "doctest.h"
 
 #include "simulation/simulationtestrules.h"
+#include "utilities/Globals.h"
+#include "utilities/uuid.hpp"
 
 #include <array>
 #include <exception>
@@ -128,6 +130,77 @@ TEST_CASE("test mode: the command line")
 		// -edit leaves -s alone, which takes --test for its scenery, as the simulator reads it
 		CHECK_FALSE(parse({"-edit", "-s", "--test"}).enabled);
 	}
+}
+
+TEST_CASE("test mode: --test-no-assets (eu07/maszyna#507)")
+{
+	SUBCASE("not given, the assets are loaded")
+	{
+		auto const commandline{parse({"--test", "-s", "td.scn"})};
+		CHECK_FALSE(commandline.no_assets);
+		CHECK(commandline.error.empty());
+	}
+	SUBCASE("given with --test, before or after it")
+	{
+		CHECK(parse({"--test", "-s", "td.scn", "--test-no-assets"}).no_assets);
+		auto const before{parse({"--test-no-assets", "-s", "td.scn", "--test", "--test-timeout", "60"})};
+		CHECK(before.enabled);
+		CHECK(before.no_assets);
+		CHECK(before.timeout.value_or(-1.0) == doctest::Approx(60.0));
+		CHECK(before.error.empty());
+	}
+	SUBCASE("without --test it is an error: a game can't do without its assets")
+	{
+		auto const commandline{parse({"-s", "td.scn", "--test-no-assets"})};
+		CHECK_FALSE(commandline.enabled);
+		CHECK(commandline.error == "--test-no-assets needs --test");
+	}
+	SUBCASE("an error of a limit is told first")
+	{
+		CHECK(parse({"--test-no-assets", "--test-timeout", "x"}).error == "--test-timeout needs a number of seconds");
+	}
+	SUBCASE("the value of another option isn't taken for it")
+	{
+		auto const commandline{parse({"--test", "-s", "--test-no-assets"})};
+		CHECK_FALSE(commandline.no_assets);
+		CHECK(commandline.error.empty());
+	}
+}
+
+TEST_CASE("test mode: test.noassets counts in the test mode only")
+{
+	global_settings::test_settings settings;
+	SUBCASE("off by default, in the test mode too")
+	{
+		CHECK_FALSE(settings.skip_assets());
+		settings.enabled = true;
+		CHECK_FALSE(settings.skip_assets());
+	}
+	SUBCASE("set in eu07.ini of a game started without --test, it changes nothing")
+	{
+		settings.no_assets = true;
+		CHECK_FALSE(settings.skip_assets());
+	}
+	SUBCASE("set for a test run, the assets are left out")
+	{
+		settings.enabled = true;
+		settings.no_assets = true;
+		CHECK(settings.skip_assets());
+	}
+}
+
+TEST_CASE("test mode: a node left out without the assets takes the random numbers of its uuid")
+{
+	// so the simulation draws after it the numbers it would with the node, and a case runs the same with --test-no-assets
+	auto const saved{Global.random_engine};
+	Global.random_engine.seed(507);
+	[[maybe_unused]] auto const uuid{UID::random()};
+	auto const withnode{Global.random_engine()};
+	Global.random_engine.seed(507);
+	UID::pass_over();
+	auto const withoutnode{Global.random_engine()};
+	Global.random_engine = saved;
+	CHECK(withnode == withoutnode);
 }
 
 TEST_CASE("test mode: the real time limit")

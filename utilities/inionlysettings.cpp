@@ -48,7 +48,7 @@ ini_only_settings::ini_only_settings(global_settings const &Settings)
 #endif
       m_feedback_mode{Settings.iFeedbackMode}, m_feedback_port{Settings.iFeedbackPort}, m_python_enabled{Settings.python_enabled},
       m_luascreens_enabled{Settings.luascreens_enabled}, m_lua_fulllibraries{Settings.lua_fulllibraries}, m_wasm_enabled{Settings.wasm_enabled},
-      m_odometer_expiry{Settings.odometer_expiry}
+      m_odometer_expiry{Settings.odometer_expiry}, m_test_no_assets{Settings.test.no_assets}
 {
 }
 
@@ -92,5 +92,7 @@ std::vector<std::string_view> ini_only_settings::restore(global_settings &Settin
 	keep_off(Settings.lua_fulllibraries, m_lua_fulllibraries, "lua.fulllibraries", changed);
 	keep_off(Settings.wasm_enabled, m_wasm_enabled, "wasm.enabled", changed);
 	keep(Settings.odometer_expiry, m_odometer_expiry, "odometer.expiry", changed);
+	// the scenery is being loaded with it already: models and sounds read before the key and after it would differ
+	keep(Settings.test.no_assets, m_test_no_assets, "test.noassets", changed);
 	return changed;
 }

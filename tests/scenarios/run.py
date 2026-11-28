@@ -22,6 +22,7 @@ install only (--game-dir or EU07_GAME_DIR), not in CI. See README.md.
 Usage:
   python tests/scenarios/run.py --game-dir "E:/.../MaSzyna" -j 4       # all cases
   python tests/scenarios/run.py --game-dir ... eu07_td_timetable       # chosen cases
+  python tests/scenarios/run.py --game-dir ... -j 4 --no-assets        # without models, textures, sounds
 """
 
 from __future__ import annotations
@@ -468,7 +469,8 @@ class RunResult:
 
 
 def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog: Path,
-                  duration: float | None, timeout: float, watch: bool, say, expect_rows: bool = True) -> RunResult:
+                  duration: float | None, timeout: float, watch: bool, say, expect_rows: bool = True,
+                  no_assets: bool = False) -> RunResult:
     """Runs the simulator on the scenery. In test mode it quits by itself and the exit code
     is the result; with watch it runs in a window and gets closed after `duration`."""
     physicslog.unlink(missing_ok=True)
@@ -479,6 +481,9 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
         cmd = [str(exe), "--test", "-s", scenery, "-ini", str(ini), "--test-wall-timeout", f"{timeout:g}"]
         if duration is not None:
             cmd += ["--test-timeout", f"{duration:g}"]
+        if no_assets:
+            # no textures, no sounds, the models read for the layout of their parts only, no terrain (#507)
+            cmd += ["--test-no-assets"]
     say("  $ " + " ".join(f'"{c}"' if " " in c else c for c in cmd), progress=True)
     since = time.time() - 1
     started = time.monotonic()
@@ -1289,15 +1294,20 @@ def describe_exit(code: int | None) -> str:
     return f"{code} ({name})" if name else f"{code} (0x{code & 0xFFFFFFFF:08X}, a crash?)"
 
 
+# wall-clock seconds of the simulator run of each case, for the summary
+WALL_TIMES: dict[str, float] = {}
+
+
 def load_case(name: str) -> dict:
     return json.loads((CASES_DIR / f"{name}.json").read_text(encoding="utf-8"))
 
 
-def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool, say, seed: str | None = None) -> str:
+def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool, say, seed: str | None = None,
+             no_assets: bool = False) -> str:
     """Runs the case and returns PASS or FAIL; for a case marked `xfail` (a known, reported bug) XFAIL
     when it fails as expected, and XPASS when it passes, which means the mark has to go."""
     case = load_case(name)
-    ok = _run_case(name, case, exe, game_dir, timespeed, watch, say, seed)
+    ok = _run_case(name, case, exe, game_dir, timespeed, watch, say, seed, no_assets)
     if "xfail" not in case or watch:
         return "PASS" if ok else "FAIL"
     if ok:
@@ -1314,7 +1324,7 @@ def exclusive_case(case: dict) -> bool:
 
 
 def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float, watch: bool, say,
-              seed: str | None = None) -> bool:
+              seed: str | None = None, no_assets: bool = False) -> bool:
     say(f"\n=== {name}: {case.get('description', '')}")
     out = OUT_DIR / name
     shutil.rmtree(out, ignore_errors=True)
@@ -1353,7 +1363,8 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
         scenery = build_scenery(case, game_dir, name, vehicle)
         result = run_simulator(exe, game_dir, scenery, ini, physicslog,
                                duration, float(case.get("timeout", 600)), watch, say,
-                               expect_rows=with_physicslog and not own_vehicle)
+                               expect_rows=with_physicslog and not own_vehicle, no_assets=no_assets)
+        WALL_TIMES[name] = result.wall_seconds
     finally:
         # the case's own files go from the game dir also when the run is broken off (ctrl+c)
         timetable_path(game_dir, name).unlink(missing_ok=True)
@@ -1467,7 +1478,13 @@ def main() -> int:
                                    "word; the default is the fixed one of the test mode. For bugs that show up only sometimes")
     ap.add_argument("--slow", action="store_true",
                     help="with no cases named: run the ones marked slow too (they are skipped otherwise)")
+    ap.add_argument("--no-assets", action="store_true",
+                    help="run the simulator without models, textures and sounds (--test-no-assets): the models are "
+                         "read for the layout of their parts only and there is no terrain. With no cases named, "
+                         "the cases marked needs_models are skipped")
     args = ap.parse_args()
+    if args.no_assets and args.watch:
+        sys.exit("--no-assets is a switch of the test mode, it can't go with --watch")
 
     if not args.game_dir:
         sys.exit("pass --game-dir or set EU07_GAME_DIR")
@@ -1485,6 +1502,14 @@ def main() -> int:
         if slow:
             names = [n for n in names if n not in slow]
             print(f"skipped {len(slow)} slow case(s), run them by name or with --slow: {', '.join(slow)}")
+    # a case which needs what the simulator leaves out without the assets (the terrain under a derailed train, say)
+    # can't pass with --no-assets; it runs when named
+    if args.no_assets and not args.cases:
+        needing = [n for n in names if load_case(n).get("needs_models")]
+        if needing:
+            names = [n for n in names if n not in needing]
+            print(f"skipped {len(needing)} case(s) marked needs_models, which can't run with --no-assets: "
+                  f"{', '.join(needing)}")
 
     started = time.monotonic()
     results = {}
@@ -1492,7 +1517,7 @@ def main() -> int:
         def say(line, progress=False):
             print(line, flush=True)
         for n in names:
-            results[n] = run_case(n, exe, game_dir, args.timespeed, args.watch, say, args.seed)
+            results[n] = run_case(n, exe, game_dir, args.timespeed, args.watch, say, args.seed, args.no_assets)
     else:
         # a case on a mission of the base scenery removes the physicslogs written while it ran, so it runs
         # alone, after the others
@@ -1506,7 +1531,7 @@ def main() -> int:
             def say(line, progress=False):
                 if not progress:
                     lines.append(line)
-            status = run_case(n, exe, game_dir, args.timespeed, args.watch, say, args.seed)
+            status = run_case(n, exe, game_dir, args.timespeed, args.watch, say, args.seed, args.no_assets)
             return n, status, lines
         with ThreadPoolExecutor(max_workers=args.jobs) as pool:
             for n in together:
@@ -1517,11 +1542,12 @@ def main() -> int:
                 results[n] = status
         for n in alone:
             results[n] = run_case(n, exe, game_dir, args.timespeed, args.watch,
-                                  lambda line, progress=False: print(line, flush=True), args.seed)
+                                  lambda line, progress=False: print(line, flush=True), args.seed, args.no_assets)
 
     print(f"\n=== summary ({time.monotonic() - started:.0f}s)")
     for n in names:
-        print(f"  {results[n]:5}  {n}")
+        wall = f"{WALL_TIMES[n]:5.0f}s" if n in WALL_TIMES else "     -"
+        print(f"  {results[n]:5}  {wall}  {n}")
     # a known failure keeps the suite green; one that stopped failing doesn't, so that its mark gets removed
     return 0 if all(status in ("PASS", "XFAIL") for status in results.values()) else 1
 
