@@ -36,3 +36,6 @@
 	path = ref/wamr
 	url = https://github.com/bytecodealliance/wasm-micro-runtime
 	shallow = true
+[submodule "ref/meshoptimizer"]
+	path = ref/meshoptimizer
+	url = https://github.com/zeux/meshoptimizer.git

@@ -166,6 +166,10 @@ std::string
 TModelsManager::find_on_disk( std::string const &Name ) {
 
     std::vector<std::string> extensions { { ".e3d" }, { ".t3d" } };
+    if( Global.modelformat_e4d ) {
+        // a model may come as an .e4d alone
+        extensions.emplace_back( ".e4d" );
+    }
     for( auto const &extension : extensions ) {
 
         if( false == FileCased( Name + extension ).empty() ) {

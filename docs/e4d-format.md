@@ -42,13 +42,19 @@ Stan: wersja 1.0, etap 1 (format, czytnik, pisarz, konwersja z E3D/T3D). Gra jes
 | Typ | Pole |
 |---|---|
 | u32 | FourCC |
-| u32 | flagi: bit 0 = wymagana, bit 1 = zstd |
+| u32 | flagi: bit 0 = wymagana, bit 1 = zstd, bit 2 = kodek meshoptimizer (tylko strumienie wierzchołków i indeksów) |
 | u64 | offset w pliku |
 | u64 | rozmiar w pliku |
 | u64 | rozmiar po rozpakowaniu |
 
 Sekcje są wyrównane do 16 B, a strumienie wierzchołków i indeksów do 64 B. Sekcja może być skompresowana zstd. Każda
 sekcja występuje najwyżej raz.
+
+Strumienie wierzchołków (`VPOS`, `VATT`, `VSKN`, `VSKW`, `VUSR`, `VBND`) mogą być zapisane kodekiem wierzchołków
+meshoptimizera (wersja 1), a strumienie indeksów (`IDX2`, `IDX4`) jego kodekiem sekwencji indeksów (`ref/meshoptimizer`,
+licencja MIT). Kodek jest bezstratny co do bajtu, a rozpakowuje się kilka razy szybciej niż zstd na tych danych. Gdy sekcja ma
+obie flagi, zstd pakuje wynik kodeka; czytnik najpierw rozpakowuje zstd (najwyżej do granicy rozmiaru kodeka), potem dekoduje.
+Rozmiar po rozpakowaniu we wpisie spisu to zawsze rozmiar surowego strumienia. Flaga kodeka na innej sekcji odrzuca plik.
 
 ## Sekcje
 
@@ -93,7 +99,7 @@ zakresy siatek skinowanych.
 | 0 | u32 | nazwa (string) |
 | 4 | i32 | rodzic, −1 dla korzenia |
 | 8 | u32 | koniec poddrzewa: indeks za ostatnim węzłem poddrzewa |
-| 12 | u32 | flagi: bit 0 animowany, bit 1 ukryty, bit 2 przekształcenie w `XFRM` |
+| 12 | u32 | flagi: bit 0 animowany, bit 1 ukryty, bit 2 przekształcenie w `XFRM`, bit 3 bez własnego przekształcenia (submodel E3D bez macierzy; TRS to tożsamość) |
 | 16 | f32 × 3 | translacja |
 | 28 | f32 × 4 | obrót, kwaternion x y z w |
 | 44 | f32 × 3 | skala |
@@ -204,6 +210,7 @@ Odwołania wewnątrz danych to indeksy: string, węzeł albo komponent; `0xFFFFF
 | `LANM` | animacja E3D (`TAnimType`): `u32` |
 | `LTXT` | wyświetlacz tekstu E3D (`TP_TEXT`); dzieci węzła to znaki nazwane swoim znakiem. Bez danych. |
 | `STAR` | gwiazdy E3D (`TP_STARS`): `u32 count`, potem kolory RGB `u32` (jak w E3D), po jednym na wierzchołek siatki węzła |
+| `LMAT` | materiał węzła bez geometrii (punkt świetlny, rotator), który E3D trzyma w każdym submodelu: `u32` slot `MATL`. Z niego światło bierze próg zapalenia (`fLight`), kolory i materiał |
 
 ## Konwersja z E3D i T3D
 

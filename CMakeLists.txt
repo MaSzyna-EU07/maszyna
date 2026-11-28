@@ -177,6 +177,7 @@ set(SOURCES
 "EU07.cpp"
 "export_e3d_standalone.cpp"
 "model/e4d/e4d_convert.cpp"
+"model/e4d/e4d_load.cpp"
 "export_btf_standalone.cpp"
 "nodebank_previews_standalone.cpp"
 "world/Event.cpp"
@@ -798,6 +799,9 @@ set(CORE_SOURCES
 "model/e4d/e4d_build.cpp"
 "model/e4d/e4d_dump.cpp"
 "${DEPS_DIR}/zstd/zstd.c"
+# the codecs of the vertex and index streams of E4D
+"${DEPS_DIR}/meshoptimizer/src/vertexcodec.cpp"
+"${DEPS_DIR}/meshoptimizer/src/indexcodec.cpp"
 )
 add_library(eu07_core STATIC ${CORE_SOURCES})
 target_link_libraries(eu07_core PUBLIC eu07_settings)
@@ -837,6 +841,7 @@ target_include_directories(eu07_settings INTERFACE
 	"${DEPS_DIR}/glad/include"
 	"${DEPS_DIR}/dds-ktx/include"
 	"${DEPS_DIR}/zstd"
+	"${DEPS_DIR}/meshoptimizer/src"
 	"${CMAKE_BINARY_DIR}/geninc"
 	"${GLOBAL_INCLUDE_DIR}")
 
@@ -877,6 +882,7 @@ if(NOT ${CMAKE_VERSION} VERSION_LESS "3.16.0")
 		target_precompile_headers(eu07_core PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/stdafx.h>")
 		set_source_files_properties("/glad/src/glad.c" "ref/dds-ktx/src/dds-ktx.c" "ref/zstd/zstd.c" "stb/stb_image.c"
 			"imgui/imgui.cpp" "imgui/imgui_demo.cpp" "imgui/imgui_draw.cpp" "imgui/imgui_widgets.cpp" "imgui/imgui_tables.cpp" "imgui/imgui_impl_glfw.cpp" "imgui/ImGuizmo.cpp"
+			"ref/meshoptimizer/src/vertexcodec.cpp" "ref/meshoptimizer/src/indexcodec.cpp"
 			PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
 	endif()
 endif()

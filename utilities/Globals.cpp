@@ -999,6 +999,15 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "modelformat")
+    {
+        // e4d: a model with an .e4d file beside its .e3d / .t3d is loaded from it; legacy: the .e4d files are left alone
+        std::string value;
+        ParseOne(Parser, value, 1);
+        modelformat_e4d = value == "e4d";
+        return true;
+    }
+
     if (token == "fpslimit")
     {
         float fpslimit = 0.f;
@@ -2653,6 +2662,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "hiddenevents", iHiddenEvents );
     export_as_text( Output, "pause", ( iPause & 1 ) != 0 );
 	export_as_text(Output, "priorityLoadText3D", priorityLoadText3D);
+	export_as_text(Output, "modelformat", std::string{modelformat_e4d ? "e4d" : "legacy"});
     export_as_text( Output, "lang", asLang );
     export_as_text( Output, "python.updatetime", PythonScreenUpdateRate );
     Output

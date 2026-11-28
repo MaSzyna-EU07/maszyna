@@ -21,6 +21,10 @@ namespace e4d {
 struct write_options {
 	bool compress{true}; // zstd for the sections where it saves at least an eighth
 	int level{9};
+	bool codec{true}; // the codecs of meshoptimizer for the vertex and index streams, which unpack several times faster than zstd
+	// zstd also over the streams in a codec: the smallest file (for an archive), which loads slower. measured on a vehicle of
+	// 580 thousand vertices: 7.8 MB and 47 ms with it, 12.2 MB and 37 ms without it
+	bool compress_streams{false};
 };
 
 // the file of the model. the model is written as it is; validate() it first

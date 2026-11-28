@@ -1875,6 +1875,13 @@ bool TModel3d::LoadFromFile(std::string const &FileName, bool dynamic)
 			Init();
 		assign_lod_ranges(Root, name);
 	}
+	else if (auto const e4dfile{Global.modelformat_e4d ? FileCased(name + ".e4d") : std::string{}}; (false == e4dfile.empty()) && LoadFromE4D(e4dfile, dynamic))
+	{
+		// modelformat e4d: the .e4d made from the model takes its place; one which doesn't load leaves the .e3d / .t3d to go on
+		asBinary = "";
+		Init();
+		assign_lod_ranges(Root, name);
+	}
 	else if (false == binaryfile.empty())
 	{
 		LoadFromBinFile(binaryfile, dynamic);
@@ -2641,6 +2648,12 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 	if (!Root)
 		throw std::runtime_error("e3d: no submodels");
 
+	finish_binary(dynamic, hastangents);
+}
+
+// the submodels read from a file (E3D or E4D) tied together, their materials looked up and their geometry handed to the renderer
+void TModel3d::finish_binary(bool const dynamic, bool const hastangents)
+{
 	for (size_t i = 0; (int)i < iSubModelsCount; ++i)
 	{
 		Root[i].BinInit(Root, Matrices.data(), &Textures, &Names, dynamic);

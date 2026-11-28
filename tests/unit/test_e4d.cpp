@@ -406,11 +406,113 @@ TEST_CASE("e4d: parts of several nodes and light slots merged into one primitive
 	}
 }
 
+namespace {
+
+// the sample with a grid of 64 x 64 vertices on the body: streams big enough for the codecs
+e4d::model grid_model() {
+	auto model{sample_model()};
+	auto const first{static_cast<std::uint32_t>(model.positions.size())};
+	constexpr std::uint32_t side{64};
+	for (std::uint32_t row = 0; row < side; ++row) {
+		for (std::uint32_t column = 0; column < side; ++column) {
+			auto const x{static_cast<float>(column) * 0.1f};
+			auto const z{static_cast<float>(row) * 0.1f};
+			model.positions.push_back({x, std::sin(x) * std::cos(z), z});
+			e4d::attributes attribute;
+			attribute.qtangent = e4d::encode_qtangent({glm::normalize(glm::vec3{std::sin(x), 1.f, std::cos(z)}), {1.f, 0.f, 0.f}, 1.f});
+			attribute.uv = {x, z};
+			model.vertex_attributes.push_back(attribute);
+			model.weights.push_back({});
+		}
+	}
+	e4d::primitive_record grid;
+	grid.first_index = static_cast<std::uint32_t>(model.indices16.size());
+	for (std::uint32_t row = 0; row + 1 < side; ++row) {
+		for (std::uint32_t column = 0; column + 1 < side; ++column) {
+			auto const corner{static_cast<std::uint16_t>(row * side + column)};
+			for (auto const index : {corner, static_cast<std::uint16_t>(corner + 1), static_cast<std::uint16_t>(corner + side), static_cast<std::uint16_t>(corner + 1),
+			         static_cast<std::uint16_t>(corner + side + 1), static_cast<std::uint16_t>(corner + side)})
+				model.indices16.push_back(index);
+		}
+	}
+	grid.index_count = static_cast<std::uint32_t>(model.indices16.size()) - grid.first_index;
+	grid.base_vertex = first;
+	grid.vertex_count = side * side;
+	grid.material = 0;
+	grid.node = 0;
+	grid.flags = static_cast<std::uint32_t>(e4d::topology::triangles) | e4d::primitive_flags::indexed | e4d::primitive_flags::opaque;
+	model.primitives.push_back(grid);
+	model.meshes.push_back({2, 1, -1, 0});
+	model.nodes[0].mesh = 2;
+	e4d::compute_bounds(model);
+	return model;
+}
+
+} // namespace
+
+TEST_CASE("e4d: the streams in the codecs of meshoptimizer, with and without zstd")
+{
+	auto const original{grid_model()};
+	REQUIRE(e4d::validate(original).empty());
+	for (auto const compress : {false, true}) {
+		for (auto const codec : {false, true}) {
+			CAPTURE(compress);
+			CAPTURE(codec);
+			auto const file{e4d::write(original, {compress, 9, codec})};
+			auto const positions{get_at<e4d::section_entry>(file, entry_offset(file, e4d::section::positions))};
+			auto const indices{get_at<e4d::section_entry>(file, entry_offset(file, e4d::section::indices16))};
+			CHECK(((positions.flags & e4d::section_flags::meshopt) != 0) == codec);
+			CHECK(((indices.flags & e4d::section_flags::meshopt) != 0) == codec);
+			e4d::model loaded;
+			auto const result{read_file(file, loaded)};
+			REQUIRE_MESSAGE(result.ok, result.error);
+			CHECK(loaded.positions == original.positions);
+			CHECK(loaded.indices16 == original.indices16);
+			CHECK(std::memcmp(loaded.vertex_attributes.data(), original.vertex_attributes.data(), original.vertex_attributes.size() * sizeof(e4d::attributes)) == 0);
+			CHECK(e4d::dump(loaded) == e4d::dump(original));
+		}
+	}
+	// zstd over the codec, for an archive
+	{
+		auto const file{e4d::write(original, {true, 9, true, true})};
+		auto const positions{get_at<e4d::section_entry>(file, entry_offset(file, e4d::section::positions))};
+		CHECK((positions.flags & e4d::section_flags::meshopt) != 0);
+		e4d::model loaded;
+		auto const result{read_file(file, loaded)};
+		REQUIRE_MESSAGE(result.ok, result.error);
+		CHECK(loaded.positions == original.positions);
+		CHECK(e4d::dump(loaded) == e4d::dump(original));
+	}
+	// the codec on a section which isn't a stream, and a stream whose encoded bytes don't decode
+	auto const good{e4d::write(original, {false, 0, true})};
+	auto onnodes{good};
+	auto const nodesoffset{entry_offset(onnodes, e4d::section::nodes)};
+	auto nodes{get_at<e4d::section_entry>(onnodes, nodesoffset)};
+	nodes.flags |= e4d::section_flags::meshopt;
+	put_at(onnodes, nodesoffset, nodes);
+	e4d::model loaded;
+	auto const wrongsection{e4d::read(onnodes, loaded, {false, true})};
+	CHECK_FALSE(wrongsection.ok);
+	CHECK(wrongsection.error.find("only the vertex and index streams") != std::string::npos);
+	auto broken{good};
+	auto const positions{get_at<e4d::section_entry>(broken, entry_offset(broken, e4d::section::positions))};
+	// the stream cut in the middle by a stored size of half of it
+	auto shortened{positions};
+	shortened.stored_size /= 2;
+	put_at(broken, entry_offset(broken, e4d::section::positions), shortened);
+	auto const cut{e4d::read(broken, loaded, {false, true})};
+	CHECK_FALSE(cut.ok);
+	CHECK(cut.error.find("doesn't decode") != std::string::npos);
+	CHECK(loaded.nodes.empty());
+}
+
 TEST_CASE("e4d: a file with random bytes changed is read or refused, never more")
 {
-	for (auto const compress : {false, true}) {
-		auto const good{sample_file(compress)};
-		std::mt19937 random{compress ? 7u : 11u};
+	// the sample, too small for the codecs, and the grid, in them
+	for (auto const variant : {0, 1, 2}) {
+		auto const compress{variant == 1};
+		auto const good{variant < 2 ? sample_file(compress) : e4d::write(grid_model(), {true, 9, true})};
+		std::mt19937 random{static_cast<unsigned>(7 + variant * 4)};
 		std::uniform_int_distribution<std::size_t> position{0, good.size() - 1};
 		std::uniform_int_distribution<int> value{0, 255};
 		for (int attempt = 0; attempt < 3000; ++attempt) {
