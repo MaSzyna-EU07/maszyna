@@ -450,6 +450,12 @@ namespace gl
     };
     // binding point of the opengl renderer, bound with the colour passes
     const GLuint CAB_PROBE_SSBO_BINDING = 17;
+    // the snow lying around the camera (opengl46_snow, snow.glsl): a cell of four floats for every texel of the maps of the occlusion
+    // of the sky (gfx::sky_occlusion), toroidal as they are: the height of the surface of the snow, its depth, the ceiling over it and
+    // how much it is blown off (-1) or blown in (1). bound with every pass, a stand-in of one cell without them
+    const GLuint SNOW_SSBO_BINDING = 18;
+    // the work groups of the passes working the drifts out, 8x8 cells
+    const GLuint SNOW_GROUP_SIZE = 8;
     // the face of the level of the probe the spherical harmonics are taken from, at most, and the work group of cabprobe_sh.comp
     const size_t CAB_PROBE_SH_SIZE = 16;
     // the face of the level of the probe CAB_PROBE_MASK_TEX is a copy of, at most
@@ -570,14 +576,26 @@ namespace gl
         glm::vec4 weather_ambient;
         glm::vec4 cloud_shadow_params;
         glm::vec4 cloud_wind;
+        // the snow cover (environment/snowcover.h, snow.glsl): x the depth over open flat ground, m, y the share of it the wind can
+        // carry, z how wet it is, w how heavily the snow falls now, 0..1
+        glm::vec4 snow_cover;
+        // xy world x and z of the direction the wind which made the drifts blew to (unit), z how far the drifts are made, 0..1, w the
+        // speed of that wind, m/s
+        glm::vec4 snow_drift;
+        // xy world x and z of the wind at the ground now, m/s, z how much snow it carries along the ground, 0..1, w how much snow is
+        // stuck to the faces turned to the wind (the wind of the drifts), 0..1
+        glm::vec4 snow_wind;
+        // what lies on the heads of the rails and the surfaces in the open (environment/railsurface.h, the same state the adhesion of
+        // the rails comes from): x the water, y the ice, z the leaves, 0..1, w the ice on the wires of the catenary, mm
+        glm::vec4 surface_state;
         cloud_layer_ubs cloud_layers[MAX_CLOUD_LAYERS];
         // filled on the gpu (fog_horizon.comp) while the atmosphere is used, by the cpu otherwise
         glm::vec4 fog_horizon[FOG_HORIZON_SAMPLES];
     };
 
-    static_assert(offsetof(weather_ubs, cloud_layers) == 192, "bad layout of weather_ubs");
-    static_assert(offsetof(weather_ubs, fog_horizon) == 192 + 80 * MAX_CLOUD_LAYERS, "bad layout of weather_ubs");
-    static_assert(sizeof(weather_ubs) == 192 + 80 * MAX_CLOUD_LAYERS + 16 * FOG_HORIZON_SAMPLES, "bad size of weather_ubs");
+    static_assert(offsetof(weather_ubs, cloud_layers) == 256, "bad layout of weather_ubs");
+    static_assert(offsetof(weather_ubs, fog_horizon) == 256 + 80 * MAX_CLOUD_LAYERS, "bad layout of weather_ubs");
+    static_assert(sizeof(weather_ubs) == 256 + 80 * MAX_CLOUD_LAYERS + 16 * FOG_HORIZON_SAMPLES, "bad size of weather_ubs");
 
     // the weather buffer is written by fog_horizon.comp as a storage block bound here for the pass. the point is one of the
     // instance culling, which binds its buffers before every use

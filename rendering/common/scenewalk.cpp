@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/common/scenewalk.h"
+#include "simulation/simulationenvironment.h"
 #include "rendering/common/walksync.h"
 #include "utilities/color.h"
 #include "utilities/Globals.h"
@@ -30,6 +31,8 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
 #include "rendering/common/skyocclusion.h"
+#include "rendering/common/arcflicker.h"
+#include "utilities/Timer.h"
 #include <algorithm>
 #include <chrono>
 #include <string>
@@ -40,6 +43,9 @@ namespace gfx
 
 namespace
 {
+
+// the ice on the wires, m, from which their lines are drawn a pixel wider: the colour of the ice starts to show at 0.3 mm (traction.frag)
+constexpr float WIRE_ICE_WIDER{0.002f};
 
 // the environment of a track the drawing takes into its light: the flag of the track (a tunnel, a canyon) only with
 // Global.gfx_tunnelflags. otherwise the light is the one of the geometry around it (gfx::sky_occlusion)
@@ -2913,13 +2919,43 @@ void scene_walk::Render_Alpha(TTraction *Traction)
 
 	// McZapkie-261102: kolor zalezy od materialu i zasniedzenia
 	model_ubs.param[0] = glm::vec4(Traction->wire_color(), glm::min(1.0f, linealpha));
+	// the wind blowing the span aside (traction.vert), as the pantographs meet the wire
+	auto const swayaxis{Traction->sway_axis()};
+	// and the ice on the wires (environment/snowcover.h, the ice the pantographs meet): w its radial thickness, m, which the solids up
+	// close grow by; param[2] each kind, mm (the glaze, the hard rime, the soft rime, the wet snow), which colour the wires
+	// the ice is shown with the weather in the physics (physics.weather), as the pantographs meet it and the wind sways the wires;
+	// without it the wires look as they did before
+	auto const &snow{simulation::Environment.weather().snow()};
+	using icekind = snow_cover::ice_kind;
+	auto const iced{Global.physics_weather.enabled};
+	auto const ice = [&snow, iced](icekind const Kind) { return iced ? snow.wire_ice(Kind) : 0.f; };
+	model_ubs.param[1] = glm::vec4(static_cast<float>(swayaxis.x), static_cast<float>(swayaxis.z), static_cast<float>(Traction->sway()), iced ? snow.wire_ice() : 0.f);
+	model_ubs.param[2] = glm::vec4(ice(icekind::glaze), ice(icekind::rime_hard), ice(icekind::rime_soft), ice(icekind::wet_snow)) * 1000.f;
 
 	if (m_renderpass.draw_mode == rendermode::shadows)
-		walk_shadow_material(null_handle);
+	{
+		// the shadows go with the wires blown aside (physics.weather.wireshadows), or stay as the wires stand still
+		if (Global.physics_weather.wire_shadows)
+			walk_program(walk_shader::line_shadow);
+		else
+			walk_shadow_material(null_handle);
+	}
 	else
 		walk_program( walk_shader::line );
 
 	walk_draw(Traction->m_geometry);
+	// iced wires: their lines drawn again a pixel aside (wire_pixel() of traction.vert), so they show wider than a pixel
+	if (((m_renderpass.draw_mode == rendermode::color) || (m_renderpass.draw_mode == rendermode::reflections)) && (snow.wire_ice() >= WIRE_ICE_WIDER))
+	{
+		auto const scale{std::abs(m_renderpass.pass_camera.projection()[1][1]) * static_cast<float>(std::max(Global.fb_size.y, 1))};
+		if (scale > 0.f)
+		{
+			model_ubs.param[1].w = -2.f / scale;
+			walk_draw(Traction->m_geometry);
+			++m_renderpass.draw_stats.drawcalls;
+			model_ubs.param[1].w = snow.wire_ice();
+		}
+	}
 
 	// up close also the solids of a span drawn by the type of the catenary: the wires and ropes in their real thickness and the fittings.
 	// they're opaque, so they're drawn without blending and write the depth; otherwise they'd cover one another by the order they're drawn in
@@ -2948,6 +2984,12 @@ void scene_walk::Render_Alpha(TTraction *Traction)
 			walk_blending(blending);
 	}
 
+	// the other lines drawn with the program aren't blown aside nor iced
+	model_ubs.param[1] = glm::vec4(0.f);
+	// the lines drawn next by the same program (lines_node) neither sway nor carry ice
+	model_ubs.param[1] = glm::vec4(0.f);
+	model_ubs.param[2] = glm::vec4(0.f);
+
 	// debug data
 	++m_renderpass.draw_stats.traction;
 	++m_renderpass.draw_stats.drawcalls;
@@ -2970,6 +3012,10 @@ void scene_walk::Render_Alpha(scene::lines_node const &Lines)
 	    (data.line_width > 0.f ? 10.f * data.line_width / std::max(0.5f * data.area.radius + 1.f, distance - (0.5f * data.area.radius)) : 1.f); // negative width means the lines are always opague
 
 	model_ubs.param[0] = glm::vec4(glm::vec3(data.lighting.diffuse * walk_sun_ambient()), glm::min(1.0f, linealpha));
+	// the program of the lines is the one of the wires, which reads the sway and the ice from param[1] and param[2]: whatever the last
+	// material left there would blow these lines aside or tint them as iced
+	model_ubs.param[1] = glm::vec4(0.f);
+	model_ubs.param[2] = glm::vec4(0.f);
 
 	if (m_renderpass.draw_mode == rendermode::shadows)
 		walk_shadow_material(null_handle);
@@ -3116,10 +3162,52 @@ bool scene_walk::Render_Alpha(TDynamicObject *Dynamic)
 
 	model_ubs.future = future_stack;
 
+	// the arcs at its pantographs
+	Render_arcs(Dynamic);
+
 	if (Dynamic->btnOn)
 		Dynamic->TurnOff(); // przywrócenie domyślnych pozycji submodeli
 
 	return true;
+}
+
+void scene_walk::Render_arcs(TDynamicObject const *Dynamic)
+{
+	if ((m_renderpass.draw_mode != rendermode::color) || (false == Global.physics_weather.arcs) || (Dynamic->pants == nullptr))
+		return;
+	auto const camera{m_renderpass.pass_camera.position()};
+	for (int index = 0; index < Dynamic->iAnimType[ANIM_PANTS]; ++index)
+	{
+		auto const *pantograph{Dynamic->pants[index].fParamPants};
+		if ((pantograph == nullptr) || (pantograph->arc <= 0.f))
+			continue;
+		// the place of the arc in the view, pulled a little towards the camera out of the strip and the wire; drawn with the depth
+		// test, so the roof of the cab and a bridge hide it
+		auto const &view = OpenGLMatrices.data(GL_MODELVIEW);
+		auto center{view * glm::vec4(glm::vec3(pantograph->arc_position - camera), 1.f)};
+		auto const distance{glm::length(glm::vec3(center))};
+		if (distance > 0.5f)
+			center -= glm::vec4(glm::vec3(center) * (0.3f / distance), 0.f);
+		// the flicker of its light as well (gfx::local_lights)
+		auto const flicker{gfx::arc_flicker(reinterpret_cast<std::uintptr_t>(Dynamic), index, Timer::GetTime())};
+		auto const strength{std::clamp(pantograph->arc * flicker * Global.physics_weather.arc_brightness, 0.f, 1.f)};
+		::glPushMatrix();
+		::glLoadIdentity();
+		::glTranslatef(center.x, center.y, center.z);
+		::glRotated(std::atan2(center.x, center.z) * 180.0 / M_PI, 0.0, 1.0, 0.0);
+		// the billboard is 2.5 m across: the flash some 0.6..1 m
+		auto const scale{0.25f + 0.15f * strength};
+		::glScalef(scale, scale, scale);
+		walk_program(walk_shader::billboard);
+		walk_texture(0, m_glaretexture);
+		// blue-white and brighter than white, the bloom of the post processing takes it further
+		model_ubs.param[0] = glm::vec4(glm::vec3{2.4f, 2.8f, 3.4f} * strength, strength);
+		// added to what is behind it like the glare of a lamp, a flash rather than a sprite
+		walk_additive(true);
+		walk_draw(m_billboardgeometry);
+		walk_additive(false);
+		::glPopMatrix();
+	}
 }
 
 bool scene_walk::Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance)

@@ -256,6 +256,7 @@ void vulkan14_renderer::resume_rendering()
 	auto const blending{draw.blending};
 	auto const cullface{draw.cullface};
 	auto const glare{draw.glare};
+	auto const additive{draw.additive};
 	auto const depthmask_off{draw.depthmask_off};
 	auto *program{draw.program};
 	auto const textures{draw.textures};
@@ -263,6 +264,7 @@ void vulkan14_renderer::resume_rendering()
 	draw.blending = blending;
 	draw.cullface = cullface;
 	draw.glare = glare;
+	draw.additive = additive;
 	draw.depthmask_off = depthmask_off;
 	draw.program = program;
 	draw.textures = textures;

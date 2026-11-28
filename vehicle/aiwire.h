@@ -27,6 +27,10 @@ struct contact {
 	// sideways distance of the wire from the working part of the slide: |offset along the left vector| less the slide's
 	// half width. the wire is on the slide when it's not positive
 	double horizontal{0.0};
+	// the parameter of the crossing along the span (0 at Point1, 1 at its other end) and the crossing against the
+	// pantograph's base point, for those who move the wire from where it hangs still (the sway in the wind)
+	double parameter{0.0};
+	glm::dvec3 offset{0.0};
 };
 
 // the pantograph with its base point at Point, on a vehicle whose front, up and left vectors are Front, Up and Left, and

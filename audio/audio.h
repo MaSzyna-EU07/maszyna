@@ -56,6 +56,10 @@ public:
     // creates buffer object out of data stored in specified file. returns: handle to the buffer or null_handle if creation failed
     buffer_handle
         create( std::string const &Filename );
+    // a buffer of a sound the simulator makes itself (16 bit mono Samples at Rate), known as the sound file Name of the sound folder;
+    // a file of that name there is taken instead, so the data can replace it. returns: handle to the buffer
+    buffer_handle
+        create_generated( std::string const &Name, std::vector<std::int16_t> const &Samples, unsigned int const Rate );
     // provides direct access to a specified buffer. a buffer still decoded in the background is completed first
     audio::openal_buffer const &
         buffer( audio::buffer_handle const Buffer ) const;

@@ -372,7 +372,11 @@ void state_manager::process_commands() {
 				model->LightSet(light, state);
 		}
 
-		if (commanddata.command == user_command::setdatetime) {
+		if ((commanddata.command == user_command::setdatetime) && Global.ClockLocked) {
+			// the live weather keeps the clock and the date of the system (weather.live.locktime)
+			WriteLog("Time: not set, the live weather keeps the clock of the system (weather.live.locktime)");
+		}
+		else if (commanddata.command == user_command::setdatetime) {
 			int yearday = std::round(commanddata.param1);
 			int minute = std::round(commanddata.param2);
 			simulation::Time.set_time(yearday, minute);

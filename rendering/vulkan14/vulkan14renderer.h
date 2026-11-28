@@ -200,6 +200,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void walk_cull_face(bool const Enabled) override;
 	void walk_decal(bool const Enabled) override;
 	void walk_glare(bool const Enabled) override;
+	void walk_additive(bool const Enabled) override;
 	void walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry) override;
 	void walk_light_query(TSubModel *Submodel, bool const Begin) override;
 	void walk_editor_cursor() override;

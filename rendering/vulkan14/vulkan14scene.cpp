@@ -669,6 +669,8 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		scene.prepass_alpha = program("depthprepass.vert", "depthprepass_alpha.frag", vk14::vertex_kind::scene);
 		scene.cube_shadow = program("shadowcube.vert", "shadowmap.frag", vk14::vertex_kind::scene);
 		scene.cube_alpha_shadow = program("shadowcube.vert", "alphashadowmap.frag", vk14::vertex_kind::scene);
+		scene.wire_shadow = program("wireshadow.vert", "shadowmap.frag", vk14::vertex_kind::scene);
+		scene.cube_wire_shadow = program("wireshadowcube.vert", "shadowmap.frag", vk14::vertex_kind::scene);
 		scene.quad = ctx.shaders.get("quad.vert");
 		for (auto const *name : {"copy.frag", "present.frag", "postfx_tonemapping.frag", "postfx_motionblur.frag", "postfx_chromaticaberration.frag"})
 		{
@@ -1717,6 +1719,9 @@ void vulkan14_renderer::walk_program(walk_shader const Program)
 	case walk_shader::line:
 		m_draw->program = scene.line.get();
 		break;
+	case walk_shader::line_shadow:
+		m_draw->program = (m_cubeshadows ? scene.cube_wire_shadow.get() : scene.wire_shadow.get());
+		break;
 	case walk_shader::billboard:
 		m_draw->program = scene.billboard.get();
 		break;
@@ -1824,6 +1829,12 @@ void vulkan14_renderer::walk_glare(bool const Enabled)
 {
 	// without the depth test, added to what is there
 	m_draw->glare = Enabled;
+}
+
+void vulkan14_renderer::walk_additive(bool const Enabled)
+{
+	// added to what is there, with the depth test
+	m_draw->additive = Enabled;
 }
 
 void vulkan14_renderer::walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry)
@@ -2122,7 +2133,7 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 	auto &scene{ctx.scene};
 	auto const commands{draw.commands};
 	// the pipeline for the state of the walk
-	auto const blend{draw.glare ? vk14::blend_mode::scene_additive : (draw.blending ? vk14::blend_mode::scene_alpha : vk14::blend_mode::none)};
+	auto const blend{(draw.glare || draw.additive) ? vk14::blend_mode::scene_additive : (draw.blending ? vk14::blend_mode::scene_alpha : vk14::blend_mode::none)};
 	if (false == bind_scene_pipeline(*draw.program, *draw.targets, blend, static_cast<int>(chunk.topology)))
 	{
 		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);

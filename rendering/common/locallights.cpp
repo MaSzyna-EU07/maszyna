@@ -20,7 +20,9 @@ http://mozilla.org/MPL/2.0/.
 #include <unordered_set>
 
 #include "utilities/Globals.h"
+#include "rendering/common/arcflicker.h"
 #include "rendering/common/skyocclusion.h"
+#include "utilities/Timer.h"
 #include "utilities/utilities.h"
 #include "scene/scene.h"
 #include "model/AnimModel.h"
@@ -257,6 +259,37 @@ void gfx::local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Re
 					continue;
 				}
 				gather_vehicle(vehicle, Camera, Geometry, freespotbrightness, compartmentbrightness);
+			}
+		}
+
+		// the arcs at the pantographs (physics.weather.arcs): a blue-white light flickering at the wire, by day as well
+		if ((range > 0.f) && Global.physics_weather.arcs)
+		{
+			for (auto *vehicle : simulation::Vehicles.sequence())
+			{
+				if ((vehicle->pants == nullptr) || (glm::length(vehicle->GetPosition() - Camera) > range + vehicle->radius()))
+				{
+					continue;
+				}
+				for (int index = 0; index < vehicle->iAnimType[ANIM_PANTS]; ++index)
+				{
+					auto const *pantograph{vehicle->pants[index].fParamPants};
+					if ((pantograph == nullptr) || (pantograph->arc <= 0.f))
+					{
+						continue;
+					}
+					light arc;
+					arc.position = pantograph->arc_position;
+					// the arc flickers, as its billboard does (scene_walk::Render_arcs())
+					auto const flicker{gfx::arc_flicker(reinterpret_cast<std::uintptr_t>(vehicle), index, Timer::GetTime())};
+					arc.color = glm::vec3{0.70f, 0.82f, 1.00f} * (60.f * Global.physics_weather.arc_brightness * pantograph->arc * flicker);
+					arc.range = std::min(light_range(arc.color), 60.f);
+					arc.radius = 0.05f;
+					arc.soft_falloff = true;
+					arc.cast_shadows = false;
+					m_lights.emplace_back(arc);
+					++m_vehiclecount;
+				}
 			}
 		}
 

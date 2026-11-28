@@ -64,6 +64,12 @@ bool opengl46_sky_occlusion::gpu_allocate(int const Side)
 	m_occlusion = make_map(GL_RGBA16F, Side);
 	if ((m_heights == 0) || (m_occlusion == 0))
 		return false;
+	if (snow_surface())
+	{
+		m_surface = make_map(GL_RGBA32F, Side);
+		float const none[4]{-1.0e4f, 1.0e4f, 1.0e4f, 0.f};
+		glClearTexImage(m_surface, 0, GL_RGBA, GL_FLOAT, none);
+	}
 	bind();
 	return true;
 }
@@ -74,8 +80,11 @@ void opengl46_sky_occlusion::gpu_release()
 		glDeleteTextures(1, &m_heights);
 	if (m_occlusion != 0)
 		glDeleteTextures(1, &m_occlusion);
+	if (m_surface != 0)
+		glDeleteTextures(1, &m_surface);
 	m_heights = 0;
 	m_occlusion = 0;
+	m_surface = 0;
 	if (m_emptyheights != 0)
 		bind();
 }
@@ -92,6 +101,20 @@ void opengl46_sky_occlusion::gpu_upload(int const X, int const Y, int const Size
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 	glTextureSubImage2D(m_heights, 0, X, Y, Size, Size, GL_RGBA, GL_FLOAT, Heights);
 	glTextureSubImage2D(m_occlusion, 0, X, Y, Size, Size, GL_RGBA, GL_HALF_FLOAT, Occlusion);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(unpack));
+	glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
+}
+
+void opengl46_sky_occlusion::gpu_upload_surface(int const X, int const Y, int const Size, float const *Surface)
+{
+	if (m_surface == 0)
+		return;
+	GLint unpack{0}, alignment{4};
+	glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpack);
+	glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+	glTextureSubImage2D(m_surface, 0, X, Y, Size, Size, GL_RGBA, GL_FLOAT, Surface);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(unpack));
 	glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
 }

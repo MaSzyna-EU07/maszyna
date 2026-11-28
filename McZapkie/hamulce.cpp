@@ -410,6 +410,20 @@ TBrake::TBrake(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn
 	default: // domyslnie
 		FM = std::make_shared<TP10>();
 	}
+	switch (i_mat)
+	{
+	case bp_FR513:
+	case bp_FR510:
+	case bp_Cosid:
+		Material = weather_physics::brake_material::composite;
+		break;
+	case bp_D1:
+	case bp_D2:
+		Material = weather_physics::brake_material::disc;
+		break;
+	default:
+		Material = weather_physics::brake_material::cast_iron;
+	}
 }
 
 /// <summary>
@@ -438,7 +452,7 @@ void TBrake::Init(double const PP, double const HPP, double const LPP, double co
 // pobranie wspolczynnika tarcia materialu
 double TBrake::GetFC(double const Vel, double const N)
 {
-	return FM->GetFC(N, Vel);
+	return FM->GetFC(N, Vel) * WeatherFactor;
 }
 
 /// <summary>Returns the gauge pressure inside the brake cylinder.</summary>

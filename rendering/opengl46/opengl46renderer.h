@@ -45,6 +45,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46localshadows.h"
 #include "rendering/opengl46/opengl46cabprobe.h"
 #include "rendering/opengl46/opengl46skyocclusion.h"
+#include "rendering/opengl46/opengl46snow.h"
 #include "rendering/opengl46/opengl46instancecull.h"
 #include "rendering/opengl46/opengl46hiz.h"
 #include "rendering/opengl46/opengl46timbers.h"
@@ -233,6 +234,7 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	void walk_cull_face(bool const Enabled) override;
 	void walk_decal(bool const Enabled) override;
 	void walk_glare(bool const Enabled) override;
+	void walk_additive(bool const Enabled) override;
 	void walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry) override;
 	void walk_light_query(TSubModel *Submodel, bool const Begin) override;
 	// the gpu culling of the instances, models and sleepers, the depth pass of the whole scene
@@ -475,6 +477,8 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	opengl46_gpu_particles::view Particles_View() const;
 	// the grass of the heightmap terrain around the camera of the main view; Future: the matrix of the motion vectors
 	void Render_grass(glm::mat4 const &Future);
+	// the surface of the drifts of the snow, over the ground drawn (opengl46_snow)
+	void Render_snow(glm::mat4 const &Future);
   void Render_vr_models();
 	void Render_editor_overlay();
 	// writes the lighting of the pass about to be drawn to the light buffer: the sun, the ambient light and the fog, and the headlights of Lights
@@ -837,6 +841,8 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	bool m_cabprobepass = false;
 	// the occlusion of the sky and of the sun by the scenery around the camera (tunnels, bridges, roofs: the track T)
 	opengl46_sky_occlusion m_skyocclusion;
+	// the snow lying around the camera, from the maps above
+	opengl46_snow m_snow;
 
     double m_precipitationrotation;
 
@@ -900,6 +906,7 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	glm::vec3                        m_ssao_kernel[32];
 
 	std::unique_ptr<gl::program> m_shadow_shader;
+	std::unique_ptr<gl::program> m_wire_shadow_shader; // the shadows of the wires blown aside by the wind (wireshadow.vert)
 	std::unique_ptr<gl::program> m_alpha_shadow_shader;
 
 	std::unique_ptr<gl::framebuffer> m_pick_fb;

@@ -37,18 +37,25 @@ reference (see `elevation`).
 
 | Entry | Meaning |
 |---|---|
-| `metar "report"` | a weather report (METAR) read first: the wind, the visibility, the present weather (rain, snow, drizzle, mist, fog, shallow and patchy fog, haze, showers, thunderstorms), the clouds with their heights in feet, the vertical visibility and the temperature. The station, time, pressure, runway visual range and anything after `TEMPO`, `BECMG`, `NOSIG` or `RMK` are skipped. Reports name only the convective genera (`CB`, `TCU`); the others are taken from the height, the amount and the precipitation (low and broken: stratocumulus; low, overcast and precipitating: nimbostratus; very low: stratus; middle: altocumulus or altostratus; high: cirrus or cirrostratus) |
+| `location latitude longitude` | where the scenery lies, in degrees, for `climate`. Without it the place the editor keeps for the scenery (the origin of its aerial photos) is taken, and without that the middle of Poland |
+| `climate [kind]` | the weather the place has in the month of the simulation (see *The weather of the climate*), in place of everything set before it; the entries after it change it. Give `location` and `seed` before it |
+| `metar "report"` | a weather report (METAR) read first: the wind at the ground with its gusts (`27015G25KT`), the visibility, the present weather (rain, snow, drizzle, mist, fog, shallow and patchy fog, haze, showers, thunderstorms), the clouds with their heights in feet, the vertical visibility, the temperature and the dew point. The station, time, pressure, runway visual range and anything after `TEMPO`, `BECMG`, `NOSIG` or `RMK` are skipped. Reports name only the convective genera (`CB`, `TCU`); the others are taken from the height, the amount and the precipitation (low and broken: stratocumulus; low, overcast and precipitating: nimbostratus; very low: stratus; middle: altocumulus or altostratus; high: cirrus or cirrostratus) |
 | `visibility m` | meteorological visibility at the ground: how far a dark object is still seen against the horizon (5% contrast) |
 | `haze m` | how fast the haze thins out with the height: it is e times less dense this many metres higher. Low for a mist, high for a dusty or smoky air |
 | `groundfog thickness visibility` | fog lying on the ground, this many metres thick, with this visibility inside it. It fills the valleys below the ground reference too. `0` removes it |
 | `fognoise 0..1` | how patchy the ground fog is |
 | `clouds genus amount base [top [density]]` | a layer of clouds (at most 4, the ones covering the most are kept). The genus: `cumulus` (`cu`), `towering_cumulus` (`tcu`), `cumulonimbus` (`cb`), `stratocumulus` (`sc`), `stratus` (`st`), `nimbostratus` (`ns`), `altocumulus` (`ac`), `altostratus` (`as`), `cirrus` (`ci`), `cirrostratus` (`cs`), `cirrocumulus` (`cc`). The amount: `few`, `sct`, `bkn`, `ovc`, or oktas 0..8. Without the top the layer gets the typical depth of the genus; the density multiplies the typical one (0..4) |
 | `noclouds` | removes the layers set before (by a report, say) |
-| `precipitation kind [intensity]` | `rain`, `snow`, `auto` (by the air temperature, as the overcast above 1 always did) or `none`, intensity 0..1 |
+| `precipitation kind [intensity]` | `rain`, `snow`, `auto` or `none`, intensity 0..1. With `auto`, where the moisture of the air is described (a dew point, a humidity, a report with one, the climate), snow falls up to a wet-bulb temperature of 1 degree: in dry air at a few degrees above zero, in saturated air only just above it; without the moisture up to an air temperature of 1 degree, as the overcast above 1 always did. `rain` in a frost is freezing rain, which glazes the wires |
+| `wind direction speed [gust]` | the wind at the ground: where it blows from (degrees from the north, clockwise), its mean speed and the speed of its gusts in m/s (without the gusts: half as much again). The wind of the simulation (the smoke, the grass, the rain, the drifting snow) follows it, wandering between lulls and gusts, and the clouds go the same way half as fast again. Without it (and without a report) the simulation keeps its light changing wind of up to 4 m/s |
 | `cloudwind direction speed` | the wind at the height of the clouds: where it blows from (degrees from the north, clockwise) and its speed in m/s. The higher the layer, the faster it goes |
-| `temperature degrees` | the air temperature, applied with the weather |
+| `temperature degrees` | the air temperature, applied with the weather, the same all day |
+| `temperaturerange lowest highest` | the lowest and the highest temperature of the day: the air temperature follows the time of the day between them, lowest about 5 and highest about 15 o'clock |
+| `dewpoint degrees` | the dew point: the moisture of the air |
+| `humidity percent` | the same given as the relative humidity at the temperature set before it |
 | `elevation m` | world height (y) of the ground the heights of the weather are counted from. By default the ground under the camera where the simulation starts; give it for hilly sceneries, so the clouds and the valley fog stay at the same height whichever place the simulation starts at |
 | `seed n` | another arrangement of the clouds |
+| `snowcover depth [drift [loose]]` | snow lying from the start: its depth over open flat ground in metres, how far the wind has worked it into drifts (0..1, by default 0.5, the drifts turned to the wind at the ground of the section) and how much of it the wind can still carry (0..1, by default 0.5). Applied once: a later change of the weather keeps the snow as it lies then |
 
 What each genus looks like:
 
@@ -60,6 +67,130 @@ What each genus looks like:
 | stratus, nimbostratus | even, grey sheets; nimbostratus thick and dark, the rain cloud |
 | altostratus | a thin, even veil the sun shines through dimly |
 | cirrus, cirrostratus, cirrocumulus | thin sheets of ice high up: strands drawn out along the wind, an even veil, small ripples |
+
+## The weather of the climate
+
+`climate kind` in the weather section (or in the text given to `__simulation.metar`), and the **Weather** window, make the weather
+a place typically has in a month: the temperatures of the day, the dew point, the wind at the ground with its gusts, drawn from the
+wind rose of the season, the clouds, the visibility, what falls and the snow lying. The kinds:
+
+| Kind | Weather |
+|---|---|
+| `typical` | an average day of the month (the default) |
+| `fair` | a high: little cloud, a wide range of the temperature, a light wind |
+| `overcast` | a low grey sky, dry, the temperature nearly the same all day |
+| `precipitation` | steady rain or snow from a thick layer |
+| `showers` | passing showers from heaped clouds, gusty |
+| `storm` | a thunderstorm: a cumulonimbus, heavy rain, strong gusts |
+| `fog` | a still foggy day |
+| `frost` | a winter high: clear, still, well below the average, from the east, over snow |
+| `thaw` | mild wet air from the south-west over old snow, drizzle |
+| `blizzard` | heavy snow in a strong wind over deep drifting snow |
+| `gale` | a deep low passing: a very strong gusty wind from the west |
+| `heat` | a hot spell |
+| `random` | one of the above, each as often as the month has it: by its days with precipitation, fog and storms, its cloudiness, its snow |
+
+The winter kinds come only in the months cold enough for them, the storms and the heat in the warm ones. `seed` before `climate`
+makes the same day each time; without it it is another day each time.
+
+The months are the climate normals of the weather station nearest to the scenery (within 150 km; the summit stations, Sniezka
+and Kasprowy Wierch, are given to no scenery): 1991-2020 of 57 synoptic stations of IMGW-PIB, built into the simulator
+(`environment/climatestations.cpp`). `tools/weather/imgw_normals.py --cpp environment/climatestations.cpp` makes that file again from
+the public monthly measurements (it needs the network once). A `climate/stations.txt` in the folder of the simulator, which the
+script writes too, takes the place of the table built in: for other normals, other stations, or wind roses of the stations
+(`--roses`; the stations built in share typical roses of central Poland). With no station near, Lodz-Lublinek stands in: the
+lowlands in the middle of Poland, away from the sea and the mountains.
+
+Source of the data: Instytut Meteorologii i Gospodarki Wodnej - Panstwowy Instytut Badawczy; the data of IMGW-PIB were processed.
+
+```
+weather
+  location 50.06 19.94
+  seed 12
+  climate blizzard
+  visibility 400
+endweather
+```
+
+## Where the weather comes from (weather.mode)
+
+| `weather.mode` | Weather |
+|---|---|
+| `scenery` (the default) | as the scenery and the starter set it, and nothing else: the weather section, the old `atmo`, the temperature and the date of the starter |
+| `preset` | a kind of the climate of the place (the table above) set by `weather.preset <kind>`, or `weather.preset random` (the default): one drawn as often as each comes in the month. Where the place of the scenery isn't known, the climate of the stand-in station |
+| `live` | the weather now at the vehicle driven (the camera without one), from [Open-Meteo](https://open-meteo.com) (free, no key), on a scenery laid on the map: a `//$g` line of Rainsted in the scenery file or a file it includes near its top (the IRT sceneries), or the place the editor keeps for the scenery. Fetched when the scenery starts (the first report goes at once, with the snow lying there), then every `weather.live.interval` seconds (60..300, 300 by default) for the place the vehicle is at, the change going over two minutes. A failed fetch is tried again in a minute; until the first report comes, and on a scenery off the map or without the network, the weather of the scenery stands |
+| `manual`, `auto` | the body of a weather section of `weather.manual` over the one of the scenery; `auto` as `preset` with `random`, but only where the place of the scenery is known |
+
+The live weather is the weather now, so with it the simulation goes by the date and the clock of the system, whatever the scenario
+and the starter set (`live_weather::active()`): the day of the year and its season are today's, and the clock is shifted to the one
+of the system as `scenario.time.current` shifts it, the timetables with it. On a scenery off the map, or without the network, the
+live weather doesn't start, and the date and the clock of the starter stand as in the other modes. With `weather.live.locktime yes` (the default)
+the time can't go faster while the live weather goes (F6, the slider of the debug panel and `timespeed` are left without effect) nor
+be set by hand (the window Time and environment, the sliders of the day and the time of the debug panel, the command `setdatetime`),
+so the clock of the simulation stays the one of the system; `no` lets it go faster, the weather staying the one of now. The answer of Open-Meteo goes into the simulation as a
+weather report (`environment/liveweather.h`, `environment/liveweatherreport.cpp`): the wind at 10 m with its gusts, the visibility,
+what falls by the weather code of the WMO (the freezing rain and drizzle and the fog leaving rime too), the low clouds with a base the
+spread of the temperature and the dew point gives, the middle and the high ones, the temperature and the dew point. The window
+**Time and environment** shows the last report and the place it is of.
+
+## Snow lying
+
+The snow falls, lies, drifts and melts with the weather (`environment/snowcover.h`, kept by the simulation):
+
+- it piles up while it snows, about 7 cm an hour in the heaviest snowfall of a frost, less near zero, where the new snow is
+  denser (by the wet-bulb temperature of the air it falls through); it settles as it lies, faster in the warmth, melts above
+  zero (3 mm of water a degree and a day, more in the rain), and dry air and wind take a little of it straight off;
+- the wind at the ground (the wind of the simulation, gusts included) carries the loose snow along the ground once
+  it is over about 4 m/s for new dry snow, more for old, crusted or wet snow, and the more the stronger it is (the cube of the wind
+  over the threshold). As long as it carries it, the drifts grow and turn to it; new snow falling in a calm evens them out;
+- in a wind, the falling snow sticks to the faces turned to it (poles, signals, the fronts of the vehicles), best when it is wet,
+  at a wet-bulb temperature about zero, and goes in the warmth and, slowly, in dry air;
+- the ice on the wires grows too: the glaze of freezing rain, the rime of a freezing fog or of saturated air in the wind and a sleeve of wet snow, with
+  its thickness and density. Nothing reads it yet; it is there for the look of the catenary and the contact of the pantographs.
+
+The OpenGL 4.6 renderer draws the snow with `gfx.snow drifts` (or `surfaces`, see below). It is off by default (`gfx.snow no`):
+the existing sceneries look as they did until the player turns it on. `gfx.snow` is for the OpenGL 4.6 renderer only: the Vulkan
+renderer draws no lying snow, and with it the key changes nothing, nor is the surface for the snow worked out. The snow in the
+physics (`physics.snow`, off by default too: the snow lying on the tracks holds the trains back) is the same with either renderer.
+
+What the OpenGL 4.6 renderer draws:
+
+- on every surface lit in the open, by how much it faces the sky and how deep the snow is: thin snow lies in patches on flat ground
+  only, deeper snow on steeper slopes too. Nothing lies under a roof, a bridge or in a tunnel, inside the cabs and the interiors,
+  on the water and on the grass, whose blades stick out of it;
+- around the camera (as far as the maps of `gfx.skyvisibility` reach: 192 m at the medium level), from the shape of the scenery
+  seen from above, how the wind worked the snow: the drifts in the lee of what stands in its way (as long as about 10 to 15 times
+  the height of the obstacle, never higher than it), less in front of it with a gap swept at its foot, the hollows, ditches and
+  cuttings filled, the crests and the slopes facing the wind blown bare; over the tracks the snow is kept 3 cm under the top of the
+  rails, whose heads stay clean, the ploughs leave slopes beside them, and a road keeps a packed layer. Where the snow is deeper than
+  a few centimetres it is a surface of its own over the ground, which buries what is lower than it (the foot of the poles, the
+  sleepers, the grass, low fences);
+- the snow is whiter when new and dry, greyer when old and wet, soiled over the tracks and roads; its crystals glint in the sun up
+  close, the wind leaves ripples on the drifts and blows streaks along it in a strong wind.
+
+`gfx.snow surfaces` leaves out the surface of the drifts, `gfx.snow no` all of it. Without `gfx.skyvisibility` the snow lies evenly
+on the surfaces turned up, and there are no drifts. In the **Weather** window (and in the editor, **Weather and time**) the depth,
+the drifts and the looseness of the snow can be set by hand, and the snow made to go faster than the simulation, to watch it pile up,
+drift and melt.
+
+The drifts are worked out on the gpu again only when something they're made of changed: the maps (a tile worked out, the snow on
+the tracks), the snow (its depth, the drifting, its wind) or the place of the camera (4 texels on). Then a quarter of the maps a
+frame, all of them in 4 frames, and at once the first time and after a jump of the camera. The surface of the drifts is drawn by
+blocks of 16 x 16 texels, the ones out of the view left out. The debug panel shows the gpu time of the last quarter worked out and
+of the last surface drawn.
+
+With `gfx.wetsurfaces yes` (off by default) the OpenGL 4.6 renderer shows the water and the ice the weather leaves on the
+surfaces in the open, as the physics has them on the rails: darker and glossier where wet, glassy where iced; none under a roof, a
+bridge, in a tunnel or under the snow.
+
+## In a network session
+
+The weather model isn't kept the same on the machines of a network session yet: each would work out a weather of its own from
+its own `eu07.ini`, its camera and the live reports, and the physics of the vehicles would go apart. So in a network session
+(`network.server` or `network.client` in `eu07.ini`) it is off, whatever `eu07.ini` says: `physics.weather 0`, `physics.snow 0`
+and `weather.mode scenery`, the log says so at the start, and the **Weather physics** window has nothing to set. The weather is the
+one of the scenery and the starter, as before the weather model. What only draws (`gfx.snow`, `gfx.wetsurfaces`) is left to each
+machine: it changes nothing in the simulation.
 
 ## Changing the weather while the simulation runs
 

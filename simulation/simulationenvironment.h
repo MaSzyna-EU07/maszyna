@@ -85,6 +85,7 @@ private:
     };
 // methods
     void update_wind();
+    void update_described_wind( float const Timedelta );
 // members
     CSkyDome m_skydome;
     cStars m_stars;

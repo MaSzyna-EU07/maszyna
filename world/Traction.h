@@ -79,6 +79,15 @@ class TTraction : public scene::basic_node
     // creates geometry data in specified geometry bank. returns: number of created elements, or NULL
     // NOTE: deleting nodes doesn't currently release geometry data owned by the node. TODO: implement erasing individual geometry chunks and banks
     std::size_t create_geometry( gfx::geometrybank_handle const &Bank );
+    // the wind blowing the wires of the span aside (physics.weather.wirewind, weather_physics::wire_sway()): the horizontal unit
+    // across the span, how far the middle of the span is blown along it now (m, the renderers draw it so), and where the wire at
+    // Parameter (0..1 along the span, as in pPoint1 + Parameter * vParametric) is blown to (the pantographs meet it there)
+    glm::dvec3 sway_axis() const;
+    double sway() const;
+    glm::dvec3 sway_at( double const Parameter ) const;
+    // the lines (Lines) or the triangles of the drawn span made ready to be blown aside by traction.vert: the place of each vertex
+    // along the span in its texture x, the long lines cut into pieces short enough to bend
+    void sway_vertices( gfx::vertex_array &Vertices, bool const Lines ) const;
     int TestPoint(glm::dvec3 const &Point) const;
     void Connect(int my, TTraction *with, int to);
     void Init();

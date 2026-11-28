@@ -220,6 +220,8 @@ fill_chunk( TTraction &Traction, gfx::geometry_handle &Chunk, std::vector<catena
         return {};
     }
     auto data { vertices( Traction, Solid ) };
+    // the wire where the wind blows it (TTraction::sway_at())
+    Traction.sway_vertices( data, false );
     gfx::userdata_array userdata;
     if( Chunk == null_handle ) {
         Chunk = GfxRenderer->Insert( data, userdata, Traction.m_catenaryspan->solidbank, GL_TRIANGLES );
@@ -425,6 +427,7 @@ catenary_span_refresh( TTraction &Traction ) {
     if( Traction.m_geometry == null_handle ) { return; }
     gfx::vertex_array vertices;
     if( false == catenary_span_lines( Traction, vertices ) ) { return; }
+    Traction.sway_vertices( vertices, true );
     gfx::userdata_array userdata;
     GfxRenderer->Replace( vertices, userdata, Traction.m_geometry, GL_LINES );
 }

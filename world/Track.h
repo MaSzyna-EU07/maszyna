@@ -413,6 +413,16 @@ public:
     void VelocitySet(float v);
     double VelocityGet();
     float Friction() const;
+    // the snow lying on the track at Distance from its start, m over the ground (environment/snowcover.h): what the weather
+    // brought since a vehicle last went over that place, no more than lies around it. 0 with physics.snow off
+    double snow_at( double const Distance ) const;
+    // a vehicle goes over the place at Distance: it pushes the snow lying there away
+    void snow_cleared( double const Distance );
+    // the wheels of a vehicle go over the place at Distance: they take off a part of what lies on the heads of the rails
+    // (McZapkie/weatherphysics.h)
+    void wheels_passed( double const Distance );
+    // seconds since wheels last went over the place at Distance, negative when none did since the start
+    double since_wheels( double const Distance ) const;
     // a switch has two paths, any other track the one
     int path_count() const;
     TSegment *path_segment( int const Path ) const;
@@ -459,6 +469,25 @@ private:
 // types
     using profiles_array = std::vector<gfx::vertex_array>;
     using profiles_map = std::unordered_map<std::string, int>;
+    // the snow on the track (snow_at()): the snow brought (snow_cover::brought()) when the track was last cleared all along, and
+    // when the passage going on cleared the stretch from..to of it; that passage goes on while vehicles keep going over it
+    struct snow_state {
+        double before { 0.0 };
+        double now { 0.0 };
+        double from { 1.0 };
+        double to { 0.0 };
+        double touched { -1.0e9 }; // s of the time of the simulation
+    };
+    snow_state m_snow;
+    // the wheels over the track (since_wheels()): when they last went all along it, and when the passage going on went over the
+    // stretch from..to of it, s of the time of the simulation (negative: never)
+    struct wheels_state {
+        double whole { -1.0 };
+        double from { 1.0 };
+        double to { 0.0 };
+        double touched { -1.0 };
+    };
+    wheels_state m_wheels;
 // methods
     // radius() subclass details, calculates node's bounding radius
     float radius_() const override;

@@ -29,6 +29,9 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
 	# and the switches laid into the curves
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
+	"${CMAKE_SOURCE_DIR}/environment/railsurface.cpp"
+	# the answer of the live weather read into a report
+	"${CMAKE_SOURCE_DIR}/environment/liveweatherreport.cpp"
 	# and the fouling points of the switches, widened in the curves as the gauge is
 	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
@@ -38,6 +41,11 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/rendering/common/freecameramotion.cpp"
 	# and the http client the editor fetches its aids with
 	"${CMAKE_SOURCE_DIR}/editor/editorHttp.cpp"
+	# the snow lying, as the weather lays it, drifts and melts it
+	"${CMAKE_SOURCE_DIR}/environment/snowcover.cpp"
+	# and the weather made of the climate of a place
+	"${CMAKE_SOURCE_DIR}/environment/climate.cpp"
+	"${CMAKE_SOURCE_DIR}/environment/climatestations.cpp"
 	"${CMAKE_SOURCE_DIR}/utilities/asciiname.cpp"
 	# and what the switch tool tells of the drives of the switches
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchDrives.cpp"

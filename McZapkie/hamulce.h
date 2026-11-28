@@ -34,6 +34,7 @@ Knorr/West EP - żeby był
 #pragma once
 
 #include "friction.h" // Pascal unit
+#include "weatherphysics.h"
 
 /// <summary>Number of positions of the local (auxiliary/manual) brake handle.</summary>
 static int const LocalBrakePosNo = 10; /*ilosc nastaw hamulca recznego lub pomocniczego*/
@@ -347,6 +348,10 @@ class TBrake
 	int BrakeDelayFlag = 0; // aktualna nastawa
 	/// <summary>Friction material model used for the shoes/discs.</summary>
 	std::shared_ptr<TFricMat> FM; // material cierny
+	/// <summary>What the blocks or the pads are made of, for the weather (McZapkie/weatherphysics.h).</summary>
+	weather_physics::brake_material Material{weather_physics::brake_material::cast_iron};
+	/// <summary>The share of the friction the water and the ice on the brakes leave, set by the vehicle every step.</summary>
+	double WeatherFactor{1.0};
 	/// <summary>Maximum brake cylinder pressure [bar] in service braking.</summary>
 	double MaxBP = 0.0; // najwyzsze cisnienie
 	/// <summary>Number of braked axles on the vehicle.</summary>
@@ -404,6 +409,19 @@ class TBrake
 	/// <param name="N">Normal force on the block [N].</param>
 	/// <returns>Friction coefficient.</returns>
 	double GetFC(double const Vel, double const N); // wspolczynnik tarcia - hamulec wie lepiej
+	/// <summary>What the blocks or the pads are made of, and the share of their friction the weather leaves (McZapkie/weatherphysics.h).</summary>
+	weather_physics::brake_material material() const
+	{
+		return Material;
+	}
+	double weather_factor() const
+	{
+		return WeatherFactor;
+	}
+	void weather_factor(double const Factor)
+	{
+		WeatherFactor = Factor;
+	}
 	/// <summary>
 	/// Advances the brake distributor for one simulation step and returns the net
 	/// volume exchanged with the brake pipe (positive = drawn from the brake pipe).

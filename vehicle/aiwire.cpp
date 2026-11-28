@@ -29,6 +29,8 @@ contact span_contact(glm::dvec3 const &Point1, glm::dvec3 const &Parametric, glm
 	auto const crossing = Point1 + parameter * Parametric;
 	auto const offset = crossing - Point;
 	result.within = true;
+	result.parameter = parameter;
+	result.offset = offset;
 	result.vertical = glm::dot(offset, Up);
 	result.horizontal = std::abs(glm::dot(offset, Left)) - Halfwidth;
 	return result;

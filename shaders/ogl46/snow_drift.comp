@@ -1,0 +1,209 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the drifts of the snow around the camera, first pass (opengl46_snow): for every texel of the surface of the scenery seen from
+// above (gfx::sky_occlusion::gpu_upload_surface(): the top, the ceiling, the height a track or a road keeps the snow below), how
+// deep the snow lies there once the wind has worked it (snow_cover::drift(), drift_wind()). the wind takes the snow off the places
+// open to it and lays it where it slows down: in the lee of whatever stands in its way (a building, an embankment, the edge of a
+// cutting, a noise barrier), less in front of it, with a gap swept at its foot, and into the hollows (ditches, cuttings). the
+// shelter of a place is the steepest angle up to the scenery upwind of it (the Sx parameter of Winstral, Elder and Davis 2002),
+// searched along the wind and a little to both sides of it, out to 80 m; the drift behind an obstacle doesn't get higher than the
+// obstacle. x: the depth, m (negative where nothing is known), y: how much it is blown in (up to 1) or off (down to -1), 4 more
+// over a track or a road
+
+#include "common.glsl"
+#include "weather_common.glsl"
+
+layout(local_size_x = SNOW_GROUP_SIZE, local_size_y = SNOW_GROUP_SIZE, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D surface;
+layout(rg32f, binding = 0) uniform writeonly image2D drifted;
+
+// x: texels across the maps, yz: the texel of the camera the maps follow, toroidal, w: the first row worked out (opengl46_snow
+// works the maps out a strip of rows at a time)
+layout(location = 0) uniform ivec4 map;
+// x: m of a texel, y: m from the camera the working of the wind fades out from, z: m it fades over
+layout(location = 1) uniform vec4 geometry;
+
+const float NONE = -5000.0;
+const float NO_CEILING = 5000.0;
+const float NO_CAP = 5000.0;
+const int UPWIND_SAMPLES = 20;
+const float UPWIND_FIRST = 1.0;
+const float UPWIND_REACH = 80.0;
+// the obstacle upwind the drift behind it can't overtop, searched this far
+const float LEE_REACH = 40.0;
+const int DOWNWIND_SAMPLES = 12;
+const float DOWNWIND_REACH = 15.0;
+// m an obstacle downwind stands over the place to pile the snow in front of it
+const float OBSTACLE = 0.5;
+
+int wrapped(int value)
+{
+	int side = map.x;
+	return ((value % side) + side) % side;
+}
+
+vec4 surface_at(ivec2 texel)
+{
+	return texelFetch(surface, ivec2(wrapped(texel.x), wrapped(texel.y)), 0);
+}
+
+// the height of the top at a texel over the one of the place; 0 where nothing is known, so no shelter comes from there
+float rise(ivec2 texel, float height)
+{
+	float top = surface_at(texel).x;
+	return (top < NONE) ? 0.0 : top - height;
+}
+
+ivec2 offset(vec2 direction, float distance)
+{
+	return ivec2(round(direction * (distance / geometry.x)));
+}
+
+// the shelter along a direction the wind comes from: the steepest angle up to the scenery, radians (negative where all of it lies
+// below), and the highest obstacle within LEE_REACH
+vec2 shelter(ivec2 texel, float height, vec2 upwind)
+{
+	float steepest = -1.5;
+	float highest = 0.0;
+	float ratio = pow(UPWIND_REACH / UPWIND_FIRST, 1.0 / float(UPWIND_SAMPLES - 1));
+	float distance = UPWIND_FIRST;
+	for (int i = 0; i < UPWIND_SAMPLES; ++i)
+	{
+		float r = rise(texel + offset(upwind, distance), height);
+		steepest = max(steepest, atan(r, distance));
+		if (distance <= LEE_REACH)
+			highest = max(highest, r);
+		distance *= ratio;
+	}
+	return vec2(steepest, highest);
+}
+
+// the nearest obstacle downwind: its distance and height, 0 0 where there's none
+vec2 obstacle(ivec2 texel, float height, vec2 downwind)
+{
+	for (int i = 1; i <= DOWNWIND_SAMPLES; ++i)
+	{
+		float distance = DOWNWIND_REACH * float(i) / float(DOWNWIND_SAMPLES);
+		float r = rise(texel + offset(downwind, distance), height);
+		if (r > OBSTACLE)
+			return vec2(distance, r);
+	}
+	return vec2(0.0);
+}
+
+// how far the place lies below the ground around it (a ditch, a cutting), m
+float hollow(ivec2 texel, float height)
+{
+	float sum = 0.0;
+	for (int i = 0; i < 8; ++i)
+	{
+		float angle = float(i) * 0.785398;
+		vec2 direction = vec2(cos(angle), sin(angle));
+		sum += rise(texel + offset(direction, 3.0), height) + rise(texel + offset(direction, 6.0), height);
+	}
+	return clamp(sum / 16.0, 0.0, 3.0);
+}
+
+// the share of the sky the place under a ceiling sees around it, for the snow blown in under the edge of a roof or a bridge
+float opening(ivec2 texel, float ceiling)
+{
+	float open = 0.0;
+	for (int i = 0; i < 8; ++i)
+	{
+		float angle = float(i) * 0.785398;
+		vec2 direction = vec2(cos(angle), sin(angle));
+		open += (surface_at(texel + offset(direction, 2.0)).y > NO_CEILING) ? 1.0 : 0.0;
+		open += (surface_at(texel + offset(direction, 4.0)).y > NO_CEILING) ? 0.5 : 0.0;
+	}
+	return clamp(open / 12.0, 0.0, 1.0);
+}
+
+// m a surface may stand over the height a track or a road keeps the snow below and still be kept down by it (as snow.glsl)
+const float SNOW_CAP_OVER = 0.3;
+
+void main()
+{
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy) + ivec2(0, map.w);
+	if ((texel.x >= map.x) || (texel.y >= map.x))
+		return;
+	vec4 here = texelFetch(surface, texel, 0);
+	float height = here.x;
+	float base = snow_cover.x;
+	if ((height < NONE) || (base <= 0.0))
+	{
+		imageStore(drifted, texel, vec4((height < NONE) ? -1.0 : 0.0, 0.0, 0.0, 0.0));
+		return;
+	}
+	// the place relative to the camera, texels, the shorter way round the maps
+	ivec2 relative = texel - map.yz;
+	int halfside = map.x / 2;
+	relative = ((relative + ivec2(halfside)) % map.x + map.x) % map.x - ivec2(halfside);
+	float distance = max(abs(float(relative.x)), abs(float(relative.y))) * geometry.x;
+	float near = 1.0 - smoothstep(geometry.y, geometry.y + geometry.z, distance);
+
+	// how far the wind has worked the snow: how long it carried it and how strong it was
+	float worked = snow_drift.z * smoothstep(2.0, 10.0, snow_drift.w) * near;
+	float depth = base;
+	float exposure = 0.0;
+	if (worked > 0.001)
+	{
+		vec2 downwind = snow_drift.xy;
+		vec2 upwind = -downwind;
+		// along the wind and a little to both sides of it, as the wind wanders
+		float c = cos(0.21);
+		float s = sin(0.21);
+		vec2 left = vec2(upwind.x * c - upwind.y * s, upwind.x * s + upwind.y * c);
+		vec2 right = vec2(upwind.x * c + upwind.y * s, -upwind.x * s + upwind.y * c);
+		vec2 middle = shelter(texel, height, upwind);
+		vec2 sides = 0.5 * (shelter(texel, height, left) + shelter(texel, height, right));
+		float angle = 0.5 * middle.x + 0.5 * sides.x;
+		float highest = max(middle.y, sides.y);
+
+		float lee = smoothstep(0.02, 0.30, angle);
+		float exposed = smoothstep(-0.01, -0.12, angle);
+		// the open ground gives a little to the drifts, the crests and the slopes facing the wind a lot, the lee takes it
+		float gain = 1.0 - 0.25 * worked - 0.75 * worked * exposed + 7.0 * worked * lee * (1.0 - exposed);
+		// in front of an obstacle the snow piles up a little upwind of its foot, and is swept off right at it
+		vec2 ahead = obstacle(texel, height, downwind);
+		float pile = 0.0;
+		if (ahead.x > 0.0)
+		{
+			float place = max(1.0, 0.8 * ahead.y);
+			float spread = max(0.7 * ahead.y, 0.8);
+			float from = (ahead.x - place) / spread;
+			pile = ahead.y * 0.35 * exp(-from * from) * worked * min(1.0, base * 5.0);
+			if (ahead.x < 0.6 + 0.2 * ahead.y)
+				gain *= mix(1.0, 0.3, worked);
+		}
+		// the hollows fill up
+		float fill = hollow(texel, height) * 0.6 * worked * min(1.0, base * 4.0);
+		depth = base * max(gain, 0.0) + pile + fill;
+		// the drift behind an obstacle doesn't overtop it
+		depth = min(depth, max(base * 1.2, base + highest * 0.9 + fill));
+		exposure = clamp(lee * 2.0 - exposed, -1.0, 1.0) * worked;
+	}
+
+	// under a roof or a bridge only what blows in under its edge. a ceiling the map holds under the surface (the underside or the
+	// foot of a platform made of triangles, 0.7 m under its top) roofs nothing: the snow lies on the top as in the open
+	if ((here.y < NO_CEILING) && (here.y > height) && (here.y - height < 25.0))
+		depth *= opening(texel, here.y) * 0.5;
+	// a track or a road keeps it down. the snow on a track (w, m over the ground: what came since the trains last cleared it,
+	// TTrack::snow_at(); negative where it isn't known) lies over that as it comes, the drift of the place at most; once it's
+	// over the rails they're buried, and the track is the snow like the rest
+	// only what lies about as high as the track or the road is kept down: a surface standing well over it (a platform over a road
+	// laid under the whole station, a wall) holds its snow
+	if ((here.z < NO_CAP) && (height < here.z + SNOW_CAP_OVER))
+	{
+		// the track lies lower than the snow around: what the wind carries fills it up to that at least, also where the open
+		// ground is blown off (TTrack::snow_at() counts what it brought in)
+		// the snow on the track lies from the bed by the sleepers, 17 cm under the heads of the rails (TMoverParameters::SnowForce()),
+		// which the map doesn't hold (the top of a track there is the ground under it, the embankment): the cap is 3 cm under the heads
+		// (no more than lies around it, TTrack::snow_at() sees to that)
+		float kept = here.z - height;
+		depth = (here.w >= 0.0) ? max(clamp(kept, 0.0, depth), kept - 0.14 + here.w) : clamp(kept, 0.0, depth);
+		if (here.w <= 0.17)
+			exposure += 4.0;
+	}
+	imageStore(drifted, texel, vec4(max(depth, 0.0), exposure, 0.0, 0.0));
+}

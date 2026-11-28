@@ -78,6 +78,8 @@ void main()
 	glossiness = specgloss_map.g * abs(param[1].w);
 	metalic = specgloss_map.b;
 	
+	// the snow doesn't lie on it
+	snow_receiver = false;
 	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
 
 	//fragcolor = mix(fragcolor, param[0].rgb, param[1].z);

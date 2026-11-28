@@ -148,8 +148,11 @@ void opengl46_local_shadows::init_programs()
 		gl::shader fragment("alphashadowmap.frag");
 		m_alpha_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{vertex, geometry, fragment});
 	}
-	glProgramUniform1f(*m_program, NEAR_LOCATION, SHADOW_NEAR);
-	glProgramUniform1f(*m_alpha_program, NEAR_LOCATION, SHADOW_NEAR);
+	{
+		gl::shader wirevertex("wireshadowcube.vert");
+		gl::shader fragment("shadowmap.frag");
+		m_wire_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{wirevertex, geometry, fragment});
+	}
 	// the variants for the multi draws of the instances drawn from the gpu culling (the scenery parts of the maps of lamps); the
 	// fragment stages read nothing of the model block
 	try
@@ -159,8 +162,6 @@ void opengl46_local_shadows::init_programs()
 		gl::shader alphafragment("alphashadowmap.frag");
 		m_multidraw_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{multidrawvertex, geometry, fragment});
 		m_alpha_multidraw_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{multidrawvertex, geometry, alphafragment});
-		glProgramUniform1f(*m_multidraw_program, NEAR_LOCATION, SHADOW_NEAR);
-		glProgramUniform1f(*m_alpha_multidraw_program, NEAR_LOCATION, SHADOW_NEAR);
 	}
 	catch (gl::shader_exception const &e)
 	{
@@ -168,27 +169,31 @@ void opengl46_local_shadows::init_programs()
 		m_multidraw_program.reset();
 		m_alpha_multidraw_program.reset();
 	}
+	set_near(SHADOW_NEAR);
 	set_layer(0);
+}
+
+std::array<gl::program *, 5> opengl46_local_shadows::programs() const
+{
+	return {m_program.get(), m_alpha_program.get(), m_wire_program.get(), m_multidraw_program.get(), m_alpha_multidraw_program.get()};
 }
 
 void opengl46_local_shadows::set_near(float const Near)
 {
-	glProgramUniform1f(*m_program, NEAR_LOCATION, Near);
-	glProgramUniform1f(*m_alpha_program, NEAR_LOCATION, Near);
-	if (m_multidraw_program)
-		glProgramUniform1f(*m_multidraw_program, NEAR_LOCATION, Near);
-	if (m_alpha_multidraw_program)
-		glProgramUniform1f(*m_alpha_multidraw_program, NEAR_LOCATION, Near);
+	for (auto *program : programs())
+	{
+		if (program != nullptr)
+			glProgramUniform1f(*program, NEAR_LOCATION, Near);
+	}
 }
 
 void opengl46_local_shadows::set_layer(int const Layer)
 {
-	glProgramUniform1i(*m_program, LAYER_LOCATION, Layer);
-	glProgramUniform1i(*m_alpha_program, LAYER_LOCATION, Layer);
-	if (m_multidraw_program)
-		glProgramUniform1i(*m_multidraw_program, LAYER_LOCATION, Layer);
-	if (m_alpha_multidraw_program)
-		glProgramUniform1i(*m_alpha_multidraw_program, LAYER_LOCATION, Layer);
+	for (auto *program : programs())
+	{
+		if (program != nullptr)
+			glProgramUniform1i(*program, LAYER_LOCATION, Layer);
+	}
 }
 
 bool opengl46_local_shadows::gpu_allocate(int const Count, int const Size)

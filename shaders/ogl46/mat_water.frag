@@ -71,6 +71,8 @@ void main()
 	float specularity = 0.25;
 	glossiness = abs(param[1].w);
 	
+	// the snow doesn't lie on it
+	snow_receiver = false;
 	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
 
 	//fragcolor = mix(fragcolor, param[0].rgb, param[1].z);

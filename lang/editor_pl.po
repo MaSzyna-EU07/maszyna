@@ -16326,6 +16326,215 @@ msgstr "Ortofoto: cały widok jest już pokazany (Ctrl+~)"
 msgid "Preparing the graphics (takes longer at the first start of a new version)"
 msgstr "Przygotowanie grafiki (przy pierwszym uruchomieniu nowej wersji trwa dłużej)"
 
+msgid "Weather physics"
+msgstr "Fizyka pogody"
+
+msgid "Settings (physics.weather in eu07.ini)"
+msgstr "Ustawienia (physics.weather w eu07.ini)"
+
+msgid "Rails in the open"
+msgstr "Szyny pod gołym niebem"
+
+msgid "Vehicle driven"
+msgstr "Prowadzony pojazd"
+
+msgid "Weather in the physics"
+msgstr "Pogoda w fizyce"
+
+msgid "Heads of the rails"
+msgstr "Główki szyn"
+
+msgid "Wet and iced brakes"
+msgstr "Mokre i oblodzone hamulce"
+
+msgid "Wind in the drag"
+msgstr "Wiatr w oporze powietrza"
+
+msgid "Density of the air in the drag"
+msgstr "Gęstość powietrza w oporze"
+
+msgid "Ice on the wires and the pantographs"
+msgstr "Lód na drutach i pantografy"
+
+msgid "Adhesion, wet rail"
+msgstr "Przyczepność, mokra szyna"
+
+msgid "Adhesion, first water on a dirty rail"
+msgstr "Przyczepność, pierwsza woda na brudnej szynie"
+
+msgid "Adhesion, ice on the rail"
+msgstr "Przyczepność, lód na szynie"
+
+msgid "Adhesion, snow on the rail"
+msgstr "Przyczepność, śnieg na szynie"
+
+msgid "Adhesion, leaves, dry"
+msgstr "Przyczepność, liście, suche"
+
+msgid "Adhesion, leaves, wet"
+msgstr "Przyczepność, liście, mokre"
+
+msgid "Adhesion, the least"
+msgstr "Przyczepność, najmniejsza"
+
+msgid "Leaves falling in the autumn"
+msgstr "Opadanie liści jesienią"
+
+msgid "Rail cleaned by the wheels, s"
+msgstr "Szyna oczyszczona przez koła, s"
+
+msgid "Sand restores, share of the dry rail"
+msgstr "Piasek przywraca, część suchej szyny"
+
+msgid "Brake friction wet, cast iron"
+msgstr "Tarcie hamulca mokrego, żeliwo"
+
+msgid "Brake friction wet, composite"
+msgstr "Tarcie hamulca mokrego, kompozyt"
+
+msgid "Brake friction wet, disc"
+msgstr "Tarcie hamulca mokrego, tarcza"
+
+msgid "Brake friction iced, cast iron"
+msgstr "Tarcie hamulca oblodzonego, żeliwo"
+
+msgid "Brake friction iced, composite"
+msgstr "Tarcie hamulca oblodzonego, kompozyt"
+
+msgid "Brake friction iced, disc"
+msgstr "Tarcie hamulca oblodzonego, tarcza"
+
+msgid "Drag growing with the wind across"
+msgstr "Wzrost oporu przy wietrze bocznym"
+
+msgid "Breaks of the contact by the ice"
+msgstr "Przerwy styku przez lód"
+
+msgid "Break of the contact at 1 mm of ice, s"
+msgstr "Przerwa styku przy 1 mm lodu, s"
+
+msgid "Breaks of a pantograph behind another"
+msgstr "Przerwy pantografu za innym"
+
+msgid "Defaults"
+msgstr "Domyślne"
+
+msgid "kept in eu07.ini, not by this window"
+msgstr "zapisuje się w eu07.ini, nie w tym oknie"
+
+msgid "A network session: the weather in the physics is off, the same on every machine."
+msgstr "Sesja sieciowa: pogoda w fizyce jest wyłączona, tak samo na każdym komputerze."
+
+msgid "A network session: the weather is the one of the scenery, the same on every machine."
+msgstr "Sesja sieciowa: pogoda jest ta ze scenerii, taka sama na każdym komputerze."
+
+msgid "Dirt of a dry spell"
+msgstr "Brud po suchych dniach"
+
+msgid "Ice"
+msgstr "Lód"
+
+msgid "Leaves"
+msgstr "Liście"
+
+msgid "Time faster"
+msgstr "Przyspieszenie czasu"
+
+msgid "Adhesion of a rail no wheels went over: %.0f%% of the dry one"
+msgstr "Przyczepność szyny, po której nie przejechały koła: %.0f%% suchej"
+
+msgid "The ai drivers and the roads go by: %.0f%%"
+msgstr "AI i drogi liczą z: %.0f%%"
+
+msgid "Ice on the wires: %.1f mm"
+msgstr "Lód na drutach: %.1f mm"
+
+msgid "no vehicle driven"
+msgstr "brak prowadzonego pojazdu"
+
+msgid "Adhesion of the rails under it: %.0f%% of the dry one"
+msgstr "Przyczepność szyn pod nim: %.0f%% suchej"
+
+msgid "Rain %.2f, snow around the running gear %.2f, %.1f deg C"
+msgstr "Deszcz %.2f, śnieg przy podwoziu %.2f, %.1f °C"
+
+msgid "Wind %.1f m/s from the front, %.1f m/s across, air %.0f%%"
+msgstr "Wiatr %.1f m/s z przodu, %.1f m/s z boku, powietrze %.0f%%"
+
+msgid "Drag of the weather: %.2f kN"
+msgstr "Opór od pogody: %.2f kN"
+
+msgid "Brakes: water %.2f, ice %.2f, friction %.0f%%"
+msgstr "Hamulce: woda %.2f, lód %.2f, tarcie %.0f%%"
+
+msgid "Breaks of the contact of the pantographs: %d"
+msgstr "Przerwy styku pantografów: %d"
+
+msgid "Wires blown aside by the wind, pantographs torn off"
+msgstr "Druty odchylane przez wiatr, zrywanie pantografów"
+
+msgid "Tension of a contact wire, N"
+msgstr "Naciąg przewodu jezdnego, N"
+
+msgid "Diameter of a contact wire, m"
+msgstr "Średnica przewodu jezdnego, m"
+
+msgid "Wind %.1f m/s blows a span of 65 m across it %.2f m aside"
+msgstr "Wiatr %.1f m/s odchyla przęsło 65 m w poprzek o %.2f m"
+
+msgid "Shadows of the wires blown aside with them"
+msgstr "Cienie drutów odchylane razem z nimi"
+
+msgid "Arcs at the breaks of the contact"
+msgstr "Łuki elektryczne przy przerwach styku"
+
+msgid "Glaze on the wires (icing)"
+msgstr "Gołoledź na drutach (oblodzenie)"
+
+msgid "Hard rime on the wires"
+msgstr "Szadź twarda na drutach"
+
+msgid "Soft rime and hoarfrost on the wires"
+msgstr "Szadź miękka (sadź) i szron na drutach"
+
+msgid "Wet snow on the wires"
+msgstr "Mokry śnieg na drutach"
+
+msgid "Breaks of the contact by the glaze"
+msgstr "Przerwy styku od gołoledzi"
+
+msgid "Breaks of the contact by the hard rime"
+msgstr "Przerwy styku od szadzi twardej"
+
+msgid "Breaks of the contact by the soft rime"
+msgstr "Przerwy styku od szadzi miękkiej"
+
+msgid "Breaks of the contact by the wet snow"
+msgstr "Przerwy styku od mokrego śniegu"
+
+msgid "Brightness of the arcs"
+msgstr "Jasność łuków"
+
+msgid "glaze %.1f, hard rime %.1f, soft rime %.1f, wet snow %.1f mm"
+msgstr "gołoledź %.1f, szadź twarda %.1f, szadź miękka %.1f, mokry śnieg %.1f mm"
+
+msgid "Arc at the pantograph %d: %.0f%%"
+msgstr "Łuk na pantografie %d: %.0f%%"
+
+msgid "of a preset of the climate (weather.mode preset)"
+msgstr "z presetu klimatu (weather.mode preset)"
+
+msgid "now at the vehicle driven, Open-Meteo (weather.mode live)"
+msgstr "bieżąca przy prowadzonym pojeździe, Open-Meteo (weather.mode live)"
+
+msgid "The time can't go faster with the live weather (weather.live.locktime)"
+msgstr "Przy pogodzie na żywo czasu nie można przyspieszyć (weather.live.locktime)"
+
+msgid "Time acceleration: locked by the live weather (weather.live.locktime)"
+msgstr "Przyspieszenie czasu: zablokowane przez pogodę na żywo (weather.live.locktime)"
+
+msgid "Date and time: the ones of the system, for the live weather (weather.live.locktime)"
+msgstr "Data i godzina: systemowe, dla pogody na żywo (weather.live.locktime)"
 msgid "The name of the catenary file can't have spaces, ';', quotes, ':' or \"..\" in it, nor start with a slash: the directive including it couldn't read it"
 msgstr "Nazwa pliku sieci trakcyjnej nie może zawierać spacji, ';', cudzysłowów, ':' ani \"..\" ani zaczynać się ukośnikiem: dyrektywa dołączająca plik nie odczytałaby jej"
 

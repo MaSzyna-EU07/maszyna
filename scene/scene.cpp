@@ -117,10 +117,13 @@ basic_cell::update_traction( TDynamicObject *Vehicle, int const Pantographindex 
             traction->pPoint1, traction->vParametric, pantographposition, vFront, vUp, vLeft, pantograph->fWidth );
         // jeśli tylko jest w przedziale, wyznaczyć odległość wzdłuż wektorów vUp i vLeft
         if( false == contact.within ) { continue; }
-        auto fVertical = contact.vertical;
+        // where the wind blows the wire to (TTraction::sway_at(), drawn so by traction.vert): the crossing moved with it,
+        // against the pantograph; with no wind it is the crossing as found
+        auto const vGdzie = contact.offset + traction->sway_at( contact.parameter );
+        auto fVertical = glm::dot( vGdzie, vUp );
         if( fVertical >= 0.0 ) {
             // jeśli ponad pantografem (bo może łapać druty spod wiaduktu)
-            auto const fHorizontal = contact.horizontal;
+            auto const fHorizontal = std::abs( glm::dot( vGdzie, vLeft ) ) - pantograph->fWidth;
 
             if (Global.bEnableTraction
              && fVertical < pantograph->PantWys - 0.15 ) {

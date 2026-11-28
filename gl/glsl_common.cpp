@@ -110,6 +110,8 @@ void gl::glsl_common_setup()
     "#define SKY_OCCLUSION_HEIGHT_TEX " + std::to_string(SKY_OCCLUSION_HEIGHT_TEX) + "\n" +
     "#define SKY_OCCLUSION_TEX " + std::to_string(SKY_OCCLUSION_TEX) + "\n" +
     "#define CAB_PROBE_SSBO_BINDING " + std::to_string(CAB_PROBE_SSBO_BINDING) + "\n" +
+    "#define SNOW_SSBO_BINDING " + std::to_string(SNOW_SSBO_BINDING) + "\n" +
+    "#define SNOW_GROUP_SIZE " + std::to_string(SNOW_GROUP_SIZE) + "\n" +
     "#define CAB_PROBE_SH_SIZE " + std::to_string(CAB_PROBE_SH_SIZE) + "\n" +
     "#define CAB_PROBE_SH_GROUP_SIZE " + std::to_string(CAB_PROBE_SH_GROUP_SIZE) + "\n" +
     "#define WEATHER_UBO_BINDING " + std::to_string(WEATHER_UBO_BINDING) + "\n" +
