@@ -266,6 +266,8 @@ public:
 	float MaxY( float4x4 const &m );
     std::shared_ptr<std::vector<glm::vec2>> screen_touch_list; // for python screen touching
 	std::optional<gl::query> occlusion_query;
+	// the glare of the light: whether its point was seen by the last query whose result came (the opengl renderer)
+	std::optional<bool> glare_seen;
     glm::mat4 future_transform;
 
 	void deserialize(std::istream&);
