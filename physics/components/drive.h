@@ -50,6 +50,12 @@ public:
 	// the revolutions of the engine idling and at most [rpm]; the largest double with no engine of revolutions
 	virtual double EngineIdleRpm(TMoverParameters const &vehicle) const;
 	virtual double EngineMaxRpm(TMoverParameters const &vehicle) const;
+	// the revolutions of the engine in the step (enrot); returns the revolutions a diesel-electric engine aims for, 0 for
+	// the others. a diesel engine with a mechanical transmission gives its ratio and its moment through the references
+	virtual double UpdateEngineRevolutions(TMoverParameters &vehicle, double dt, double &transmission, double &moment) const;
+	// a notch up and down of the master controller, as the kind of the engine takes it; return whether it moved
+	virtual bool IncreaseMainController(TMoverParameters &vehicle, int speed) const;
+	virtual bool DecreaseMainController(TMoverParameters &vehicle, int speed) const;
 };
 
 // the drive of the given kind of engine

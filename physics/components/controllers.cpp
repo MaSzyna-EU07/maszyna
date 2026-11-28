@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include <utility>
 #include <vector>
 #include "physics/components/internal.h"
+#include "physics/components/drive.h"
 
 
 // *************************************************************************************************
@@ -108,62 +109,7 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 // a notch up, as the kind of the engine takes it; returns whether the controller moved
 bool TMoverParameters::IncMainCtrlByEngine(int const CtrlSpeed)
 {
-	bool OK = false;
-	switch (EngineType)
-	{
-	case TEngineType::None:
-	case TEngineType::Dumb:
-	case TEngineType::DieselElectric:
-	case TEngineType::ElectricInductionMotor:
-	{
-		if (CtrlSpeed > 1)
-		{
-			OK = IncMainCtrl(1) && IncMainCtrl(CtrlSpeed - 1); // a fail will propagate up the recursion chain. should this be || instead?
-			break;
-		}
-		++MainCtrlPos;
-		OK = true;
-		if (EIMCtrlType == 0 && ( SpeedCtrlAutoTurnOffFlag & 1 ) == 1 && MainCtrlActualPos != MainCtrlPos)
-		{
-			SpeedCtrlSwitch(false);
-			SpeedCtrlUnit.IsActive = false;
-		}
-		break;
-	}
-
-	case TEngineType::ElectricSeriesMotor:
-	{
-		OK = IncMainCtrlSeriesMotor(CtrlSpeed);
-		break;
-	}
-
-	case TEngineType::DieselEngine:
-	{
-		if (CtrlSpeed > 1)
-		{
-			while (MainCtrlPos < MainCtrlPosNo && IncMainCtrl(1))
-			{
-				// all work is done in the loop header
-			}
-		}
-		else
-		{
-			++MainCtrlPos;
-		}
-		CompressorAllow = MainCtrlPowerPos() > 0;
-		OK = true;
-		break;
-	}
-
-	case TEngineType::WheelsDriven:
-	{
-		OK = AddPulseForce(CtrlSpeed);
-		break;
-	}
-	default:
-		break;
-	} // switch EngineType of
-	return OK;
+	return Drive().IncreaseMainController(*this, CtrlSpeed);
 }
 
 // a notch up of the series motors' controller: CtrlSpeed over 1 runs it to the first position without resistors;
@@ -292,54 +238,7 @@ bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
 // a notch down, as the kind of the engine takes it; returns whether the controller moved
 bool TMoverParameters::DecMainCtrlByEngine(int const CtrlSpeed)
 {
-	bool OK = false;
-	switch (EngineType)
-	{
-	case TEngineType::None:
-	case TEngineType::Dumb:
-	case TEngineType::DieselElectric:
-	case TEngineType::ElectricInductionMotor:
-	{
-		if (CtrlSpeed == 1)
-		{
-			MainCtrlPos--;
-			OK = true;
-			if (EIMCtrlType == 0 && (SpeedCtrlAutoTurnOffFlag & 1) == 1 && MainCtrlActualPos != MainCtrlPos)
-			{
-				SpeedCtrlSwitch(false);
-				SpeedCtrlUnit.IsActive = false;
-			}
-		}
-		else if (CtrlSpeed > 1)
-			OK = DecMainCtrl(1) && DecMainCtrl(CtrlSpeed - 1); // CtrlSpeed-1);
-		break;
-	}
-
-	case TEngineType::ElectricSeriesMotor:
-	{
-		OK = DecMainCtrlSeriesMotor(CtrlSpeed);
-		break;
-	}
-
-	case TEngineType::DieselEngine:
-	{
-		if (CtrlSpeed == 1)
-		{
-			MainCtrlPos--;
-			OK = true;
-		}
-		else if (CtrlSpeed > 1)
-		{
-			while (MainCtrlPos > 0 || RList[MainCtrlPos].Mn > 0)
-				DecMainCtrl(1);
-			OK = true;
-		}
-		break;
-	}
-	default:
-		break;
-	} // switch EngineType
-	return OK;
+	return Drive().DecreaseMainController(*this, CtrlSpeed);
 }
 
 // a notch down of the series motors' controller: CtrlSpeed over 1 runs it down to the first position without resistors

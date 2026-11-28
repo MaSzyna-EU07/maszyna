@@ -328,51 +328,7 @@ bool TMoverParameters::OilPumpSwitchOff(bool State, range_t const Notify)
 // for a diesel engine, the ratio of the transmission and the engine's moment
 double TMoverParameters::UpdateEngineRevolutions(double dt, double &dtrans, double &dmoment)
 {
-	double tmp{0.0};
-	// youBy
-	switch (EngineType)
-	{
-	case TEngineType::DieselElectric:
-	{
-		if (true == Mains && true == FuelPump.is_active)
-		{
-			tmp = DieselElectricTargetRevolutions();
-		}
-		else
-		{
-			tmp = 0.0;
-			diesel.fill = 0.0;
-		}
-
-		if (enrot != tmp)
-		{
-			enrot = safe_clamp(enrot + dt / diesel.shaftInertia * (enrot < tmp ? 1.0 : -1.0 * diesel.revolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
-			              0.0, std::max(tmp, enrot));
-			if (std::abs(tmp - enrot) < 0.001)
-			{
-				enrot = tmp;
-			}
-		}
-		break;
-	}
-	case TEngineType::DieselEngine:
-	{
-		if (ShuntMode) // dodatkowa przekładnia np. dla 2Ls150
-			dtrans = AnPos * Transmision.Ratio * motor_param(ScndCtrlActualPos).mIsat;
-		else
-			dtrans = Transmision.Ratio * motor_param(ScndCtrlActualPos).mIsat;
-
-		dmoment = dizel_Momentum(diesel.fill, dtrans * nrot * DirActive, dt); // oblicza tez enrot
-		break;
-	}
-	default:
-	{
-		enrot = Transmision.Ratio * nrot;
-		break;
-	}
-	}
-
-	return tmp;
+	return Drive().UpdateEngineRevolutions(*this, dt, dtrans, dmoment);
 }
 
 // the revolutions a diesel-electric's engine aims at [1/s], by the controller and the heating; the fill shown by the smoke

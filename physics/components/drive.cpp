@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 
 #include "physics/mover.h"
+#include "utilities/utilities.h"
 
 // the defaults: a drive with no engine model and no engine of revolutions does nothing in the steps
 
@@ -65,6 +66,22 @@ double TractionDrive::EngineMaxRpm(TMoverParameters const & /*vehicle*/) const
 	return std::numeric_limits<double>::max();
 }
 
+double TractionDrive::UpdateEngineRevolutions(TMoverParameters &vehicle, double /*dt*/, double & /*transmission*/, double & /*moment*/) const
+{
+	vehicle.enrot = vehicle.Transmision.Ratio * vehicle.nrot;
+	return 0.0;
+}
+
+bool TractionDrive::IncreaseMainController(TMoverParameters & /*vehicle*/, int /*speed*/) const
+{
+	return false;
+}
+
+bool TractionDrive::DecreaseMainController(TMoverParameters & /*vehicle*/, int /*speed*/) const
+{
+	return false;
+}
+
 namespace
 {
 
@@ -84,8 +101,58 @@ void updateRadiatorFans(TMoverParameters &vehicle, double const dt)
 	}
 }
 
-// a vehicle without an engine (a wagon), or of an engine with no model (steam, Main)
-class NoDrive final : public TractionDrive
+// a notch of the master controller of the drives without steps of their own (no engine, Dumb, diesel-electric,
+// induction): one position at a time, the speed control let go when the position leaves the one it holds
+bool increaseNotch(TMoverParameters &vehicle, int const speed)
+{
+	if (speed > 1)
+	{
+		return vehicle.IncMainCtrl(1) && vehicle.IncMainCtrl(speed - 1); // a fail will propagate up the recursion chain. should this be || instead?
+	}
+	++vehicle.MainCtrlPos;
+	if (vehicle.EIMCtrlType == 0 && (vehicle.SpeedCtrlAutoTurnOffFlag & 1) == 1 && vehicle.MainCtrlActualPos != vehicle.MainCtrlPos)
+	{
+		vehicle.SpeedCtrlSwitch(false);
+		vehicle.SpeedCtrlUnit.IsActive = false;
+	}
+	return true;
+}
+
+bool decreaseNotch(TMoverParameters &vehicle, int const speed)
+{
+	if (speed == 1)
+	{
+		vehicle.MainCtrlPos--;
+		if (vehicle.EIMCtrlType == 0 && (vehicle.SpeedCtrlAutoTurnOffFlag & 1) == 1 && vehicle.MainCtrlActualPos != vehicle.MainCtrlPos)
+		{
+			vehicle.SpeedCtrlSwitch(false);
+			vehicle.SpeedCtrlUnit.IsActive = false;
+		}
+		return true;
+	}
+	if (speed > 1)
+	{
+		return vehicle.DecMainCtrl(1) && vehicle.DecMainCtrl(speed - 1);
+	}
+	return false;
+}
+
+// a vehicle without an engine (a wagon, a control car): its controller still steps, for the vehicles it controls
+class NoEngineDrive final : public TractionDrive
+{
+public:
+	bool IncreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		return increaseNotch(vehicle, speed);
+	}
+	bool DecreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		return decreaseNotch(vehicle, speed);
+	}
+};
+
+// an engine with no model at all (steam, Main): nothing happens in the steps
+class UnmodelledDrive final : public TractionDrive
 {
 };
 
@@ -103,6 +170,14 @@ public:
 	{
 		vehicle.DumbTractionForce(step.posRatio);
 	}
+	bool IncreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		return increaseNotch(vehicle, speed);
+	}
+	bool DecreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		return decreaseNotch(vehicle, speed);
+	}
 };
 
 // a draisine and the like, the wheels driven by hand
@@ -113,6 +188,10 @@ public:
 	{
 		vehicle.WheelsDrivenTractionForce(step.dt);
 	}
+	bool IncreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		return vehicle.AddPulseForce(speed);
+	}
 };
 
 // series wound direct current motors, started through resistors
@@ -122,6 +201,14 @@ public:
 	void UpdateTractionForce(TMoverParameters &vehicle, DriveStep const &step) const override
 	{
 		vehicle.SeriesMotorTractionForce(step.dt);
+	}
+	bool IncreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		return vehicle.IncMainCtrlSeriesMotor(speed);
+	}
+	bool DecreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		return vehicle.DecMainCtrlSeriesMotor(speed);
 	}
 	void UpdateVentilators(TMoverParameters &vehicle, double const dt) const override
 	{
@@ -143,6 +230,14 @@ public:
 	void UpdateTractionForce(TMoverParameters &vehicle, DriveStep const &step) const override
 	{
 		vehicle.InductionMotorTractionForce(step.dt);
+	}
+	bool IncreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		return increaseNotch(vehicle, speed);
+	}
+	bool DecreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		return decreaseNotch(vehicle, speed);
 	}
 	double ShowCurrent(TMoverParameters const &vehicle, int const ammeter) const override
 	{
@@ -176,6 +271,47 @@ public:
 	void UpdateTractionForce(TMoverParameters &vehicle, DriveStep const &step) const override
 	{
 		vehicle.DieselEngineTractionForce(step.dt, step.moment, step.transmission);
+	}
+	double UpdateEngineRevolutions(TMoverParameters &vehicle, double const dt, double &transmission, double &moment) const override
+	{
+		if (vehicle.ShuntMode) // dodatkowa przekładnia np. dla 2Ls150
+			transmission = vehicle.AnPos * vehicle.Transmision.Ratio * vehicle.motor_param(vehicle.ScndCtrlActualPos).mIsat;
+		else
+			transmission = vehicle.Transmision.Ratio * vehicle.motor_param(vehicle.ScndCtrlActualPos).mIsat;
+
+		moment = vehicle.dizel_Momentum(vehicle.diesel.fill, transmission * vehicle.nrot * vehicle.DirActive, dt); // oblicza tez enrot
+		return 0.0;
+	}
+	bool IncreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		if (speed > 1)
+		{
+			while (vehicle.MainCtrlPos < vehicle.MainCtrlPosNo && vehicle.IncMainCtrl(1))
+			{
+				// all work is done in the loop header
+			}
+		}
+		else
+		{
+			++vehicle.MainCtrlPos;
+		}
+		vehicle.CompressorAllow = vehicle.MainCtrlPowerPos() > 0;
+		return true;
+	}
+	bool DecreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		if (speed == 1)
+		{
+			vehicle.MainCtrlPos--;
+			return true;
+		}
+		if (speed > 1)
+		{
+			while (vehicle.MainCtrlPos > 0 || vehicle.RList[vehicle.MainCtrlPos].Mn > 0)
+				vehicle.DecMainCtrl(1);
+			return true;
+		}
+		return false;
 	}
 	void UpdateVentilators(TMoverParameters &vehicle, double const dt) const override
 	{
@@ -221,6 +357,38 @@ public:
 			vehicle.apply_dieselelectric_dynamic_brake(step.dt);
 		}
 	}
+	double UpdateEngineRevolutions(TMoverParameters &vehicle, double const dt, double & /*transmission*/, double & /*moment*/) const override
+	{
+		double target{0.0};
+		if (true == vehicle.Mains && true == vehicle.FuelPump.is_active)
+		{
+			target = vehicle.DieselElectricTargetRevolutions();
+		}
+		else
+		{
+			target = 0.0;
+			vehicle.diesel.fill = 0.0;
+		}
+
+		if (vehicle.enrot != target)
+		{
+			vehicle.enrot = safe_clamp(vehicle.enrot + dt / vehicle.diesel.shaftInertia * (vehicle.enrot < target ? 1.0 : -1.0 * vehicle.diesel.revolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
+			                           0.0, std::max(target, vehicle.enrot));
+			if (std::abs(target - vehicle.enrot) < 0.001)
+			{
+				vehicle.enrot = target;
+			}
+		}
+		return target;
+	}
+	bool IncreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		return increaseNotch(vehicle, speed);
+	}
+	bool DecreaseMainController(TMoverParameters &vehicle, int const speed) const override
+	{
+		return decreaseNotch(vehicle, speed);
+	}
 	void AfterTractionForce(TMoverParameters &vehicle) const override
 	{
 		// rough approximation of extra effort to overcome friction etc
@@ -258,7 +426,8 @@ public:
 	}
 };
 
-NoDrive const noDrive{};
+NoEngineDrive const noEngineDrive{};
+UnmodelledDrive const unmodelledDrive{};
 DumbDrive const dumbDrive{};
 WheelsDrivenDrive const wheelsDrivenDrive{};
 SeriesMotorDrive const seriesMotorDrive{};
@@ -285,9 +454,10 @@ TractionDrive const &DriveOf(TEngineType const type)
 	case TEngineType::DieselElectric:
 		return dieselElectricDrive;
 	case TEngineType::None:
+		return noEngineDrive;
 	case TEngineType::SteamEngine:
 	case TEngineType::Main:
-		return noDrive;
+		return unmodelledDrive;
 	}
-	return noDrive;
+	return unmodelledDrive;
 }
