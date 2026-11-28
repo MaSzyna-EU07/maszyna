@@ -192,7 +192,8 @@ struct global_settings {
     float BaseDrawRange{ 2500.f };
     int DynamicLightCount{ 7 };
     bool ScaleSpecularValues{ true };
-    std::string GfxRenderer{ "default" };
+    // "vulkan" (opengl when vulkan can't run on the machine), "opengl" or "null" (the test runs)
+    std::string GfxRenderer{ "vulkan" };
     bool RenderShadows{ true };
 	bool applicationQuitOrder{false};
     int RenderCabShadowsRange{ 0 };
@@ -517,6 +518,9 @@ struct global_settings {
     // (vulkan) the cascades of the sun shadows and the shadow maps of the lamps and the headlights walked by threads of their own while
     // the main thread walks the colour pass
     bool gfx_vulkan_parallelpasses { true };
+    // (vulkan) the scenery loaded by a thread of its own while the main thread draws the loading screen, its wheel turning;
+    // no: loaded by the main thread between the frames of the loading screen, as with opengl
+    bool gfx_vulkan_backgroundloading { true };
     // (vulkan) the submodel trees of the instances culled on the gpu walked by the threads of gfx.threads, model by model
     bool gfx_vulkan_parallelmodels { true };
     // (vulkan) the passes of the sky and the weather run on the compute queue, at the same time as the sun shadows, where the gpu has a

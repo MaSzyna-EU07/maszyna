@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/sn_utils.h"
 #include "rendering/flip-s3tc.h"
 #include "rendering/common/texturealpha.h"
+#include "rendering/common/walksync.h"
 #include "stb/stb_image.h"
 //#include <png.h>
 #include "dds-ktx/dds-ktx.h"
@@ -474,6 +475,8 @@ texture_source::load() {
     else {
 
         WriteLog( "Loading texture data from \"" + name + "\"", logtype::texture );
+        // the file read and decoded while the frame of the loading screen may be made, the scenery loaded in the background
+        gfx::walk_sync::background_pause const pause;
 
         data_state = resource_state::loading;
         // known only of the data a worker thread reads (complete_data())

@@ -14,9 +14,25 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include <nlohmann/json.hpp>
 #include "utilities/Logs.h"
+#include <chrono>
 #include <sstream>
 
 using json = nlohmann::json;
+
+namespace
+{
+
+// the frames of the loading wheel, shown one turn a second
+constexpr std::size_t wheel_frame_count{60};
+
+// the frame of the wheel to show now
+std::size_t wheel_frame()
+{
+	auto const milliseconds{std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()};
+	return static_cast<std::size_t>(milliseconds * static_cast<long long>(wheel_frame_count) / 1000) % wheel_frame_count;
+}
+
+} // namespace
 
 // Helper function to count UTF-8 characters (not bytes)
 size_t utf8_char_count(const std::string& str)
@@ -212,8 +228,10 @@ void scenarioloader_ui::render_()
 	const float margin_bottom_loading = 80.0f * scale;
 	const float spacing = 10.0f * scale; // odstęp między ikoną a tekstem
 
-	// Loading icon
-	deferred_image *img = &m_loading_wheel_frames[38];
+	// Loading icon: the wheel turns where the scenery is loaded by a thread of its own and the frames keep coming (the vulkan
+	// renderer); where the main thread loads it between the frames it'd stand still, so it's left out and its place kept
+	auto const turning{GfxRenderer->Loads_In_Background()};
+	deferred_image *img = &m_loading_wheel_frames[turning ? wheel_frame() : 38];
 	const auto loading_tex = img->get();
 	const auto loading_size = glm::vec2(img->size()) * glm::vec2(scale);
 
@@ -229,7 +247,8 @@ void scenarioloader_ui::render_()
 	                icon_center_y - text_size.y * 0.5f);
 
 	// Draw
-	//draw_list->AddImage(reinterpret_cast<ImTextureID>(loading_tex), icon_pos, ImVec2(icon_pos.x + loading_size.x, icon_pos.y + loading_size.y), ImVec2(0, 0), ImVec2(1, 1));
+	if (turning && (loading_tex != deferred_image::invalid_id))
+		draw_list->AddImage(static_cast<ImTextureID>(loading_tex), icon_pos, ImVec2(icon_pos.x + loading_size.x, icon_pos.y + loading_size.y), ImVec2(0, 0), ImVec2(1, 1));
 	draw_list->AddText(text_pos, IM_COL32_WHITE, m_progresstext.c_str());
 
 	// Trivia 
@@ -350,4 +369,10 @@ void scenarioloader_ui::load_wheel_frames()
 {
 	for (int i = 0; i < 60; i++)
 		m_loading_wheel_frames[i] = deferred_image("ui/loading_wheel/" + std::to_string(i + 1));
+	if (GfxRenderer->Loads_In_Background())
+	{
+		// all of the turning wheel ready before the loading starts, not a frame of it at a time while the wheel turns
+		for (auto &frame : m_loading_wheel_frames)
+			frame.get();
+	}
 }

@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/screenshot.h"
 #include "rendering/editoroverlay.h"
 #include "rendering/common/exposure.h"
+#include "rendering/common/walksync.h"
 #include "application/application.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationenvironment.h"
@@ -648,7 +649,9 @@ bool vulkan14_renderer::Render()
 	scene.lamps.begin_frame(m_commands, value);
 	scene.cabprobe.begin_frame(value);
 	scene.skyocclusion.begin_frame(value);
-	if (scene.terrain)
+	// not while the scenery is loaded in the background: the layers may be made at the moment (gfx::walk_sync::background_pause).
+	// they go to the arrays in the frames after it
+	if (scene.terrain && (false == gfx::walk_sync::background()))
 	{
 		// textures of new heightmap terrain layers go to the arrays the terrain shader reads them from
 		scene.terrain->begin_frame(m_commands, value);

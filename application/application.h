@@ -14,6 +14,9 @@ http://mozilla.org/MPL/2.0/.
 #include "scripting/scriptscreens.h"
 #include "network/manager.h"
 #include "utilities/headtrack.h"
+
+#include <atomic>
+#include <thread>
 #ifdef WITH_UART
 #include "utilities/uart.h"
 #endif
@@ -70,6 +73,7 @@ public:
         push_mode( eu07_application::mode const Mode );
     void
         set_title( std::string const &Title );
+    // any thread: what the thread loading the scenery in the background reports is shown from the next frame of the main thread
     void
         set_progress( float const Progress = 0.f, float const Subtaskprogress = 0.f );
     void
@@ -126,7 +130,15 @@ private:
     int  init_modes();
 	bool init_network();
     int run_crashgui();
+    // the progress reported by another thread (set_progress()) given to the mode
+    void apply_progress();
 // members
+
+    // the progress of the scenery loaded by a thread of its own, for the main thread to show (set_progress())
+    std::thread::id m_mainthread { std::this_thread::get_id() };
+    std::atomic<float> m_pendingprogress { 0.f };
+    std::atomic<float> m_pendingsubtaskprogress { 0.f };
+    std::atomic<bool> m_progresspending { false };
 
     bool m_screenshot_queued = false;
     // the ui of the crash gui, drawn in the frames of the renderer instead of the ui of the modes while it's there
