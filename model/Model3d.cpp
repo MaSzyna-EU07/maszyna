@@ -2326,6 +2326,10 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 				Root[i].deserialize(s);
 			}
 		}
+		else if (m_layoutonly && (((type & 0x00FFFFFF) == MAKE_ID4('V', 'N', 'T', 0)) || ((type & 0x00FFFFFF) == MAKE_ID4('I', 'D', 'X', 0))))
+		{
+			// the geometry isn't read, the model holds its layout only
+		}
 		else if ((type & 0x00FFFFFF) == MAKE_ID4('V', 'N', 'T', 0)) // geometry vertices
 		{
 			// we rely on the SUB chunk coming before the vertex data, and on the overall vertex count matching the size of data in the chunk.
@@ -2666,6 +2670,13 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 			break;
 		}
 		}
+		if (m_layoutonly)
+		{
+			// no geometry, nothing to draw: the counts of the header would promise vertices that aren't there
+			Root[i].m_geometry.vertex_count = 0;
+			Root[i].m_geometry.index_count = 0;
+			continue;
+		}
 		if (false == hastangents)
 		{
 			gfx::calculate_tangents(Root[i].Vertices, Root[i].Indices, type);
@@ -2834,9 +2845,54 @@ bool TSubModel::HasAnyVertexUserData() const
 	return false;
 };
 
+namespace
+{
+// the file lies in specified folder of the game, whatever the case of the names
+bool starts_with_folder(std::string const &File, std::string_view const Folder)
+{
+	if (File.size() < Folder.size())
+		return false;
+	for (std::size_t i = 0; i < Folder.size(); ++i)
+	{
+		auto const character{File[i] == '\\' ? '/' : static_cast<char>(std::tolower(static_cast<unsigned char>(File[i])))};
+		if (character != Folder[i])
+			return false;
+	}
+	return true;
+}
+} // namespace
+
 void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 { // wczytanie modelu z pliku binarnego
 	WriteLog("Loading binary format 3d model data from \"" + FileName + "\"...", logtype::model);
+
+	if (Global.test.skip_assets() && false == dynamic && false == starts_with_folder(FileName, "dynamic/"))
+	{
+		// a test run without the assets (test.noassets) takes of a model of the scenery what the simulation goes by: the
+		// submodels, their names and transforms (the animated parts, the lights, the turntables). the chunks of the
+		// geometry, most of the file, are passed over on the disk rather than read. a vehicle is read whole: the height of
+		// its pantographs is measured off the geometry of their shoes (TSubModel::MaxY()), and a model of a vehicle set in
+		// the scenery as decoration may be the one of a vehicle, whose instances share it
+		m_layoutonly = true;
+		std::ifstream file(FileName, std::ios::binary);
+		if (false == file.is_open())
+		{
+			ErrorLog("Bad model: can't open file \"" + FileName + "\"", logtype::model);
+			return;
+		}
+		uint32_t const type = sn_utils::ld_uint32(file);
+		uint32_t const size = sn_utils::ld_uint32(file) - 8;
+		if (type == MAKE_ID4('E', '3', 'D', '0'))
+		{
+			deserialize(file, size, dynamic);
+			WriteLog("Finished loading the layout of 3d model \"" + FileName + "\"", logtype::model);
+		}
+		else
+		{
+			ErrorLog("Bad model: unknown main chunk in file \"" + FileName + "\"", logtype::model);
+		}
+		return;
+	}
 
 	// the file is read whole in one go and parsed from memory
 	auto const filedata{read_whole_file(FileName)};

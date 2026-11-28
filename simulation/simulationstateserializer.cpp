@@ -36,6 +36,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/uuid.hpp"
 #include "editor/editorTerrainStreamer.hpp"
 
 #include <format>
@@ -95,6 +96,11 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 		state->scratchpad.binary.terrain_default = state->scratchpad.binary.terrain;
     }
 	Global.file_binary_terrain_skipped = 0;
+    if( true == Global.test.skip_assets() ) {
+        // a test run without the assets (test.noassets) has no terrain: the geometry cache of the scenery isn't read
+        state->scratchpad.binary.terrain = false;
+        state->scratchpad.binary.terrain_default = false;
+    }
 
 	if (false != state->scratchpad.binary.terrain)
 	{
@@ -217,7 +223,9 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	if( true == Global.file_binary_terrain
      && false == state->scratchpad.binary.terrain
      && true == state->scratchpad.binary.terrain_textfiles.empty()
-	 && state->scenariofile != "$.scn" ) {
+	 && state->scenariofile != "$.scn"
+     // a test run without the assets left the geometry out, the cache made of what it has would be missing it
+     && false == Global.test.skip_assets() ) {
 		// if we didn't find usable binary version of the scenario files, create them now for future use
 		// as long as the scenario file wasn't rainsted-created base file override.
 		// NOTE: this is done only for the sceneries which don't refer to terrain files (.txtf, .btf). these get binary
@@ -732,6 +740,12 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         simulation::Region.insert_powersource( powersource, Scratchpad );
 */
     }
+    else if( nodedata.type == "model"
+          && nodedata.range_min < 0.0
+          && true == Global.test.skip_assets() ) {
+        // 3d terrain, which a test run without the assets (test.noassets) leaves out
+        skip_until( Input, "endmodel" );
+    }
     else if( nodedata.type == "model" ) {
 
         if( nodedata.range_min < 0.0 ) {
@@ -769,6 +783,11 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
                 skip_until( Input, "endmodel" );
             }
         }
+        else if( true == nodedata.name.empty() && true == Global.test.skip_assets() ) {
+            // decoration, which a test run without the assets (test.noassets) leaves out, see deserialize_models()
+            UID::pass_over();
+            skip_until( Input, "endmodel" );
+        }
         else {
             // regular instance of 3d mesh
             auto *instance { deserialize_model( Input, Scratchpad, nodedata ) };
@@ -777,6 +796,19 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
 
             insert_model( instance, Input, inputline, { sourcebegin, Input.TokenEnd() } );
         }
+    }
+    else if( ( nodedata.type == "triangles"
+            || nodedata.type == "triangle_strip"
+            || nodedata.type == "triangle_fan" )
+          && true == Global.test.skip_assets() ) {
+        // the terrain and other static geometry, which a test run without the assets (test.noassets) leaves out
+        skip_until( Input, "endtri" );
+    }
+    else if( ( nodedata.type == "lines"
+            || nodedata.type == "line_strip"
+            || nodedata.type == "line_loop" )
+          && true == Global.test.skip_assets() ) {
+        skip_until( Input, "endline" );
     }
     else if( nodedata.type == "triangles"
           || nodedata.type == "triangle_strip"
@@ -962,6 +994,7 @@ state_serializer::deserialize_models( cParser &Input, scene::scratch_data &Scrat
 
     Nodedata.type = "model";
     auto loaded { 0 };
+    auto firstentry { true };
     for( auto const &block : run.blocks ) {
         // instances of the same model with the same skin are set up after the first one of them
         std::vector<TAnimModel const *> twins( block.appearances.size(), nullptr );
@@ -977,6 +1010,15 @@ state_serializer::deserialize_models( cParser &Input, scene::scratch_data &Scrat
                 }
             }
             if( Nodedata.name == "none" ) { Nodedata.name.clear(); }
+            // location of the first definition is known from its node keyword, which went through the parser
+            auto const first { std::exchange( firstentry, false ) };
+            if( true == Nodedata.name.empty() && true == Global.test.skip_assets() ) {
+                // a test run without the assets (test.noassets) has no use for decoration: an instance without a name is
+                // out of reach of the events, the only way the simulation has to it. it takes the random numbers of the uuid
+                // it'd have, so the simulation draws the same ones as with the assets, and runs the same
+                UID::pass_over();
+                continue;
+            }
 
             // what follows is what deserialize_model() does
             auto *instance = new TAnimModel( Nodedata );
@@ -994,8 +1036,6 @@ state_serializer::deserialize_models( cParser &Input, scene::scratch_data &Scrat
             if( twin == nullptr ) { twin = instance; }
             instance->location( transform( entry.location, Scratchpad ) );
 
-            // location of the first definition is known from its node keyword, which went through the parser
-            auto const first { loaded == 0 };
             insert_model(
                 instance, Input,
                 ( first ? Line : Line + entry.line ),
@@ -1370,6 +1410,16 @@ state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scrat
 		files.emplace_back(token);
 	}
 
+	if (Global.test.skip_assets())
+	{
+		// a test run without the assets (test.noassets) has no terrain: neither the files nor what they'd make are loaded
+		for (auto const &file : files)
+		{
+			WriteLog("Terrain file: " + file + " left out (test.noassets)");
+		}
+		return;
+	}
+
 	std::string includes; // terrain files to be read as text, in the order the directive names them
 	for (auto const &file : files)
 	{
@@ -1413,7 +1463,11 @@ state_serializer::deserialize_heightmapterrain(cParser &Input, scene::scratch_da
 		erase_extension( name );
 	}
 	scene::Layers.terrain_directive(true);
-	if( false == name.empty() ) {
+	if( true == Global.test.skip_assets() ) {
+		// a test run without the assets (test.noassets) has no terrain
+		WriteLog( "Heightmap terrain " + name + " left out (test.noassets)" );
+	}
+	else if( false == name.empty() ) {
 		EditorTerrain.open( name );
 	}
 }

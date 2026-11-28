@@ -311,6 +311,15 @@ TAnimModel::is_keyword( std::string const &Token ) const {
 // assigns the model and the replacable skin to the instance, and binds light and variant submodels of the model
 void TAnimModel::assign_model( std::string &name, std::string const &texture, bool const ter )
 {
+    if( true == Global.test.skip_assets() && false == ter ) {
+        // a test run without the assets (test.noassets) reads no model of the scenery, nor looks for its skin: of the model
+        // the simulation needs only the parts which events animate (a turntable, the events done when an animation ends),
+        // and the model is read for them when the first of these events gets its part (AddContainer()). with no light
+        // submodels known the lights events change nothing, there's nothing they'd be seen on
+        m_skintoken = texture;
+        m_deferredmodel = name;
+        return;
+    }
     if (!Init( name, texture ))
     {
         if (name != "notload")
@@ -572,6 +581,11 @@ void TAnimModel::update_instanceable_flag() {
 
 std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name)
 { // dodanie sterowania submodelem dla egzemplarza
+    if( ( pModel == nullptr ) && ( false == m_deferredmodel.empty() ) ) {
+        // the model of a test run without the assets, read now for its part an event animates (its layout only, see
+        // TModel3d::LoadFromBinFile())
+        pModel = TModelsManager::GetModel( std::exchange( m_deferredmodel, std::string{} ) );
+    }
     if (!pModel)
 		return nullptr;
     TSubModel *tsb = pModel->GetFromName(Name);

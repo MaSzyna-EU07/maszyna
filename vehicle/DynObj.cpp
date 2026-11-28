@@ -262,6 +262,10 @@ void TAnim::Parovoz(){
 void
 material_data::assign( std::string const &Replacableskin ) {
 
+    if( true == Global.test.skip_assets() ) {
+        // a test run without the assets (test.noassets) has no textures, there's no point looking for the files of the skins
+        return;
+    }
     // a template puts its parameter after a folder ("tabl/(p6)"): a texture made by a script given there keeps its scheme
     if( auto const scheme { Replacableskin.find( "/make:" ) };
         scheme != std::string::npos

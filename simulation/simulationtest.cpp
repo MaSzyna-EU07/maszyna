@@ -89,6 +89,12 @@ void apply_test_mode_settings()
 #endif
 	Global.iMultiplayer = 0;
 	Global.exec_on_exit.clear();
+	if (Global.test.skip_assets())
+	{
+		// without the assets (test.noassets) there's nothing for the screens of the vehicles to show, nor anybody to see them
+		Global.luascreens_enabled = false;
+		Global.wasm_enabled = false;
+	}
 	// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
 	if (false == Global.random_seed_given) {
 		Global.random_seed = seed_of("test");

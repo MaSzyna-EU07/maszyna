@@ -22,7 +22,8 @@ http://mozilla.org/MPL/2.0/.
 // (execonexit, extcam.cmd, extcam.rec), write the screenshots elsewhere (screenshotsdir), open connections and ports
 // (network.server, network.client, zmq.address, motiontelemetry, uart, feedbackmode, feedbackport), switch back on a
 // script runtime the player switched off (python.enabled, luascreens.enabled, wasm.enabled), take its own scripts
-// out of the sandbox (lua.fulllibraries) or drop the odometer states the player keeps (odometer.expiry). they keep
+// out of the sandbox (lua.fulllibraries), drop the odometer states the player keeps (odometer.expiry) or change
+// what a test run loads while it loads (test.noassets). they keep
 // what eu07.ini set; a scenery may still switch a runtime off, or keep its scripts in the sandbox when eu07.ini didn't,
 // as it always could
 class ini_only_settings
@@ -55,4 +56,5 @@ class ini_only_settings
 	bool m_lua_fulllibraries;
 	bool m_wasm_enabled;
 	int m_odometer_expiry;
+	bool m_test_no_assets;
 };

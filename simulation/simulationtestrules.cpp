@@ -81,6 +81,10 @@ test_command_line parse_test_command_line(std::span<char const *const> const Arg
 		{
 			result.enabled = true;
 		}
+		else if (option == "--test-no-assets")
+		{
+			result.no_assets = true;
+		}
 		else if (option == "--test-timeout" || option == "--test-wall-timeout")
 		{
 			auto const seconds{option_seconds(Arguments, i)};
@@ -101,6 +105,9 @@ test_command_line parse_test_command_line(std::span<char const *const> const Arg
 			++i;
 		}
 	}
+	// a game started without the test mode loads the assets, it can't do without them
+	if (result.no_assets && false == result.enabled && result.error.empty())
+		result.error = "--test-no-assets needs --test";
 	return result;
 }
 

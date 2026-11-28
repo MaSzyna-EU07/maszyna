@@ -196,6 +196,7 @@ public:
 // members
 	std::shared_ptr<TAnimContainer> pRoot; // pojemniki sterujące, tylko dla aniomowanych submodeli
     TModel3d *pModel { nullptr };
+    std::string m_deferredmodel; // a test run without the assets (test.noassets): the model, read once an event animates its part
     glm::vec3 vAngle; // bazowe obroty egzemplarza względem osi
     glm::vec3 m_scale { 1.0f, 1.0f, 1.0f }; // per-axis scale (see Scale() accessors above)
     // rotation and scale part of the instance transform, cached for the instanced render path.

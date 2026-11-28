@@ -1364,7 +1364,11 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	auto const testcommandline{simulation::parse_test_command_line(std::vector<char const *>(Argv, Argv + Argc))};
 	if (false == testcommandline.error.empty())
 	{
-		simulation::test().conclude(simulation::test_result::error, testcommandline.error);
+		if (false == simulation::test().conclude(simulation::test_result::error, testcommandline.error))
+		{
+			// not a test run (--test-no-assets alone): told in the log, as any other start that fails
+			ErrorLog("Bad init: " + testcommandline.error);
+		}
 		return -1;
 	}
 	if (testcommandline.timeout.has_value())
@@ -1456,6 +1460,10 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			// taken from the command line above, with its value
 			++i;
 		}
+		else if (token == "--test-no-assets")
+		{
+			// taken from the command line above, applied once the settings files are read
+		}
 		else if (token == "-ini")
 		{
 			// extra settings file read on top of eu07.ini, so a run can override a few keys
@@ -1473,7 +1481,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			          << " [-edit [sceneryfilepath]]"
 			          << " [-seed number|word]"
 			          << " [-ini settingsfile]"
-			          << " [--test [--test-timeout seconds] [--test-wall-timeout seconds]]" << std::endl;
+			          << " [--test [--test-timeout seconds] [--test-wall-timeout seconds] [--test-no-assets]]" << std::endl;
 			simulation::test().conclude(simulation::test_result::error, std::format("unknown command line argument {}", token));
 			return -1;
 		}
@@ -1488,7 +1496,16 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			simulation::test().conclude(simulation::test_result::error, "--test needs a scenery given with -s");
 			return -1;
 		}
+		// the command line wins over test.noassets of the settings files
+		if (testcommandline.no_assets)
+		{
+			Global.test.no_assets = true;
+		}
 		simulation::apply_test_mode_settings();
+		if (Global.test.skip_assets())
+		{
+			WriteLog("test: no textures, sounds, terrain nor models of the scenery loaded, model instances without a name left out (test.noassets)");
+		}
 	}
 
 	// a renderer this build doesn't have: the values of the removed renderers are taken for "default" as eu07.ini is read
