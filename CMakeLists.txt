@@ -176,6 +176,7 @@ set(SOURCES
 "vehicle/DynObj.cpp"
 "EU07.cpp"
 "export_e3d_standalone.cpp"
+"model/e4d/e4d_convert.cpp"
 "export_btf_standalone.cpp"
 "nodebank_previews_standalone.cpp"
 "world/Event.cpp"
@@ -367,7 +368,6 @@ set(SOURCES
 
 "${DEPS_DIR}/glad/src/glad.c"
 "${DEPS_DIR}/dds-ktx/src/dds-ktx.c"
-"${DEPS_DIR}/zstd/zstd.c"
 
 "gl/shader.cpp"
 "gl/vao.cpp"
@@ -793,6 +793,11 @@ set(CORE_SOURCES
 "world/stationnames.cpp"
 "world/eventconditions.cpp"
 "utilities/wholefile.cpp"
+# the E4D model format: the files, their checks and the data they carry, which the unit tests read and write too
+"model/e4d/e4d_io.cpp"
+"model/e4d/e4d_build.cpp"
+"model/e4d/e4d_dump.cpp"
+"${DEPS_DIR}/zstd/zstd.c"
 )
 add_library(eu07_core STATIC ${CORE_SOURCES})
 target_link_libraries(eu07_core PUBLIC eu07_settings)
