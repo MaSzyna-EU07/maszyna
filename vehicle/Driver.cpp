@@ -531,6 +531,79 @@ bool TController::TableNotFound(basic_event const *Event, double const Distance 
     return lookup == sSpeedTable.end() || Distance - lookup->fDist > 100.0;
 };
 
+int TController::TableTrainPath( TTrack const *Track ) const
+{
+    if( Track == nullptr
+     || Track->eType != tt_Switch
+     || Track->SwitchExtension == nullptr
+     || pVehicles[ end::front ] == nullptr ) {
+        return -1;
+    }
+    // of the axles on the switch, the one nearest the head of the train
+    auto const head { pVehicles[ end::front ]->GetPosition() };
+    TTrackFollower const *nearest { nullptr };
+    auto nearestdistance { 0.0 };
+    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+        for( auto const *axle : { &vehicle->Axle0, &vehicle->Axle1 } ) {
+            if( axle->GetTrack() != Track ) {
+                continue;
+            }
+            auto const distance { glm::length( axle->pPosition - head ) };
+            if( nearest == nullptr || distance < nearestdistance ) {
+                nearest = axle;
+                nearestdistance = distance;
+            }
+        }
+        if( vehicle == pVehicles[ end::rear ] ) {
+            break;
+        }
+    }
+    return ( nearest != nullptr ? switch_fork::leaving_path( nearest->GetPath(), Track->SwitchExtension->CurrentIndex ) : -1 );
+}
+
+double TController::TableTrackLength( TTrack const *Track ) const
+{
+    if( auto const path { TableTrainPath( Track ) }; path >= 0 ) {
+        return Track->SwitchExtension->Segments[ path ]->GetLength();
+    }
+    return Track->Length();
+}
+
+bool TController::TableSwitchThrownUnder( TTrack const *Track ) const
+{
+    if( Track == nullptr
+     || Track->eType != tt_Switch
+     || Track->SwitchExtension == nullptr
+     || pVehicles[ end::front ] == nullptr ) {
+        return false;
+    }
+    auto onswitch { false };
+    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+        onswitch = onswitch || vehicle->Axle0.GetTrack() == Track || vehicle->Axle1.GetTrack() == Track;
+        if( vehicle == pVehicles[ end::rear ] ) {
+            break;
+        }
+    }
+    if( onswitch ) {
+        // the axles on it keep their way: it matters when the one nearest the head is on the other way now. the wheels
+        // running onto it from the frog end set it to their own way
+        return TableTrainPath( Track ) >= 0;
+    }
+    // none on it: the head of the train runs onto it yet, unless the train is past it, and then the axles that ran over
+    // it last remember it. an axle keeps only the last few switches, so in a long train past a ladder of switches the
+    // head may have forgotten one its rear has only just left: the vehicles nearest the switch decide
+    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+        if( vehicle->Axle0.PathOf( Track ).has_value()
+         || vehicle->Axle1.PathOf( Track ).has_value() ) {
+            return false;
+        }
+        if( vehicle == pVehicles[ end::rear ] ) {
+            break;
+        }
+    }
+    return true;
+}
+
 void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
 { // skanowanie trajektorii na odległość (fDistance) od (pVehicle) w kierunku przodu składu i
     // uzupełnianie tabelki
@@ -563,7 +636,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
         fLastDir = pVehicle->DirectionGet() * pVehicle->RaDirectionGet(); // ustalenie kierunku skanowania na torze
         if( fLastDir < 0.0 ) {
             // jeśli w kierunku Point2 toru
-            fTrackLength = pTrack->Length() - fTrackLength; // przeskanowana zostanie odległość do Point2
+            fTrackLength = TableTrackLength( pTrack ) - fTrackLength; // przeskanowana zostanie odległość do Point2
         }
         // account for the fact tracing begins from active axle, not the actual front of the vehicle
         // NOTE: position of the couplers is modified by track offset, but the axles ain't, so we need to account for this as well
@@ -573,7 +646,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
             + pVehicle->VectorLeft() * pVehicle->MoverParameters->OffsetTrackH );
         // aktualna odległość ma być ujemna gdyż jesteśmy na końcu składu
         fCurrentDistance = -fLength - fTrackLength;
-        fTrackLength = pTrack->Length(); //skasowanie zmian w zmiennej żeby poprawnie liczyło w dalszych krokach
+        fTrackLength = TableTrackLength( pTrack ); //skasowanie zmian w zmiennej żeby poprawnie liczyło w dalszych krokach
         MoveDistanceReset(); // AI startuje 1s po zaczęciu jazdy i mógł już coś przejechać
     }
     else {
@@ -616,7 +689,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
         // flaga ustawiona, gdy Point2 toru jest blizej
         fLastDir = (lastspeedpoint.iFlags & spReverse) != 0 ? -1.0 : 1.0;
         fCurrentDistance = lastspeedpoint.fDist; // aktualna odleglosc do jego Point1
-        fTrackLength = pTrack->Length();
+        fTrackLength = TableTrackLength( pTrack );
     }
 
     if( iTableDirection == 0 ) {
@@ -744,9 +817,10 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
         fCurrentDistance += fTrackLength; // doliczenie kolejnego odcinka do przeskanowanej długości
         tLast = pTrack; // odhaczenie, że sprawdzony
         fLastVel = pTrack->VelocityGet(); // prędkość na poprzednio sprawdzonym odcinku
+        // a switch thrown under the train is left by the way the train runs on
         pTrack = pTrack->Connected(
             pTrack->eType == tt_Cross ? sSpeedTable[iLast].iFlags >> 28 : static_cast<int>(fLastDir),
-            fLastDir); // może być NULL
+            fLastDir, TableTrainPath( pTrack )); // może być NULL
 
         if (pTrack != nullptr )
         { // jeśli kolejny istnieje
@@ -767,7 +841,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
 				}
 			}
             // zwiększenie skanowanej odległości tylko jeśli istnieje dalszy tor
-            fTrackLength = pTrack->Length();
+            fTrackLength = TableTrackLength( pTrack );
         }
         else
         { // definitywny koniec skanowania, chyba że dalej puszczamy samochód po gruncie...
@@ -820,7 +894,15 @@ void TController::TableCheck(double fDistance)
             if (sSpeedTable[i].iFlags & spEnabled) // jeśli pozycja istotna
             {
                 auto const passedbefore { TestFlag( sSpeedTable[ i ].iFlags, spElapsed ) };
-                if (sSpeedTable[i].Update())
+                auto const switchbefore { sSpeedTable[ i ].iFlags & spSwitchStatus };
+                auto rescan { sSpeedTable[ i ].Update() };
+                if( false == rescan
+                 && TestFlag( sSpeedTable[ i ].iFlags, spSwitch )
+                 && ( sSpeedTable[ i ].iFlags & spSwitchStatus ) != switchbefore ) {
+                    // a switch the front of the train is past: thrown under it, or before the axles of its head
+                    rescan = TableSwitchThrownUnder( sSpeedTable[ i ].trTrack );
+                }
+                if( rescan )
                 {
                     if( Global.iWriteLogEnabled & 8 ) {
                         WriteLog( "Speed table for " + OwnerName() + " detected switch change at " + sSpeedTable[ i ].trTrack->name() + " (generating fresh trace)" );

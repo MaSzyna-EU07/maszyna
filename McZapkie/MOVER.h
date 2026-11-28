@@ -1750,6 +1750,7 @@ class TMoverParameters
 	int BearingType = 1; /*lozyska: 0 - slizgowe, 1 - toczne*/
 	double ADist = 0.0;
 	double BDist = 0.0; /*odlegosc osi oraz czopow skretu*/
+	double Rmin = 0.0; // the tightest curve the vehicle runs through [m] (Wheels: Rmin), 0 when the definition gives none
 	/*hamulce:*/
 	int NBpA = 0; /*ilosc el. ciernych na os: 0 1 2 lub 4*/
 	int SandCapacity = 0; /*zasobnik piasku [kg]*/
@@ -2631,6 +2632,10 @@ class TMoverParameters
 	// the vehicle leaves the rails in a collision, the reason told in the log, and slides on as the criteria of
 	// derailment.h have it
 	void derail_in_collision(DerailReason Reason, std::string const &Why);
+	// physics.derailment new: running forked (world/switchfork.h) the vehicle came past what it takes, the flange climbs
+	// the rail: it leaves the rails upright, the reason told in the log. Side is the side of its front the way the
+	// switch was thrown to lies on (1 the left, -1 the right, 0 unknown), the way it goes off the track to
+	void derail_forked(int Side, std::string const &Why);
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/
 	bool EIMDirectionChangeAllow(void) const;

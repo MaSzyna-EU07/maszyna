@@ -596,6 +596,15 @@ private:
     bool TableNotFound( basic_event const *Event, double const Distance ) const;
     void TableTraceRoute( double fDistance, TDynamicObject *pVehicle );
     void TableCheck( double fDistance );
+    // the way of a switch the train runs on, where it isn't the way the switch is set to: the way of the axle on the
+    // switch nearest the head of the train, as the switch was thrown under it (world/switchfork.h). -1 for a switch set
+    // the way the train runs, a switch the train isn't on, or a track
+    int TableTrainPath( TTrack const *Track ) const;
+    // the length of the track along the way the train runs on it
+    double TableTrackLength( TTrack const *Track ) const;
+    // a switch of the table behind the front of the train changed: thrown under the axles of the train, or before the
+    // axles of the head of the train got to it. not when the axles running onto it from the frog end pushed it over
+    bool TableSwitchThrownUnder( TTrack const *Track ) const;
     // called after TSpeedPos::Update() of a position of the speed table, with its spElapsed flag from before it:
     // reports the head of the train going past it, if it's a signal: to the black box, and to the test mode if it showed stop
     void CheckSignalPassed( TSpeedPos const &Point, bool Passedbefore ) const;

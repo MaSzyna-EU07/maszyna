@@ -2090,6 +2090,11 @@ void TDynamicObject::place_on_track(TTrack *Track, double fDist, bool Reversed)
 		Axle1.Move((iDirection ? fDist : -fDist) - fAxleDistHalf, false); // false, żeby nie generować eventów
 		break;
 	}
+	// put on the track anew: the axles ran over the switches on the way to their places, not the train
+	Axle0.TakeFacingEntry();
+	Axle1.TakeFacingEntry();
+	m_forkbogies = {};
+	m_forkends = {};
 	// the stretches the criteria of derailment held over were on the track the vehicle left (consistteleport)
 	MoverParameters->derailment_monitor.reset();
 	MoverParameters->derailment_distance = 0.0;
@@ -2674,6 +2679,9 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
         // Axle3.Move((iDirection?fDist:-fDist)+(fAxleDistHalf-MoverParameters->ADist*0.5),false);
         break;
     }
+    // the axles ran over the switches on the way to their places, not the train
+    Axle0.TakeFacingEntry();
+    Axle1.TakeFacingEntry();
     // potrzebne do wyliczenia aktualnej pozycji; nie może być zero, bo nie przeliczy pozycji
     // teraz jeszcze trzeba przypisać pojazdy do nowego toru, bo przesuwanie początkowe osi nie
     // zrobiło tego
@@ -2820,11 +2828,15 @@ void TDynamicObject::Move(double fDistance)
         return;
     }
     move_axles( fDistance );
+    // a switch thrown under the train: did the axles that ran onto it take the way of those ahead of them
+    watch_fork_entries( fDistance );
     if( fDistance != 0.0 || m_offtrackplaced ) // nie liczyć ponownie, jeśli stoi
     { // liczenie pozycji pojazdu tutaj, bo jest używane w wielu miejscach
         // (also once the vehicle off the track is back on the rails)
         m_offtrackplaced = false;
         place_by_axles();
+        // the vehicle running forked, with its place and heading known
+        update_forks();
     }
 }
 
@@ -3325,6 +3337,9 @@ void TDynamicObject::move_off_track( double const Distance ) {
     m_offtrackaxles += glm::dot( pose.position - std::exchange( m_offtrackfrom, pose.position ), track_front() );
     if( std::abs( m_offtrackaxles ) >= 0.1 ) {
         move_axles( std::exchange( m_offtrackaxles, 0.0 ) );
+        // off the rails it runs on no way of a switch: the switches its axles went over are not watched for forked running
+        Axle0.TakeFacingEntry();
+        Axle1.TakeFacingEntry();
     }
 
     place_off_track();
@@ -3414,6 +3429,177 @@ void TDynamicObject::update_off_track( double const Deltatime ) {
         "derailment: {} {} {:.1f} m from where it left the rails, {:.1f} m from the axis of the track, at {:.1f} km/h, sliding sideways at {:.1f} m/s, tipped {:.0f} deg, roll {:.0f} deg, yaw {:+.1f} deg turning at {:+.1f} deg/s{}",
         MoverParameters->Name, resting ? "came to rest" : "off the track", motion.travelled(), off_track_offset(), std::abs( MoverParameters->V ) * 3.6, motion.sideways(),
         glm::degrees( motion.tipping() ), glm::degrees( motion.roll() ), glm::degrees( motion.yaw() ), glm::degrees( motion.yaw_rate() ), motion.lying() ? ", lying on its side" : "" ) );
+}
+
+TTrackFollower const *TDynamicObject::coupled_axle( int const End ) const {
+
+    auto const &coupler { MoverParameters->Couplers[ End ] };
+    auto const *other { MoverParameters->Neighbours[ End ].vehicle };
+    if( other == nullptr
+     || coupler.Connected != other->MoverParameters
+     || ( coupler.CouplingFlag & coupling::coupler ) == 0 ) {
+        return nullptr;
+    }
+    return ( coupler.ConnectedNr == end::front ? &other->Axle0 : &other->Axle1 );
+}
+
+namespace {
+
+// the axle ran onto the Switch from its points; the way the axle ahead of it took over the switch: its own way if it is
+// on the switch, the one it remembers if it is past it
+std::optional<int> path_ahead( TTrackFollower const &Ahead, TTrack const *Switch ) {
+
+    return ( Ahead.GetTrack() == Switch ? std::optional<int>{ Ahead.GetPath() } : Ahead.PathOf( Switch ) );
+}
+
+// the two axles run on one way: the same track, and on a switch the same way of it
+bool same_way( TTrackFollower const &One, TTrackFollower const &Other ) {
+
+    return One.GetTrack() == Other.GetTrack() && One.GetPath() == Other.GetPath();
+}
+
+std::string switch_name( TTrack const *Switch ) {
+
+    return ( Switch != nullptr ? Switch->name() : std::string{ "(none)" } );
+}
+
+} // namespace
+
+void TDynamicObject::watch_fork_entries( double const Distance ) {
+
+    auto *const frontentry { Axle0.TakeFacingEntry() };
+    auto *const rearentry { Axle1.TakeFacingEntry() };
+    if( Distance == 0.0
+     || ( frontentry == nullptr && rearentry == nullptr ) ) {
+        return;
+    }
+    // moving towards coupler 0 the front axle leads, and the vehicle coupled there is ahead of it
+    auto const forwards { Distance > 0.0 };
+    auto const &leading { forwards ? Axle0 : Axle1 };
+    auto const &trailing { forwards ? Axle1 : Axle0 };
+    auto *const leadingentry { forwards ? frontentry : rearentry };
+    auto *const trailingentry { forwards ? rearentry : frontentry };
+    if( trailingentry != nullptr ) {
+        auto const ahead { path_ahead( leading, trailingentry ) };
+        if( switch_fork::forked( trailing.GetPath(), ahead ) ) {
+            m_forkbogies = { trailingentry, false };
+            WriteLog(
+                "Switch \"" + switch_name( trailingentry ) + "\" thrown under " + MoverParameters->Name
+                + ": running forked, its " + ( forwards ? "rear" : "front" ) + " bogie took way " + std::to_string( trailing.GetPath() )
+                + ", the " + ( forwards ? "front" : "rear" ) + " one way " + std::to_string( *ahead ) );
+        }
+    }
+    if( leadingentry != nullptr ) {
+        auto const end { forwards ? end::front : end::rear };
+        if( auto const *other { coupled_axle( end ) }; other != nullptr ) {
+            auto const ahead { path_ahead( *other, leadingentry ) };
+            if( switch_fork::forked( leading.GetPath(), ahead ) ) {
+                m_forkends[ end ] = { leadingentry, false };
+                WriteLog(
+                    "Switch \"" + switch_name( leadingentry ) + "\" thrown under " + MoverParameters->Name
+                    + ": running forked, it took way " + std::to_string( leading.GetPath() )
+                    + ", " + MoverParameters->Neighbours[ end ].vehicle->MoverParameters->Name + " coupled at its " + ( end == end::front ? "front" : "rear" )
+                    + " way " + std::to_string( *ahead ) );
+            }
+        }
+    }
+}
+
+void TDynamicObject::update_forks() {
+
+    if( m_forkbogies.Switch == nullptr
+     && m_forkends[ end::front ].Switch == nullptr
+     && m_forkends[ end::rear ].Switch == nullptr ) {
+        return;
+    }
+    auto const sideof = [ this ]( glm::dvec3 const &Vector ) {
+        return ( glm::dot( Vector, vLeft ) >= 0.0 ? 1 : -1 ); };
+    // the bogies on the two ways: the body between them turns them under it
+    if( m_forkbogies.Switch != nullptr ) {
+        if( same_way( Axle0, Axle1 ) ) {
+            m_forkbogies = {};
+        }
+        else if( false == m_forkbogies.told ) {
+            auto const front { switch_fork::turn( Axle0.vAngles.z, modelRot.z ) };
+            auto const rear { switch_fork::turn( Axle1.vAngles.z, modelRot.z ) };
+            // the tightest curve the vehicle is built for, by its definition
+            auto const tightest { MoverParameters->Rmin > 0.0 ? MoverParameters->Rmin : switch_fork::minimum_curve };
+            auto const state { switch_fork::bogies( front, rear, fAxleDist, tightest ) };
+            if( state.past() ) {
+                // the side the bogie turned farther heads to, along the way of the vehicle
+                auto const frontfarther { std::abs( front ) >= std::abs( rear ) };
+                auto const heading { frontfarther ? Axle0.vAngles.z : Axle1.vAngles.z };
+                glm::dvec3 track { -std::sin( heading ), 0.0, std::cos( heading ) };
+                if( glm::dot( track, vFront ) < 0.0 ) {
+                    track = -track;
+                }
+                fork_past(
+                    m_forkbogies, sideof( track ),
+                    std::format(
+                        "its bogies on the two ways of switch \"{}\": the {} one turned {:.1f} deg under the body, more than the {:.1f} deg of bogies {:.1f} m apart"
+                        " in a {:.0f} m curve (the other bogie {:.2f} m off the line of its track), at {:.0f} km/h",
+                        switch_name( m_forkbogies.Switch ), frontfarther ? "front" : "rear",
+                        glm::degrees( state.value ), glm::degrees( state.limit ), fAxleDist, tightest,
+                        fAxleDist * std::sin( state.value ), MoverParameters->Vel ) );
+            }
+        }
+    }
+    // the coupled vehicles on the two ways: their ends part sideways
+    for( int end = end::front; end <= end::rear; ++end ) {
+        auto &watch { m_forkends[ end ] };
+        if( watch.Switch == nullptr ) {
+            continue;
+        }
+        auto const *otheraxle { coupled_axle( end ) };
+        auto const &ownaxle { end == end::front ? Axle0 : Axle1 };
+        if( otheraxle == nullptr
+         || same_way( ownaxle, *otheraxle ) ) {
+            watch = {};
+            continue;
+        }
+        if( watch.told ) {
+            continue;
+        }
+        auto const *other { MoverParameters->Neighbours[ end ].vehicle };
+        auto const otherend { MoverParameters->Couplers[ end ].ConnectedNr };
+        auto const &own { vCoulpler[ end ] };
+        auto const &theirs { other->vCoulpler[ otherend ] };
+        auto const state { switch_fork::coupling( switch_fork::end_offset( own.x, own.z, modelRot.z, theirs.x, theirs.z, other->modelRot.z ) ) };
+        if( state.past() ) {
+            fork_past(
+                watch, sideof( own - theirs ),
+                std::format(
+                    "it and {} coupled at its {} end on the two ways of switch \"{}\": the ends {:.2f} m apart sideways, more than the {:.2f} m of the buffer heads,"
+                    " at {:.0f} km/h",
+                    other->MoverParameters->Name, end == end::front ? "front" : "rear", switch_name( watch.Switch ), state.value, state.limit, MoverParameters->Vel ) );
+        }
+    }
+}
+
+void TDynamicObject::fork_past( fork_watch &Watch, int const Side, std::string const &Why ) {
+
+    if( TestFlag( MoverParameters->DamageFlag, dtrain_out )
+     || false == TestFlag( MoverParameters->CategoryFlag, 1 )
+     || DebugModeFlag ) {
+        return;
+    }
+    switch( Global.derailment ) {
+        case global_settings::derailment_model::physical: {
+            Watch.told = true;
+            MoverParameters->derail_forked( Side, Why );
+            break;
+        }
+        case global_settings::derailment_model::monitor: {
+            // the vehicle runs on forked, as it did before; the log tells what physics.derailment new does
+            Watch.told = true;
+            WriteLog( "derailment monitor: " + MoverParameters->Name + " derailed running forked, " + Why );
+            break;
+        }
+        default: {
+            // old, off: forked running as it is
+            break;
+        }
+    }
 }
 
 void TDynamicObject::AttachNext(TDynamicObject *Object, int iType)

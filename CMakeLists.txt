@@ -751,6 +751,7 @@ set(CORE_SOURCES
 "vehicle/derailmotion.cpp"
 "world/TrackCheck.cpp"
 "world/SleeperPack.cpp"
+"world/switchfork.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/logfiles.cpp"
 "utilities/parser.cpp"

@@ -658,6 +658,24 @@ private:
   private:
     TDynamicObject *ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int const Direction, int const Mycoupler, bool const InLine = false ) const;
     void ABuCheckMyTrack();
+    // forked running (world/switchfork.h): a switch thrown under the train put two axles following each other on its
+    // two ways. the vehicle whose axle came to the points after the throw keeps watch: of its two bogies, or of its end
+    // and the vehicle coupled there. none while they run on one way
+    struct fork_watch {
+        TTrack const *Switch { nullptr };
+        bool told { false }; // past what the vehicle takes: derailed, or told in the log
+    };
+    fork_watch m_forkbogies;
+    std::array<fork_watch, 2> m_forkends;
+    // the axle of the vehicle coupled at the End that is nearest to this vehicle, none without one
+    TTrackFollower const *coupled_axle( int const End ) const;
+    // the axles that ran onto a switch from its points in the move by the Distance [m]: did the one ahead of each take
+    // the same way
+    void watch_fork_entries( double const Distance );
+    // the vehicle running forked: how far the bogies turned under the body, or the coupled ends are apart sideways
+    void update_forks();
+    // running forked past what the vehicle takes, as physics.derailment has it
+    void fork_past( fork_watch &Watch, int const Side, std::string const &Why );
 
     std::string rTypeName; // nazwa typu pojazdu
 	std::string rReplacableSkin; // nazwa tekstury pojazdu

@@ -1,5 +1,5 @@
 {
-  "description": "Switch thrown under a standing train, which then leaves facing through it (#289 review 2b): an EU07 with three coaches stands cold across zwr01 on td.scn, the locomotive on track 2, the last coaches over the switch, which is set to track 2. 5 s after the start the switch is thrown to track 1; then the driver gets the order to go, into the station, facing through the switch. Every vehicle has to keep to the line of a track.",
+  "description": "Switch thrown under a standing train, which then leaves facing through it (#289 review 2b): an EU07 with three coaches stands cold across zwr01 on td.scn, the locomotive on track 2, the last coaches over the switch, which is set to track 2. 5 s after the start the switch is thrown to track 1; then the driver gets the order to go, into the station, facing through the switch. The axles on the switch keep the way to track 2, the last coach's rear bogie comes to the points after the throw and takes track 1: physics.derailment monitor tells in the log that the coach derails. The AI scans its route from the last vehicle along the way its axles run on, to track 2 where the locomotive is, never through track 1; the test passes when the locomotive runs onto tdo_n109, the last track before the exit signal of track 2. (Shunting, the AI runs past that signal at stop by a few metres, with nothing thrown and on staging as well, so the case doesn't wait for the stop.)",
   "base_scenery": "td.scn",
   "time": "10:34",
   "fragment": "td_switch_thrown.scn",
@@ -22,11 +22,15 @@
   },
   "track_events": {
     "tor2p": "event0 autotest_wake_after_throw",
-    "tdo_n109": "event0 autotest_pass"
+    "tdo_n109": [
+      "event1 autotest_pass_running",
+      "event2 autotest_pass_running"
+    ]
   },
   "test_config": [
     "test.timeout 400",
-    "test.standstill 120"
+    "test.standstill 120",
+    "test.no_movement_before_pass no"
   ],
   "timeout": 600,
   "checks": [
@@ -38,12 +42,31 @@
     {
       "type": "on_track",
       "vehicles": "{{vehicle}}",
+      "exclude": "{{vehicle}}_c3",
       "max_offset": 0.6
+    },
+    {
+      "type": "log_contains",
+      "pattern": "Switch \"zwr01\" thrown under \\S+_c3: running forked, its rear bogie took way 1, the front one way 0"
+    },
+    {
+      "type": "log_contains",
+      "pattern": "derailment monitor: \\S+_c3 derailed running forked, its bogies on the two ways of switch \"zwr01\""
+    },
+    {
+      "type": "log_contains",
+      "pattern": "tracing through track tdo_n109"
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "tracing through track tor1p"
     },
     {
       "type": "log_lacks",
       "pattern": "Bad driving"
     }
   ],
-  "xfail": "#289 review 2b, as before the stack (TrkFoll reverted in c268673c): the axles that stood on the switch leave it by the way it is set to now, so the second coach runs with one bogie on track 2 and the other on track 1, 4.6 m apart, its body 2.3 m off both, with nothing derailed or broken; and the AI scans its route from the last vehicle through the switch as now set, reads the signals of track 1 while it runs on track 2, and its head is counted past the exit signal of track 1 at stop"
+  "ini": [
+    "debuglog 11"
+  ]
 }

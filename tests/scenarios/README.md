@@ -551,32 +551,43 @@ the `converteron` hint), is in the cab only: no command of a scenery or of the t
 `ConverterAllowLocal`, and nobody sits in a cab in the test mode, so the switch is always on in a case.
 
 The `eu07_td_switch_*` cases (fragment `td_switch_thrown.scn`, the review of #289, point 2b) throw a switch of
-Stacja1 by an event under an EU07 with three coaches and check that the train keeps to the rails (`on_track`) and that
-the AI keeps to the route it is really on. Both switches of the station have their points towards the line and the
-way to track 2 straight (position 0), to track 1 curved (position 1); the ends of the two ways are 1.9 m apart, the
-tracks 4.6 m. `zwr01` at the west end is run through facing by a train running into the station, `zwr02` at the east
-end trailing by one leaving it. The throw is an event set off once, by the rear axle of the locomotive running onto a
-track (`event1`/`event2` of it, which only the vehicle with the driver sets off) or by a launcher 5 s after the start;
-a driver that stands cold gets its order (`vars.order`) from `event0` of its track, after the throw where the train
-stands over the switch. On track 1 a signal at stop of the case's own stands at z 1100: the train has to stop before
-it (`event0` of `tdo_n1725` passes the test, running onto `tdo_n1734` fails it); on track 2 the exit signal `stacja1_k`
-at stop. What they showed on `staging` of 2026-11-22 (f15ea405), where an axle on a switch keeps the way it ran onto
-(the segment it took when it got onto the switch) but leaves the switch by the way it is set to now, and the AI does
-not scan its route again for a switch that changed behind the head of the train:
+Stacja1 by an event under an EU07 with three coaches. Both switches of the station have their points towards the line
+and the way to track 2 straight (position 0), to track 1 curved (position 1); the ends of the two ways are 1.9 m apart,
+the tracks 4.6 m. `zwr01` at the west end is run through facing by a train running into the station, `zwr02` at the
+east end trailing by one leaving it. The throw is an event set off once, by the rear axle of the locomotive running
+onto a track (`event1`/`event2` of it, which only the vehicle with the driver sets off) or by a launcher 5 s after the
+start; a driver that stands cold gets its order (`vars.order`) from `event0` of its track, after the throw where the
+train stands over the switch. The control runs into track 1, where a signal at stop of the case's own stands at z 1100
+(`event0` of `tdo_n1725` passes the test, running onto `tdo_n1734` fails it); on track 2 the exit signal `stacja1_k`
+is at stop.
+
+A switch thrown under a train facing (`world/switchfork.h`): an axle keeps the way of the switch it ran onto, the
+axles that come to the points after the throw take the other way. Two axles that follow each other in the train on the
+two ways run forked, the vehicle between them (its bogies) or two coupled vehicles; the log tells
+(`Switch "<switch>" thrown under <vehicle>: running forked, ...`). Once the bogies turn under the body more than in the
+tightest curve the vehicle runs through (`Rmin` of its definition, 80 m for the bdhpumn coach; 150 m without one), or
+the coupled ends are more than the 0.45 m of the buffer heads apart sideways, `physics.derailment new` derails the
+vehicle (`Bad driving: <vehicle> derailed running forked, ...`): its brake hoses tear and the train stops in
+emergency. With `monitor` (the default) the log tells it once (`derailment monitor: <vehicle> derailed running forked,
+...`) and the vehicle runs on forked, as before. The facing cases turn on the speed table of the AI in the log
+(`debuglog 11`) to check the route it traces; `on_track` leaves out the vehicle that runs forked (`exclude`).
 
 | case | throw | result |
 | --- | --- | --- |
-| `eu07_td_switch_facing_control` | none, set to track 1 from the start | passes: stops before the signal of track 1 |
-| `eu07_td_switch_thrown_facing_head` | `zwr01` to track 1 with the locomotive on the switch | `xfail`: the locomotive jumps sideways at the end of the switch (0.78 m off the track in the black box), the whole train goes to track 1, and the AI, still on the route of track 2, runs past the signal of track 1 at 40 km/h |
-| `eu07_td_switch_thrown_facing_behind` | `zwr01` to track 1 with the locomotive just past it | `xfail`: the locomotive runs on along track 2 and the coaches coupled to it along track 1, side by side, for 900 m |
-| `eu07_td_switch_thrown_standing_facing` | `zwr01` to track 1 under the standing train, which then leaves facing | `xfail`: the second coach runs with a bogie on each track, its body 2.3 m off both; the AI, which scans from the last vehicle, reads the signals of track 1 while it runs on track 2 (a signal passed at danger, `stacja1_j`) |
-| `eu07_td_switch_thrown_standing_trailing` | `zwr02` to track 1 under the standing train, which then leaves trailing | passes: the first wheels coming from track 2 push the switch back (as through any switch set against them from the frog end) |
-| `eu07_td_switch_thrown_trailing` | `zwr02` to track 2 under the coaches of the timetable train leaving track 1 | passes: the switch is pushed back, the train stops at Przystanek after 1402 m |
+| `eu07_td_switch_facing_control` | none, set to track 1 from the start | stops before the signal of track 1 |
+| `eu07_td_switch_thrown_facing_head` | `zwr01` to track 1 with the locomotive on the switch | the locomotive keeps to track 2, the first coach takes track 1: the two run forked, the monitor tells the coach derails (ends 0.46 m apart at 41 km/h); the AI scans again from the switch along the way of the locomotive and stops before the exit signal of track 2 |
+| `eu07_td_switch_thrown_facing_head_derails` | as above, `physics.derailment new` | the first coach derails, the train stops after 224 m |
+| `eu07_td_switch_thrown_facing_behind` | `zwr01` to track 1 with the locomotive just past it | the second coach runs with its bogies on the two ways, the monitor tells it derails (7.1 deg against the 7.0 of 80 m, at 46 km/h); the locomotive stops before the exit signal of track 2 |
+| `eu07_td_switch_thrown_facing_behind_derails` | as above, `physics.derailment new` | the second coach derails, the train stops after 286 m |
+| `eu07_td_switch_thrown_standing_facing` | `zwr01` to track 1 under the standing train, which then leaves facing | the last coach runs forked, the monitor tells it derails at 19 km/h; the AI traces its route from the last vehicle along the way its axles run on, through track 2 (`tdo_n109`), never through track 1 (`tor1p`); passes when the locomotive runs onto `tdo_n109` (shunting, the AI runs past `stacja1_k` at stop by a few metres with nothing thrown too, on `staging` as well) |
+| `eu07_td_switch_thrown_standing_facing_derails` | as above, `physics.derailment new` | the last coach derails, the train stops after 51 m |
+| `eu07_td_switch_thrown_standing_trailing` | `zwr02` to track 1 under the standing train, which then leaves trailing | the first wheels coming from track 2 push the switch back (as through any switch set against them from the frog end) |
+| `eu07_td_switch_thrown_trailing` | `zwr02` to track 2 under the coaches of the timetable train leaving track 1 | the switch is pushed back, the train stops at Przystanek after 1402 m |
 
-Nothing derails in any of them with `physics.derailment monitor` (the default; the monitor reported nothing either),
-and the three `xfail` cases run with `physics.derailment new` came out the same to the metre: the criteria of
-derailment look at the curve, the cant and the speed of a vehicle, not at its bogies being on two tracks. Nor does the
-coupler between a locomotive and a coach 4.6 m beside it break.
+On `staging` f15ea405, before the switch fork, the six thrown facing cases fail: an axle left a switch thrown under it
+by the way the switch was set to then (the locomotive jumped 0.78 m off its track at the end of the switch), the train
+split onto the two tracks with nothing in the log, and the AI traced its route through the switch as set (after the
+throw under the standing train through `tor1p`, track 1, while its head was on track 2).
 
 ### Cases on a mission of a scenery
 
@@ -714,7 +725,7 @@ the row instead, logged by builds from this branch on.
   over the last second, ... m now`), and once more when all vehicles off the track are at rest (`, all at rest`); the
   most on the way is at most `max_transient` m, the overlap at rest at most `max_at_rest` m.
 
-- `on_track` `vehicles`, optional `max_offset` (0.75 m), `max_detour` (5 m): every vehicle whose name starts with
+- `on_track` `vehicles`, optional `max_offset` (0.75 m), `max_detour` (5 m), `exclude`: every vehicle whose name starts with
   `vehicles` (e.g. `{{vehicle}}`, the train of the case) keeps to the rails in the black box, in each of its states:
   its middle is within `max_offset` of the line of a track (level distance, the map of the tracks of the black box),
   and of two vehicles coupled to each other the way along the tracks from one to the other (through the ends of the
@@ -725,7 +736,8 @@ the row instead, logged by builds from this branch on.
   a curve of radius R a vehicle running right is a^2 / 8R off the track, a being the distance of the pivots: a 19.5 m
   coach 0.59 m at R 80, 0.79 m at R 60. The default suits curves down to about R 65 for such a coach; a case with
   tighter curves sets more. The black box lists a vehicle once a second, so a jump between two lists shows up only
-  as it is at the next one.
+  as it is at the next one. Vehicles whose name starts with `exclude` are left out (a coach that runs forked on
+  purpose).
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the

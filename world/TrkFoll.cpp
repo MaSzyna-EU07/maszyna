@@ -71,8 +71,37 @@ void TTrackFollower::Reset()
 	fDirection = 1.0;
 }
 
+TTrack *TTrackFollower::TakeFacingEntry()
+{
+    auto *const entry { m_facingentry };
+    m_facingentry = nullptr;
+    return entry;
+}
+
+int TTrackFollower::LeavingPath() const
+{
+    if( pCurrentTrack == nullptr || pCurrentTrack->eType != tt_Switch || pCurrentTrack->SwitchExtension == nullptr ) {
+        return -1;
+    }
+    return switch_fork::leaving_path( iPath, pCurrentTrack->SwitchExtension->CurrentIndex );
+}
+
+int TTrackFollower::JoinedEnd(int const End) const
+{
+    // the axle is on a track here (SetCurrentTrack() leaves it)
+    auto const &track { *pCurrentTrack };
+    if( track.eType == tt_Switch && track.SwitchExtension != nullptr ) {
+        if( auto const path { switch_fork::leaving_path( iPath, track.SwitchExtension->CurrentIndex ) }; path >= 0 ) {
+            // the switch was thrown under the axle: the end of its own way is joined to the next track
+            return End ? track.SwitchExtension->iNextDirection[ path ] : track.SwitchExtension->iPrevDirection[ path ];
+        }
+    }
+    return End ? track.iNextDirection : track.iPrevDirection;
+}
+
 TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
 { // przejechanie na inny odcinkek toru, z ewentualnym rozpruciem
+    auto facing { false }; // onto a switch from its points
     if (pTrack)
         switch (pTrack->eType)
         {
@@ -81,9 +110,11 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
             if( pCurrentTrack == nullptr ) {
                 break;
             }
-            int i = end ? pCurrentTrack->iNextDirection : pCurrentTrack->iPrevDirection;
+            int i = JoinedEnd( end );
             if (i > 0) // jeżeli wjazd z ostrza
                 pTrack->SwitchForced(i >> 1, Owner); // to przełożenie zwrotnicy - rozprucie!
+            else
+                facing = true; // from the points: the way the switch is set to
         }
         break;
         case tt_Cross: // skrzyżowanie trzeba tymczasowo przełączyć, aby wjechać na właściwy tor
@@ -125,6 +156,15 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
     }
     pCurrentTrack = pTrack;
     pCurrentSegment = pCurrentTrack != nullptr ? pCurrentTrack->CurrentSegment() : nullptr;
+    // on a switch the axle keeps to the way it ran onto: a throw under it doesn't move it to the other one
+    iPath = -1;
+    if( pCurrentTrack != nullptr && pCurrentTrack->eType == tt_Switch && pCurrentTrack->SwitchExtension != nullptr ) {
+        iPath = ( pCurrentTrack->SwitchExtension->CurrentIndex & 1 );
+        m_paths.record( pCurrentTrack, iPath );
+        if( facing ) {
+            m_facingentry = pCurrentTrack;
+        }
+    }
     if (!pCurrentTrack)
         Error(Owner->MoverParameters->Name + " at NULL track");
     return pCurrentTrack;
@@ -287,7 +327,7 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
                 if (!SetCurrentTrack(pCurrentTrack->Connected(iSegment, fDirection), 0))
                     return false; // wyjście z błędem
             }
-            else if (!SetCurrentTrack(pCurrentTrack->Connected(-1, fDirection), 0)) // ustawia fDirection
+            else if (!SetCurrentTrack(pCurrentTrack->Connected(-1, fDirection, LeavingPath()), 0)) // ustawia fDirection
                 return false; // wyjście z błędem
             if (dir == fDirection) //(pCurrentTrack->iPrevDirection)
             { // gdy kierunek bez zmiany (Point1->Point2)
@@ -321,7 +361,7 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
                 if (!SetCurrentTrack(pCurrentTrack->Connected(iSegment, fDirection), 1))
                     return false; // wyjście z błędem
             }
-            else if (!SetCurrentTrack(pCurrentTrack->Connected(1, fDirection), 1)) // ustawia fDirection
+            else if (!SetCurrentTrack(pCurrentTrack->Connected(1, fDirection, LeavingPath()), 1)) // ustawia fDirection
                 return false; // wyjście z błędem
             if (dir != fDirection) //(pCurrentTrack->iNextDirection)
             { // gdy zmiana kierunku toru (Point2->Point2)

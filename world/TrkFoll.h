@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "world/Segment.h"
+#include "world/switchfork.h"
 
 // oś poruszająca się po torze
 class TTrackFollower {
@@ -45,6 +46,15 @@ public:
     double RailPhase( double const Offset ) const;
     // TTrack::buckle_curvature at the axle, averaged over Base around it
     double BuckleCurvature( double const Base ) const;
+    // on a switch: the way the axle ran onto, which it keeps whichever way the switch is thrown under it (-1 off a switch)
+    inline int GetPath() const {
+        return iPath; };
+    // the way the axle ran over the switch the last time it did, none if it isn't remembered
+    inline std::optional<int> PathOf( TTrack const *Switch ) const {
+        return m_paths.path_of( Switch ); };
+    // the switch the axle ran onto from its points since the last call, none: the vehicle looks whether the axle ahead
+    // of it took the same way (switch_fork::forked())
+    TTrack *TakeFacingEntry();
     // the level direction of the path the axle runs on, with its buckle and its uneven track, over Reach [m] behind and
     // ahead of it, the way the axle goes forwards; none without a path
     glm::dvec3 PathDirection( double const Reach = 1.0 ) const;
@@ -58,6 +68,11 @@ public:
   private:
 // methods
     bool ComputatePosition(); // przeliczenie pozycji na torze
+    // the code of the end of the next track joined to the End of the current one: on a switch thrown since the axle ran
+    // onto it, of the end of the way the axle is on
+    int JoinedEnd( int const End ) const;
+    // the way to leave the current switch by, -1 as it is set (switch_fork::leaving_path())
+    int LeavingPath() const;
     int CrossEntry( TTrack const &Cross, int const Wish, int const End ) const;
 // members
     TTrack *pCurrentTrack = nullptr; // na którym torze siê znajduje
@@ -68,6 +83,9 @@ public:
     int iEventFlag = 0; // McZapkie-020602: informacja o tym czy wyzwalac zdarzenie: 0,1,2,3
     int iEventallFlag = 0;
     int iSegment = 0; // który segment toru jest używany (żeby nie przeskakiwało po przestawieniu zwrotnicy pod taborem)
+    int iPath = -1; // the way of the switch the axle ran onto, -1 off a switch
+    switch_fork::path_memory m_paths; // the ways of the switches it ran over last
+    TTrack *m_facingentry = nullptr; // the switch it ran onto from the points, until the vehicle takes it
 };
 //---------------------------------------------------------------------------
 #endif

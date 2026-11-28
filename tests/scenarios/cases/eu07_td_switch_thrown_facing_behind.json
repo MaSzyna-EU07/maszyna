@@ -1,5 +1,5 @@
 {
-  "description": "Switch thrown under a train running facing through it (#289 review 2b): as eu07_td_switch_thrown_facing_head, but zwr01 is thrown to track 1 when the locomotive has left the switch for track 2 (event of tor2p, set off by its rear axle), with the coaches still before and on the switch. A train cannot run on two tracks at once: every vehicle has to keep to the line of a track, whatever the throw does to them.",
+  "description": "Switch thrown under a train running facing through it (#289 review 2b): as eu07_td_switch_thrown_facing_head, but zwr01 is thrown to track 1 when the locomotive has left the switch for track 2 (event of tor2p, set off by its rear axle), with the coaches still before and on the switch. The axles on the switch keep their way (track 2), those that come to the points after the throw take track 1: the second coach runs with its front bogie on the way to track 2 and its rear one on the way to track 1, and physics.derailment monitor tells in the log that it derails once its bogies turn under it more than in the tightest curve it is built for (Rmin=80 of its definition). The AI stops before the exit signal of track 2.",
   "base_scenery": "td.scn",
   "time": "10:34",
   "fragment": "td_switch_thrown.scn",
@@ -39,12 +39,27 @@
     {
       "type": "on_track",
       "vehicles": "{{vehicle}}",
+      "exclude": "{{vehicle}}_c2",
       "max_offset": 0.6
+    },
+    {
+      "type": "log_contains",
+      "pattern": "Switch \"zwr01\" thrown under \\S+_c2: running forked, its rear bogie took way 1, the front one way 0"
+    },
+    {
+      "type": "log_contains",
+      "pattern": "derailment monitor: \\S+_c2 derailed running forked, its bogies on the two ways of switch \"zwr01\""
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "tracing through track tor1p"
     },
     {
       "type": "log_lacks",
       "pattern": "Bad driving"
     }
   ],
-  "xfail": "#289 review 2b, as before the stack (TrkFoll reverted in c268673c): the axles still on the switch leave it by the way it is set to now, those behind it take that way too, so the coaches go to track 1 and the locomotive they are coupled to runs on along track 2, 4.6 m beside them, with nothing derailed or broken"
+  "ini": [
+    "debuglog 11"
+  ]
 }

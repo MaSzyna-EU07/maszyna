@@ -1,0 +1,58 @@
+{
+  "description": "As eu07_td_switch_thrown_standing_facing, with physics.derailment new: the last coach, its bogies forked by the throw under the standing train, derails a few metres after the train sets off; its brake hoses tear and the train stops in emergency.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_switch_thrown.scn",
+  "vars": {
+    "trainsets": [
+      "trainset none tor2p 50.0 0.0",
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "route": "",
+    "throw": "zwr01_1 zwr01_V40",
+    "trigger": [
+      "event autotest_throw_later multiple 5 none autotest_throw endevent",
+      "node -1 0 autotest_throw_launcher eventlauncher 0 0 0 -1 none 1034 autotest_throw_later end"
+    ],
+    "order": "Shunt -1 0"
+  },
+  "track_events": {
+    "tor2p": "event0 autotest_wake_after_throw",
+    "tdo_n109": [
+      "event1 autotest_pass_running",
+      "event2 autotest_pass_running"
+    ]
+  },
+  "test_config": [
+    "test.timeout 400",
+    "test.standstill 120"
+  ],
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "on_track",
+      "vehicles": "{{vehicle}}",
+      "exclude": "{{vehicle}}_c3",
+      "max_offset": 0.6
+    },
+    {
+      "type": "log_contains",
+      "pattern": "Bad driving: \\S+_c3 derailed running forked"
+    },
+    {
+      "type": "stops",
+      "moving_speed": 3,
+      "stop_speed": 0.5,
+      "hold": 30
+    }
+  ],
+  "ini": [
+    "physics.derailment new",
+    "debuglog 11"
+  ],
+  "expect": "standstill"
+}
