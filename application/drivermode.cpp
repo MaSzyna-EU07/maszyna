@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 
 #include <algorithm>
+#include <tuple>
 
 /*
 namespace input {
@@ -184,6 +185,24 @@ blackbox::camera_state blackbox_camera(TCamera const &Camera, std::uint8_t const
 	}
 	state.heading = std::remainder(state.heading, 2.0f * glm::pi<float>());
 	return state;
+}
+
+// the key code the keyboard bindings look up for a key: the key itself plus the modifiers held
+// right now, in the layout the binding table stores them (keyboard_input::key() builds the same
+// value from input::key_shift and input::key_ctrl, so a chord tested here is the one dispatch sees)
+int binding_chord(int const Key) {
+	return Key
+		| (input::key_shift ? keyboard_input::keymodifier::shift : 0)
+		| (input::key_ctrl ? keyboard_input::keymodifier::control : 0);
+}
+
+// true if some keyboard command is currently bound to exactly this chord. the public bindings()
+// table is the one the ini was merged into before bind() built the dispatch map, so it answers
+// "is this chord taken at all"; which of several commands sharing one chord wins is bind()'s
+// business and doesn't matter here.
+bool chord_bound(keyboard_input::bindingsetup_sequence const &Bindings, int const Chord) {
+	return std::ranges::any_of(Bindings,
+		[Chord](auto const &Binding) { return std::get<int>(Binding.second) == Chord; });
 }
 
 } // namespace
@@ -583,10 +602,28 @@ void driver_mode::on_key(int const Key, int const Scancode, int const Action, in
 	{
 		return;
 	}
-	if (Key == GLFW_KEY_F12 && Global.shiftState && Action == GLFW_PRESS)
+	if (Key == GLFW_KEY_F12 && Global.shiftState && Action == GLFW_PRESS
+	 && false == chord_bound(m_input.keyboard.bindings(), binding_chord(Key)))
 	{
+		// Shift+F12 opens the debug panel; Ctrl+Shift+F12 is the default binding of the debug mode
+		// switch. shift is held for both chords, so this check used to swallow the switch as well and
+		// debug mode could not be reached from the keyboard at all. a chord some binding claims is
+		// left to the bindings now, and only the unclaimed Shift+F12 stays the debug panel hotkey.
 		m_userinterface->showDebugUI();
 		return;
+	}
+	if (Key == GLFW_KEY_F1 && Global.shiftState && Action == GLFW_PRESS)
+	{
+		// old driving aid lives here: F1 cycles the HUD modes, Shift+F1 opens/expands the driving aid.
+		// the same chord is the default keyboard binding of the small time jump, which only debug mode
+		// acts on: there the binding takes the chord, and the aid stays reachable from the "Mode windows"
+		// menu. anywhere else, and for a chord no binding claims, the aid keeps the hotkey.
+		if (false == DebugModeFlag
+		 || false == chord_bound(m_input.keyboard.bindings(), binding_chord(Key)))
+		{
+			m_userinterface->toggle_driving_aid();
+			return;
+		}
 	}
 	// ...if the input is left untouched, pass it on
 	if (true == m_input.keyboard.key(Key, Action))

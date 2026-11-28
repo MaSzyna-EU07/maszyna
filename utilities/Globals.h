@@ -389,6 +389,116 @@ struct global_settings {
 	bool gui_showtranscripts = true;
     bool gui_trainingdefault = false;
 
+    // HUD overlay layout; stored in the HUD's own config file (hud.ini), separate from eu07.ini
+    struct hud_config {
+        bool enabled { true };
+        int mode { 0 };              // HUD display mode: 0=Standard 1=Custom 2=Off
+        bool mode_saved { false };   // internal: whether the user has selected a mode yet (ini)
+        bool panel { true };         // main panel group switch (can only be changed in Custom mode, applies in both)
+        // csv of explicitly set item ids for Custom mode; "id" = on, "!id" = off, anything not
+        // listed keeps the item's own default_on (see items[] in application/driveruipanels.cpp)
+        std::string custom_items {
+            "speed,direction,grade,voltage,power,limit,nextlimit,brakepipe,trainbrake,edbrake,"
+            "indbrake,brakecyl,notch,shunt,zone,!speedctrl,sigdist,passenger,alarm" };
+        // bottom-right main panel
+        int margin { 16 };             // distance from screen right/bottom edges
+        float scale { 1.0f };          // extra multiplier on the resolution-derived scale (hud.ini: gui.hud.scale)
+        float speed_size { 96.0f };    // big speed digits size (panel-relative units)
+        int panel_x { -1 };            // panel position (shared by both modes); -1 = corner anchored
+        int panel_y { -1 };
+        // --- main panel instrument layout (arc skin) ------------------------------------
+        // defaults equal the layout agreed on the HTML draft page; every value can be
+        // overridden in hud.ini, so neither players nor later developers need a rebuild
+        int   main_w { 499 };                                       // panel size (px @1920)
+        int   main_h { 572 };
+        float arc_cx { 223.0f };                                    // arc centre, panel-relative
+        float arc_cy { 230.0f };
+        float arc_a0 { 142.0f };                                    // sweep start [deg]
+        float arc_a1 { 271.0f };                                    // sweep end   [deg]
+        float arc_band_of[ 4 ] { 25.0f, 25.0f, 25.0f, 25.0f };      // band thickness per ring: volt/curr/notch/shunt
+        float arc_r[ 4 ] { 200.0f, 166.0f, 132.0f, 98.0f };         // ring radii (outer -> inner)
+        int   arc_col[ 4 ] { 0xafb4be, 0x46aaf5, 0x5adc78, 0xeba53c }; // ring colours (RGB)
+        //                         ^ voltage  ^ current        ^ notch   ^ shunt
+        // text laid ALONG each arc (per-character rotation to the local tangent).
+        // hud.ini writes one line per ring, with the same field names the layout page uses:
+        //   gui.hud.ring.current r=200 band=25 col=46aaf5 nameoff=-5 namepct=50 namespace=3
+        //                       namesize=15 namecol=ffffff valoff=0 valpct=93 valspace=1
+        //                       valsize=15 valcol=ffffff
+        int   arc_name_col[ 4 ] { 0xffffff, 0xffffff, 0xffffff, 0xffffff };  // name text colour
+        int   arc_val_col[ 4 ]  { 0xffffff, 0xffffff, 0xffffff, 0xffffff };  // value text colour
+        float arc_name_off[ 4 ] { -5.0f, -5.0f, -5.0f, -5.0f };             // outside the band centre
+        float arc_name_pct[ 4 ] { 50.0f, 50.0f, 50.0f, 50.0f };             // position along the arc
+        float arc_name_space[ 4 ] { 3.0f, 3.0f, 3.0f, 3.0f };               // letter spacing
+        float arc_name_size[ 4 ] { 15.0f, 15.0f, 15.0f, 15.0f };
+        float arc_val_off[ 4 ] { 0.0f, 0.0f, 0.0f, 0.0f };
+        float arc_val_pct[ 4 ] { 94.0f, 93.0f, 94.0f, 95.0f };
+        float arc_val_space[ 4 ] { 1.0f, 1.0f, 1.0f, 1.0f };
+        float arc_val_size[ 4 ] { 15.0f, 15.0f, 15.0f, 15.0f };
+        float arrow_len { 10.0f };                                  // notch arrow length
+        float arrow_hw { 5.0f };                                    // notch arrow half width
+        // remaining panel instruments: same rule (draft defaults, everything hud.ini tunable)
+        float spd_x { 152.0f };          // big speed digits (panel-relative)
+        float spd_y { 150.0f };
+        float dir_x { 317.0f };          // direction arrow anchor
+        float dir_y { 160.0f };
+        float dir_hw { 17.0f };          // ... half width
+        float dir_hh { 34.0f };          // ... length
+        float limit1_x { 377.0f };       // current speed limit box
+        float limit1_y { 186.0f };
+        float limit2_x { 381.0f };       // next speed limit box
+        float limit2_y { 45.0f };
+        float limit_w { 110.0f };        // both boxes share their size
+        float limit_h { 90.0f };
+        float limit_bw { 3.0f };         // border width
+        float limit_radius { 14.0f };    // corner rounding
+        float limit_textfrac { 0.55f };  // digit size as a fraction of the box height
+        float dist_x { 412.0f };         // distance to the next limit
+        float dist_y { 10.0f };
+        float dist_size { 22.0f };
+        float grade_x { 383.0f };        // gradient indicator
+        float grade_y { 299.0f };
+        float grade_w { 104.0f };
+        float bars_x { 13.0f };          // the bottom row stack (8 slots: 7 pressure rows, then the dynamic brake)
+        float bars_y { 367.0f };
+        float bars_w { 282.0f };
+        float bars_rh { 22.0f };         // row height
+        float bars_gap { 2.0f };
+        float bars_radius { 0.0f };      // row corner rounding
+        int   bars_bg { 0x141a24 };      // row background colour
+        int   bars_bga { 140 };          // ... and its alpha (0..255)
+        // warning ratios for the pressure bars. they are NOT physical values: where the vehicle
+        // data has real thresholds (LowPipePress/HighPipePress, MinCompressor) those are used
+        // instead, and these only cover the bars the game gives no limits for
+        float warn_low { 0.1f };         // below this fraction of full scale -> "low"
+        float warn_mid { 0.6f };         // below this fraction of full scale -> "caution"
+        float warn_high { 0.9f };        // below this fraction of full scale -> "caution" (rises)
+        // cruise-control (tempomat) line. same x,y,size shape as gui.hud.dist, but kept as its
+        // own element because it must be movable without dragging the distance readout along
+        float speedctrl_x { 155.0f };     // cruise-control line, panel-local X
+        // final coordinates, taken from the HTML layout draft page (gui.hud.speedctrl x,y,size);
+        // all three stay editable in hud.ini, so players can move the line without a rebuild.
+        // (history: the line used to be hard-coded at barY, i.e. 414 at 1920x1080 with a lone
+        // vehicle and 550 on a normal consist; both of those overlapped the bottom pressure bars)
+        float speedctrl_y { 304.0f };     // cruise-control line, panel-local Y
+        float speedctrl_size { 15.0f };   // cruise-control line font size
+        // notch zone name (Series / Parallel / Shunt / Traction / Idle / Throttle, ...) as an
+        // element of its own: the text is composed together with the notch row, but that row is
+        // never drawn (the bottom slot list deliberately omits Notch), so the name stays invisible
+        // unless it is given a place of its own here
+        float zone_x    { 246.0f };       // zone name, panel-local X (gui.hud.zone x,y,size)
+        float zone_y    { 84.0f };        // zone name, panel-local Y
+        float zone_size { 20.0f };        // zone name font size
+        // --- elements fused in from the old top signal strip -----------------------------
+        // position/size/colour/visibility live here; the text itself stays a translated string
+        struct hud_text_cfg { float x; float y; float size; int col; bool show; };
+        hud_text_cfg sig_dist { 385.0f, 157.0f, 15.0f, 0xffffff, true };     // "Signal NNN m"
+        hud_text_cfg sig_pax { 107.0f, 344.0f, 15.0f, 0x8ceba0, true };     // loading/unloading
+        hud_text_cfg sig_doors { 134.0f, 324.0f, 15.0f, 0x8ceba0, true };   // door state
+        hud_text_cfg sig_alerter { 4.0f, 6.0f, 28.0f, 0xfac328, true };     // CA (vigilance)
+        hud_text_cfg sig_shp { 4.0f, 46.0f, 28.0f, 0xf03c2d, true };        // SHP (cab signal)
+    };
+    hud_config gui_hud;
+
 	std::string extcam_cmd;
 	std::string extcam_rec;
 	glm::ivec2 extcam_res{800, 600};
