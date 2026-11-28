@@ -309,11 +309,11 @@ TEST_CASE("genset: the revolutions follow the demand, so the power builds up") {
 	notch_up(cab);
 	// the demand of the traction builds up at the pace of the inverters, the revolutions follow it
 	auto step_count{0L};
-	for (; step_count < 3000 && cab.eimv_pr < 0.99; ++step_count) {
+	for (; step_count < 3000 && cab.inductionMotor.forceShare < 0.99; ++step_count) {
 		step(dragon6, step_count);
 	}
 	CAPTURE(step_count);
-	REQUIRE(cab.eimv_pr >= 0.99);
+	REQUIRE(cab.inductionMotor.forceShare >= 0.99);
 	run(dragon6, 3.0);
 	auto const after3{cab.Genset.available_power()};
 	CAPTURE(after3);
@@ -345,7 +345,7 @@ TEST_CASE("genset: running from the catenary is the same with the keys") {
 		    {"V", [&Values](TMoverParameters const &Vehicle) { Values.speed.push_back(Vehicle.V); return Vehicle.V; }},
 		    {"EngineVoltage", [&Values](TMoverParameters const &Vehicle) { Values.voltage.push_back(Vehicle.EngineVoltage); return Vehicle.EngineVoltage; }},
 		    {"Itot", [&Values](TMoverParameters const &Vehicle) { Values.current.push_back(Vehicle.Itot); return Vehicle.Itot; }},
-		    {"eimv_pr", [&Values](TMoverParameters const &Vehicle) { Values.demand.push_back(Vehicle.eimv_pr); return Vehicle.eimv_pr; }},
+		    {"eimv_pr", [&Values](TMoverParameters const &Vehicle) { Values.demand.push_back(Vehicle.inductionMotor.forceShare); return Vehicle.inductionMotor.forceShare; }},
 		};
 	};
 	auto const drive = [&record](definition const &Definition, values &Values) {
@@ -492,7 +492,7 @@ braking brake_from_60(vehicle &Dragon, track const &Track) {
 	for (auto step_count = 0L; step_count < 2000; ++step_count) {
 		step(Dragon, step_count, Track);
 		result.lowest_current = std::min(result.lowest_current, cab.Itot);
-		result.electrodynamic |= cab.eimv_pr < 0.0 && cab.eimv[eimv_Ipoj] < 0.0;
+		result.electrodynamic |= cab.inductionMotor.forceShare < 0.0 && cab.inductionMotor.state[eimv_Ipoj] < 0.0;
 	}
 	result.speed_lost = speed - cab.Vel;
 	return result;

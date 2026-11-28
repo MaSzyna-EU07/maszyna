@@ -1175,7 +1175,7 @@ void TTrain::set_cab_controls(int const Cab)
 
 	// finding each inverter - not so optimal, but action ins performed only during changing cabin
 	bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
-	auto const flag{CouplingSet::FromBits(DynamicObject->MoverParameters->InverterControlCouplerFlag)};
+	auto const flag{CouplingSet::FromBits(DynamicObject->MoverParameters->inductionMotor.inverterControlCouplings)};
 	int itemstart = 0;
 	for ([[maybe_unused]] auto const &item : ggInverterToggleButtons) // for each button
 	{
@@ -1184,17 +1184,17 @@ void TTrain::set_cab_controls(int const Cab)
 		TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
-			if (p->MoverParameters->eimc[eimc_p_Pmax] > 1)
+			if (p->MoverParameters->inductionMotor.config[eimc_p_Pmax] > 1)
 			{
-				if (itemindex < p->MoverParameters->InvertersNo)
+				if (itemindex < p->MoverParameters->inductionMotor.inverterCount)
 				{
 					// visual feedback
-					ggInverterToggleButtons[itemstart - 1].PutValue(p->MoverParameters->Inverters[itemindex].Activate ? 1.0 : 0.0);
+					ggInverterToggleButtons[itemstart - 1].PutValue(p->MoverParameters->inductionMotor.inverters[itemindex].Activate ? 1.0 : 0.0);
 					break;
 				}
 				else
 				{
-					itemindex -= p->MoverParameters->InvertersNo;
+					itemindex -= p->MoverParameters->inductionMotor.inverterCount;
 				}
 			}
 			p = kier ? p->Next(flag) : p->Prev(flag);

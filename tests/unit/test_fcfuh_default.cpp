@@ -142,12 +142,12 @@ TEST_CASE("fcfuH: the loader gives the dynamic brake the traction's figure when 
 		CAPTURE(fcfu);
 		// the EU47's definition has fcfu only
 		vehicle eu47{definition::fiz("e186_v2/eu47").set("Engine", "fcfu", fcfu)};
-		CHECK(eu47->eimc[eimc_f_cfu] == read_fcfu(fcfu));
-		CHECK(bits(eu47->eimc[eimc_f_cfuH]) == bits(eu47->eimc[eimc_f_cfu]));
-		CHECK(bits(eu47->eimc[eimc_f_cfuH]) == bits(fcfuh_before(read_fcfu(fcfu))));
+		CHECK(eu47->inductionMotor.config[eimc_f_cfu] == read_fcfu(fcfu));
+		CHECK(bits(eu47->inductionMotor.config[eimc_f_cfuH]) == bits(eu47->inductionMotor.config[eimc_f_cfu]));
+		CHECK(bits(eu47->inductionMotor.config[eimc_f_cfuH]) == bits(fcfuh_before(read_fcfu(fcfu))));
 		// its own figure is kept
 		vehicle own{definition::fiz("e186_v2/eu47").set("Engine", "fcfu", fcfu).set("Engine", "fcfuH", "40.1")};
-		CHECK(own->eimc[eimc_f_cfu] == read_fcfu(fcfu));
-		CHECK(own->eimc[eimc_f_cfuH] == read_fcfu("40.1"));
+		CHECK(own->inductionMotor.config[eimc_f_cfu] == read_fcfu(fcfu));
+		CHECK(own->inductionMotor.config[eimc_f_cfuH] == read_fcfu("40.1"));
 	}
 }

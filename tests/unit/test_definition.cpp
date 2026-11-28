@@ -131,7 +131,7 @@ TEST_CASE("definition: the highest power of an induction motor drive by the spee
 		auto driven{test::driving(real)};
 		test::track const line{0.0, 0.0, test::catenary_3kv};
 		REQUIRE(test::start_up(driven, line));
-		CHECK(real->eimc[eimc_p_Pmax] == doctest::Approx(table(real->Vel)).epsilon(0.01));
+		CHECK(real->inductionMotor.config[eimc_p_Pmax] == doctest::Approx(table(real->Vel)).epsilon(0.01));
 	}
 }
 

@@ -319,15 +319,15 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	int in = 0;
 	while (p && in < 8)
 	{
-		if (p->MoverParameters->eimc[eimc_p_Pmax] > 1)
+		if (p->MoverParameters->inductionMotor.config[eimc_p_Pmax] > 1)
 		{
 			in++;
-			dict->insert("eimp_c" + std::to_string(in) + "_invno", p->MoverParameters->InvertersNo);
-			for (int j = 0; j < p->MoverParameters->InvertersNo; j++)
+			dict->insert("eimp_c" + std::to_string(in) + "_invno", p->MoverParameters->inductionMotor.inverterCount);
+			for (int j = 0; j < p->MoverParameters->inductionMotor.inverterCount; j++)
 			{
-				dict->insert("eimp_c" + std::to_string(in) + "_inv" + std::to_string(j + 1) + "_act", p->MoverParameters->Inverters[j].IsActive);
-				dict->insert("eimp_c" + std::to_string(in) + "_inv" + std::to_string(j + 1) + "_error", p->MoverParameters->Inverters[j].Error);
-				dict->insert("eimp_c" + std::to_string(in) + "_inv" + std::to_string(j + 1) + "_allow", p->MoverParameters->Inverters[j].Activate);
+				dict->insert("eimp_c" + std::to_string(in) + "_inv" + std::to_string(j + 1) + "_act", p->MoverParameters->inductionMotor.inverters[j].IsActive);
+				dict->insert("eimp_c" + std::to_string(in) + "_inv" + std::to_string(j + 1) + "_error", p->MoverParameters->inductionMotor.inverters[j].Error);
+				dict->insert("eimp_c" + std::to_string(in) + "_inv" + std::to_string(j + 1) + "_allow", p->MoverParameters->inductionMotor.inverters[j].Activate);
 			}
 		}
 		p = kier ? p->Next(Coupling::control) : p->Prev(Coupling::control);

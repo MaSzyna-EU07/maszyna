@@ -349,17 +349,17 @@ bool TTrain::Update(double const Deltatime)
 				bCompressors.emplace_back(p->MoverParameters->CompressorAllow || p->MoverParameters->CompressorStart == start_t::automatic, p->MoverParameters->CompressorFlag, i);
 			}
 			bSlip[i] = p->MoverParameters->SlippingWheels;
-			if (in < 8 && p->MoverParameters->eimc[eimc_p_Pmax] > 1)
+			if (in < 8 && p->MoverParameters->inductionMotor.config[eimc_p_Pmax] > 1)
 			{
-				fEIMParams[1 + in][0] = static_cast<float>(p->MoverParameters->eimv[eimv_Fmax]);
+				fEIMParams[1 + in][0] = static_cast<float>(p->MoverParameters->inductionMotor.state[eimv_Fmax]);
 				fEIMParams[1 + in][1] = std::max(fEIMParams[1 + in][0], 0.f);
 				fEIMParams[1 + in][2] = -std::min(fEIMParams[1 + in][0], 0.f);
-				fEIMParams[1 + in][3] = static_cast<float>(p->MoverParameters->eimv[eimv_Fmax] / std::max(p->MoverParameters->eimv[eimv_Fful], 1.));
+				fEIMParams[1 + in][3] = static_cast<float>(p->MoverParameters->inductionMotor.state[eimv_Fmax] / std::max(p->MoverParameters->inductionMotor.state[eimv_Fful], 1.));
 				fEIMParams[1 + in][4] = std::max(fEIMParams[1 + in][3], 0.f);
 				fEIMParams[1 + in][5] = -std::min(fEIMParams[1 + in][3], 0.f);
-				fEIMParams[1 + in][6] = static_cast<float>(p->MoverParameters->eimv[eimv_If]);
-				fEIMParams[1 + in][7] = static_cast<float>(p->MoverParameters->eimv[eimv_U]);
-				fEIMParams[1 + in][8] = static_cast<float>(p->MoverParameters->Itot); // p->MoverParameters->eimv[eimv_Ipoj];
+				fEIMParams[1 + in][6] = static_cast<float>(p->MoverParameters->inductionMotor.state[eimv_If]);
+				fEIMParams[1 + in][7] = static_cast<float>(p->MoverParameters->inductionMotor.state[eimv_U]);
+				fEIMParams[1 + in][8] = static_cast<float>(p->MoverParameters->Itot); // p->MoverParameters->inductionMotor.state[eimv_Ipoj];
 				fEIMParams[1 + in][9] = static_cast<float>(p->MoverParameters->EngineVoltage);
 				fEIMParams[0][6] += fEIMParams[1 + in][8];
 				bMains[in] = p->MoverParameters->Mains;
@@ -422,15 +422,15 @@ bool TTrain::Update(double const Deltatime)
 	}
 
 	//        if (mvControlled == mvOccupied)
-	//            fEIMParams[0][3] = mvControlled->eimv[eimv_Fzad]; // procent zadany
+	//            fEIMParams[0][3] = mvControlled->inductionMotor.state[eimv_Fzad]; // procent zadany
 	//        else
 	//            fEIMParams[0][3] =
-	//                mvControlled->eimv[eimv_Fzad] - mvOccupied->LocalBrakeRatio(); // procent zadany
+	//                mvControlled->inductionMotor.state[eimv_Fzad] - mvOccupied->LocalBrakeRatio(); // procent zadany
 	fEIMParams[0][3] = static_cast<float>(mvOccupied->eimic_real);
 	fEIMParams[0][4] = std::max(fEIMParams[0][3], 0.f);
 	fEIMParams[0][5] = -std::min(fEIMParams[0][3], 0.f);
-	fEIMParams[0][1] = static_cast<float>(fEIMParams[0][4] * mvControlled->eimv[eimv_Fful]);
-	fEIMParams[0][2] = static_cast<float>(fEIMParams[0][5] * mvControlled->eimv[eimv_Fful]);
+	fEIMParams[0][1] = static_cast<float>(fEIMParams[0][4] * mvControlled->inductionMotor.state[eimv_Fful]);
+	fEIMParams[0][2] = static_cast<float>(fEIMParams[0][5] * mvControlled->inductionMotor.state[eimv_Fful]);
 	fEIMParams[0][0] = fEIMParams[0][1] - fEIMParams[0][2];
 	fEIMParams[0][7] = 0;
 	fEIMParams[0][8] = 0;

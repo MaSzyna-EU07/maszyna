@@ -1103,8 +1103,8 @@ void TMoverParameters::CheckEIMIC(double dt)
 	double brakeDemand = SplitEDPneumaticBrake ? DynamicBrakeRatio() : LocalBrakeRatio();
 	if (SplitEDPneumaticBrake)
 	{
-		double const vh0 = eimc[eimc_p_Vh0];
-		double const vh1 = eimc[eimc_p_Vh1];
+		double const vh0 = inductionMotor.config[eimc_p_Vh0];
+		double const vh1 = inductionMotor.config[eimc_p_Vh1];
 		if (vh1 > vh0 + 0.001)
 		{
 			double const vhRamp = std::clamp((Vel - vh0) / (vh1 - vh0), 0.0, 1.0);

@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/odometerreading.h"
 #include "physics/vehicletypes.h"
 #include "physics/components/dieselengine.h"
+#include "physics/components/inductionmotor.h"
 
 class TractionDrive;
 
@@ -598,17 +599,6 @@ struct speed_control
 	double PowerDownSpeed = 1000;
 };
 
-struct inverter
-{
-	double Freal = 0.0;
-	double Request = 0.0;
-	bool IsActive = true;
-	bool Activate = true;
-	bool Error = false;
-	bool Failure_Drive = false;
-	bool Failure_Const = false;
-};
-
 class TMoverParameters
 { // Ra: wrapper na kod pascalowy, przejmujący jego funkcje  Q: 20160824 - juz nie wrapper a klasa bazowa :)
   private:
@@ -1156,18 +1146,12 @@ class TMoverParameters
 	/*- dla uproszczonego modelu silnika (dumb) oraz dla drezyny*/
 	double Ftmax = 0.0;
 	/*- dla lokomotyw z silnikami indukcyjnymi -*/
-	double eimc[26];
-	bool EIMCLogForce = false; //
+	// the drive of induction motors (physics/components/inductionmotor.h)
+	InductionMotor inductionMotor;
 	static std::vector<std::string> const eimc_labels;
-	double InverterFrequency{0.0}; // current frequency of power inverters
-	int InvertersNo = 0; // number of inverters
-	double InvertersRatio = 0.0;
-	std::vector<inverter> Inverters; // all inverters
-	int InverterControlCouplerFlag = 4; // which coupling flag is necessary to controll inverters
 	int Imaxrpc = 0; // Maksymalny prad rezystora hamowania chlodzonego pasywnie
 	int BRVto = 0; // Czas jaki wentylatory jeszcze dodatkowo schladzaja rezystor
 	double BRVtimer = 0; // Timer dla podtrzymania wentylatora
-	std::map<double, double> EIM_Pmax_Table; /*tablica mocy maksymalnej od predkosci*/
 	/* -dla pojazdów z blendingiem EP/ED (MED) */
 	double MED_Vmax = 0; // predkosc maksymalna dla obliczen chwilowej sily hamowania EP w MED
 	double MED_Vmin = 0; // predkosc minimalna dla obliczen chwilowej sily hamowania EP w MED
@@ -1496,8 +1480,6 @@ class TMoverParameters
 	bool EIMCtrlAdditionalZeros = false; /*czy ma dodatkowe zero jazdy i zero hamowania */
 	bool EIMCtrlEmergency = false; /*czy ma dodatkowe zero jazdy i zero hamowania */
 	bool EIMCtrlMainEmergency = false; /*czy zadajnik typu 2 (Elf) ma pozycje hamowania naglego ponizej swojej pozycji 0*/
-	double eimv_pr = 0; /*realizowany procent dostepnej sily rozruchu/hamowania*/
-	double eimv[21];
 	static std::vector<std::string> const eimv_labels;
 	double SpeedCtrlTimer = 0; /*zegar dzialania tempomatu z wybieralna predkoscia*/
 	double eimicSpeedCtrl = 1; /*pozycja sugerowana przez tempomat*/
@@ -1688,7 +1670,7 @@ class TMoverParameters
 	bool EIMDirectionChangeAllow(void) const;
 	inline double IsVehicleEIMBrakingFactor() const
 	{
-		return DynamicBrakeFlag && ResistorsFlag ? 0.0 : eimv[eimv_Ipoj] < 0 ? -1.0 : 1.0;
+		return DynamicBrakeFlag && ResistorsFlag ? 0.0 : inductionMotor.state[eimv_Ipoj] < 0 ? -1.0 : 1.0;
 	}
 	void BrakeLevelSet(double b);
 	bool BrakeLevelAdd(double b);

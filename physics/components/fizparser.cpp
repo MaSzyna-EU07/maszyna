@@ -387,7 +387,7 @@ bool TMoverParameters::readPmaxList(std::string const &line)
 	double y = 0.0;
 	parser >> x >> y;
 
-	EIM_Pmax_Table.emplace(x, y);
+	inductionMotor.maxPowerTable.emplace(x, y);
 
 	return true;
 }

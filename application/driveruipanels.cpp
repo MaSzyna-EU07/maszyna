@@ -1098,9 +1098,9 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
 		for( int i = 0; i <= 20; ++i ) {
 
 			std::string parameters =
-			    TMoverParameters::eimc_labels[ i ] + to_string( mover.eimc[ i ], 2, 9 )
+			    TMoverParameters::eimc_labels[ i ] + to_string( mover.inductionMotor.config[ i ], 2, 9 )
 			    + " | "
-			    + TMoverParameters::eimv_labels[ i ] + to_string( mover.eimv[ i ], 2, 9 );
+			    + TMoverParameters::eimv_labels[ i ] + to_string( mover.inductionMotor.state[ i ], 2, 9 );
 
 			if( i < 10 ) {
 				parameters +=
@@ -1115,7 +1115,7 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
 
             Output.emplace_back( parameters, Global.UITextColor );
         }
-        Output.emplace_back( "Inverter:\n frequency: " + to_string( mover.InverterFrequency, 2 ), Global.UITextColor );
+        Output.emplace_back( "Inverter:\n frequency: " + to_string( mover.inductionMotor.inverterFrequency, 2 ), Global.UITextColor );
     }
     // diesel engine data
     if( mover.EngineType == TEngineType::DieselEngine ) {

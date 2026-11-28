@@ -151,7 +151,7 @@ public:
 		case 1:
 			return vehicle.WindingRes * vehicle.Mm / vehicle.Vadd;
 		case 2:
-			return vehicle.eimv_pr * vehicle.WindingRes;
+			return vehicle.inductionMotor.forceShare * vehicle.WindingRes;
 		default:
 			return vehicle.ShowCurrentP(ammeter);
 		}

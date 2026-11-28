@@ -1089,7 +1089,7 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
     }
 
 	if (Vehicle.Mains) {
-		float power = std::clamp(Vehicle.eimv_pr, 0.0, 1.0);
+		float power = std::clamp(Vehicle.inductionMotor.forceShare, 0.0, 1.0);
 
 		fake_engine
 		        .pitch(fake_engine.m_frequencyoffset + power * fake_engine.m_frequencyfactor)
@@ -1263,12 +1263,12 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
     if( false == acmotors.empty() ) {
 
         if( Vehicle.EngineType == TEngineType::ElectricInductionMotor ) {
-            if( Vehicle.InverterFrequency > 0.001 ) {
+            if( Vehicle.inductionMotor.inverterFrequency > 0.001 ) {
 
                 for( auto &motor : acmotors ) {
                     motor
-                        .pitch( motor.m_frequencyoffset + motor.m_frequencyfactor * Vehicle.InverterFrequency )
-                        .gain( motor.m_amplitudeoffset + motor.m_amplitudefactor * std::sqrt( std::abs( Vehicle.eimv_pr ) ) )
+                        .pitch( motor.m_frequencyoffset + motor.m_frequencyfactor * Vehicle.inductionMotor.inverterFrequency )
+                        .gain( motor.m_amplitudeoffset + motor.m_amplitudefactor * std::sqrt( std::abs( Vehicle.inductionMotor.forceShare ) ) )
                         .play( sound_flags::exclusive | sound_flags::looping );
                 }
             }
@@ -1303,12 +1303,12 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
     }
     // inverter sounds
     if( Vehicle.EngineType == TEngineType::ElectricInductionMotor ) {
-        if( Vehicle.InverterFrequency > 0.001 ) {
+        if( Vehicle.inductionMotor.inverterFrequency > 0.001 ) {
 
-            volume = inverter.m_amplitudeoffset + inverter.m_amplitudefactor * std::sqrt( std::abs( Vehicle.eimv_pr) );
+            volume = inverter.m_amplitudeoffset + inverter.m_amplitudefactor * std::sqrt( std::abs( Vehicle.inductionMotor.forceShare) );
 
             inverter
-                .pitch( inverter.m_frequencyoffset + inverter.m_frequencyfactor * Vehicle.InverterFrequency )
+                .pitch( inverter.m_frequencyoffset + inverter.m_frequencyfactor * Vehicle.inductionMotor.inverterFrequency )
                 .gain( volume )
                 .play( sound_flags::exclusive | sound_flags::looping );
         }

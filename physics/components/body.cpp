@@ -136,11 +136,11 @@ TMoverParameters::TMoverParameters(double VelInitial, std::string const &TypeNam
 		cylindermult = 0.0;
 	}
 
-	for (auto &eimcvalue : eimc)
+	for (auto &eimcvalue : inductionMotor.config)
 	{
 		eimcvalue = 0.0;
 	}
-	eimc[eimc_p_eped] = 1.5;
+	inductionMotor.config[eimc_p_eped] = 1.5;
 
 	for (auto &couplerentry : Couplers)
 	{
@@ -162,7 +162,7 @@ TMoverParameters::TMoverParameters(double VelInitial, std::string const &TypeNam
 	Vel = abs(VelInitial);
 	V = VelInitial / 3.6;
 
-	for (auto &eimvvalue : eimv)
+	for (auto &eimvvalue : inductionMotor.state)
 	{
 		eimvvalue = 0.0;
 	}
@@ -456,7 +456,7 @@ void TMoverParameters::compute_movement_(double const Deltatime)
 	// Prad oddawany na rezystor
 
 	// Wlacz wentylator jesli prad rekuperacji przekroczy maksymalny dla pasywnego chlodzenia rezystora
-	if (double Irh = abs(eimv[eimv_Pe]) - abs(eimv[eimv_Ipoj]); Irh > Imaxrpc && eimv[eimv_Ipoj] < 0)
+	if (double Irh = abs(inductionMotor.state[eimv_Pe]) - abs(inductionMotor.state[eimv_Ipoj]); Irh > Imaxrpc && inductionMotor.state[eimv_Ipoj] < 0)
 	{
 		BRVtimer = 0;
 		BRVentilators = true;
@@ -896,9 +896,9 @@ void TMoverParameters::ComputeTotalForce(double dt)
 
 	FTrain = Power > 0 ? TractionForce(dt) : 0;
 	double FT_factor = 1.0;
-	if (EngineType == TEngineType::ElectricInductionMotor && InvertersRatio > 0.0)
+	if (EngineType == TEngineType::ElectricInductionMotor && inductionMotor.inverterRatio > 0.0)
 	{
-		FT_factor = 1.0 / InvertersRatio;
+		FT_factor = 1.0 / inductionMotor.inverterRatio;
 		FTrain *= FT_factor;
 	}
 

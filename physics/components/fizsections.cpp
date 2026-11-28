@@ -1380,48 +1380,48 @@ void TMoverParameters::LoadFIZ_EngineInductionMotor(std::string const &Input)
 	RVentnmax = 1.0;
 	extract_value(NominalVoltage, "Volt", Input, "");
 
-	extract_value(eimc[eimc_s_dfic], "dfic", Input, "");
-	extract_value(eimc[eimc_s_dfmax], "dfmax", Input, "");
-	extract_value(eimc[eimc_s_p], "p", Input, "");
-	extract_value(eimc[eimc_s_cfu], "cfu", Input, "");
-	extract_value(eimc[eimc_s_cim], "cim", Input, "");
-	extract_value(eimc[eimc_s_icif], "icif", Input, "");
-	extract_value(eimc[eimc_f_Uzmax], "Uzmax", Input, "");
-	extract_value(eimc[eimc_f_Uzh], "Uzh", Input, "");
-	extract_value(eimc[eimc_f_DU], "DU", Input, "");
-	extract_value(eimc[eimc_f_I0], "I0", Input, "");
-	extract_value(eimc[eimc_f_cfu], "fcfu", Input, "");
-	if (false == extract_value(eimc[eimc_f_cfuH], "fcfuH", Input, ""))
+	extract_value(inductionMotor.config[eimc_s_dfic], "dfic", Input, "");
+	extract_value(inductionMotor.config[eimc_s_dfmax], "dfmax", Input, "");
+	extract_value(inductionMotor.config[eimc_s_p], "p", Input, "");
+	extract_value(inductionMotor.config[eimc_s_cfu], "cfu", Input, "");
+	extract_value(inductionMotor.config[eimc_s_cim], "cim", Input, "");
+	extract_value(inductionMotor.config[eimc_s_icif], "icif", Input, "");
+	extract_value(inductionMotor.config[eimc_f_Uzmax], "Uzmax", Input, "");
+	extract_value(inductionMotor.config[eimc_f_Uzh], "Uzh", Input, "");
+	extract_value(inductionMotor.config[eimc_f_DU], "DU", Input, "");
+	extract_value(inductionMotor.config[eimc_f_I0], "I0", Input, "");
+	extract_value(inductionMotor.config[eimc_f_cfu], "fcfu", Input, "");
+	if (false == extract_value(inductionMotor.config[eimc_f_cfuH], "fcfuH", Input, ""))
 	{
 		// without its own figure the dynamic brake takes the one of the traction
-		eimc[eimc_f_cfuH] = eimc[eimc_f_cfu];
+		inductionMotor.config[eimc_f_cfuH] = inductionMotor.config[eimc_f_cfu];
 	}
-	extract_value(eimc[eimc_p_F0], "F0", Input, "");
-	extract_value(eimc[eimc_p_a1], "a1", Input, "");
-	extract_value(eimc[eimc_p_Pmax], "Pmax", Input, "");
-	extract_value(eimc[eimc_p_Fh], "Fh", Input, "");
-	extract_value(eimc[eimc_p_Ph], "Ph", Input, "");
-	extract_value(eimc[eimc_p_Vh0], "Vh0", Input, "");
-	extract_value(eimc[eimc_p_Vh1], "Vh1", Input, "");
-	extract_value(eimc[eimc_p_Imax], "Imax", Input, "");
-	extract_value(eimc[eimc_p_abed], "abed", Input, "");
-	extract_value(eimc[eimc_p_eped], "edep", Input, "");
-	extract_value(EIMCLogForce, "eimclf", Input, "");
-	extract_value(InvertersNo, "InvNo", Input, "");
-	extract_value(InverterControlCouplerFlag, "InvCtrCplFlag", Input, "");
+	extract_value(inductionMotor.config[eimc_p_F0], "F0", Input, "");
+	extract_value(inductionMotor.config[eimc_p_a1], "a1", Input, "");
+	extract_value(inductionMotor.config[eimc_p_Pmax], "Pmax", Input, "");
+	extract_value(inductionMotor.config[eimc_p_Fh], "Fh", Input, "");
+	extract_value(inductionMotor.config[eimc_p_Ph], "Ph", Input, "");
+	extract_value(inductionMotor.config[eimc_p_Vh0], "Vh0", Input, "");
+	extract_value(inductionMotor.config[eimc_p_Vh1], "Vh1", Input, "");
+	extract_value(inductionMotor.config[eimc_p_Imax], "Imax", Input, "");
+	extract_value(inductionMotor.config[eimc_p_abed], "abed", Input, "");
+	extract_value(inductionMotor.config[eimc_p_eped], "edep", Input, "");
+	extract_value(inductionMotor.logForce, "eimclf", Input, "");
+	extract_value(inductionMotor.inverterCount, "InvNo", Input, "");
+	extract_value(inductionMotor.inverterControlCouplings, "InvCtrCplFlag", Input, "");
 	extract_value(Imaxrpc, "Imaxrpc", Input, "");
 	extract_value(BRVto, "BRVto", Input, "");
 	extract_value(Flat, "Flat", Input, "");
 
-	if (eimc[eimc_p_Pmax] > 0 && Power > 0 && InvertersNo == 0)
+	if (inductionMotor.config[eimc_p_Pmax] > 0 && Power > 0 && inductionMotor.inverterCount == 0)
 	{
-		InvertersNo = 1;
+		inductionMotor.inverterCount = 1;
 	}
-	Inverters.resize(InvertersNo);
-	/*for (int i = 0; i > InvertersNo; i++)
+	inductionMotor.inverters.resize(inductionMotor.inverterCount);
+	/*for (int i = 0; i > inductionMotor.inverterCount; i++)
 	{
-	    inverter x;
-	    Inverters.emplace_back(x);
+	    Inverter x;
+	    inductionMotor.inverters.emplace_back(x);
 	}*/
 }
 

@@ -804,7 +804,7 @@ void TMoverParameters::GensetCheck(double const Deltatime)
 	}
 	else
 	{
-		auto const demand{GensetSelected() && Mains ? std::clamp(eimv_pr, 0.0, 1.0) : 0.0};
+		auto const demand{GensetSelected() && Mains ? std::clamp(inductionMotor.forceShare, 0.0, 1.0) : 0.0};
 		auto const target{genset.is_active ? genset.revolutions_idle + (genset.revolutions_max - genset.revolutions_idle) * demand : 0.0};
 		genset.revolutions += (target - genset.revolutions) * std::min(1.0, Deltatime / genset.spinup_time);
 		if (genset.revolutions < 0.001)

@@ -293,17 +293,17 @@ bool TDynamicObject::Update(double dt, double dt1)
                               Nmax / (p->MoverParameters->NAxles * p->MoverParameters->NBpA),
                               p->MoverParameters->MED_Vref) *
                           1000; // sila hamowania pn
-                FmaxED += p->MoverParameters->Mains && p->MoverParameters->DirActive != 0 && p->MoverParameters->InvertersRatio == 1.0 &&
-				                  p->MoverParameters->eimc[eimc_p_Fh] * p->MoverParameters->NPoweredAxles > 0 ?
-				              p->MoverParameters->eimc[eimc_p_Fh] * 1000 :
+                FmaxED += p->MoverParameters->Mains && p->MoverParameters->DirActive != 0 && p->MoverParameters->inductionMotor.inverterRatio == 1.0 &&
+				                  p->MoverParameters->inductionMotor.config[eimc_p_Fh] * p->MoverParameters->NPoweredAxles > 0 ?
+				              p->MoverParameters->inductionMotor.config[eimc_p_Fh] * 1000 :
 				              0; // chwilowy max ED -> do rozdzialu sil
-                FED -= std::min(p->MoverParameters->eimv[eimv_Fmax], 0.0) *
+                FED -= std::min(p->MoverParameters->inductionMotor.state[eimv_Fmax], 0.0) *
                        1000; // chwilowy max ED -> do rozdzialu sil
-				FfulED = std::min(p->MoverParameters->eimv[eimv_Fful], 0.0) *
+				FfulED = std::min(p->MoverParameters->inductionMotor.state[eimv_Fful], 0.0) *
 					1000; // chwilowy max ED -> do rozdzialu sil
-				FrED -= std::min(p->MoverParameters->eimv[eimv_Fmax], 0.0) *
+				FrED -= std::min(p->MoverParameters->inductionMotor.state[eimv_Fmax], 0.0) *
                         1000; // chwilowo realizowane ED -> do pneumatyki
-				Frj += std::max(p->MoverParameters->eimv[eimv_Fmax], 0.0) *
+				Frj += std::max(p->MoverParameters->inductionMotor.state[eimv_Fmax], 0.0) *
 					1000;// chwilowo realizowany napęd -> do utrzymującego
 				masa += p->MoverParameters->TotalMass;
 				osie += p->MoverParameters->NAxles;
@@ -341,11 +341,11 @@ bool TDynamicObject::Update(double dt, double dt1)
             }
             auto Fzad = amax * LBR * masa;
 			if ((MoverParameters->BrakeCtrlPos == MoverParameters->Handle->GetPos(bh_EB)
-				&& MoverParameters->eimc[eimc_p_abed] < 0.001) ||
+				&& MoverParameters->inductionMotor.config[eimc_p_abed] < 0.001) ||
                 MoverParameters->EmergencyValveFlow > 0)
 				Fzad = amax * masa; //pętla bezpieczeństwa - pełne służbowe
             if (MoverParameters->ScndS &&
-                MoverParameters->Vel > MoverParameters->eimc[eimc_p_Vh1] && FmaxED > 0)
+                MoverParameters->Vel > MoverParameters->inductionMotor.config[eimc_p_Vh1] && FmaxED > 0)
             {
                 Fzad = std::min(LBR * FmaxED, FfulED);
             }
@@ -403,7 +403,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 				}
 			}
 			if (MoverParameters->BrakeCtrlPos == MoverParameters->Handle->GetPos(bh_EB)
-				&& MoverParameters->eimc[eimc_p_abed] < 0.001)
+				&& MoverParameters->inductionMotor.config[eimc_p_abed] < 0.001)
 				FzadED = 0; //pętla bezpieczeństwa - bez ED
             auto const FzadPN = Fzad - FrED * MoverParameters->MED_FrED_factor;
 			std::vector<bool> PrzekrF( np );
@@ -458,13 +458,13 @@ bool TDynamicObject::Update(double dt, double dt1)
                      p = kier == true ? p->Next(Coupling::control) : p->Prev(Coupling::control) )
                 {
                     if (FzEP[i] > 0.01 &&
-                        FzEP[i] > p->MoverParameters->TotalMass * p->MoverParameters->eimc[eimc_p_eped] + std::min(p->MoverParameters->eimv[eimv_Fmax], 0.) * 1000 &&
+                        FzEP[i] > p->MoverParameters->TotalMass * p->MoverParameters->inductionMotor.config[eimc_p_eped] + std::min(p->MoverParameters->inductionMotor.state[eimv_Fmax], 0.) * 1000 &&
                         !PrzekrF[i])
                     {
-                        float przek1 = -std::min(p->MoverParameters->eimv[eimv_Fmax], 0.) * 1000 +
+                        float przek1 = -std::min(p->MoverParameters->inductionMotor.state[eimv_Fmax], 0.) * 1000 +
                                        FzEP[i] -
                                        p->MoverParameters->TotalMass *
-                                           p->MoverParameters->eimc[eimc_p_eped] * 0.999;
+                                           p->MoverParameters->inductionMotor.config[eimc_p_eped] * 0.999;
                         PrzekrF[i] = true;
                         test = true;
                         nPrzekrF++;

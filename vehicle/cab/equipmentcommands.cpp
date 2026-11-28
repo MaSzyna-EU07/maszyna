@@ -413,20 +413,20 @@ void TTrain::OnCommand_inverterenable(TTrain *Train, command_data const &Command
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
 		bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
-		auto const flag{CouplingSet::FromBits(Train->DynamicObject->MoverParameters->InverterControlCouplerFlag)};
+		auto const flag{CouplingSet::FromBits(Train->DynamicObject->MoverParameters->inductionMotor.inverterControlCouplings)};
 		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
-			if (p->MoverParameters->eimc[eimc_p_Pmax] > 1)
+			if (p->MoverParameters->inductionMotor.config[eimc_p_Pmax] > 1)
 			{
-				if (itemindex < p->MoverParameters->InvertersNo)
+				if (itemindex < p->MoverParameters->inductionMotor.inverterCount)
 				{
-					p->MoverParameters->Inverters[itemindex].Activate = true;
+					p->MoverParameters->inductionMotor.inverters[itemindex].Activate = true;
 					break;
 				}
 				else
 				{
-					itemindex -= p->MoverParameters->InvertersNo;
+					itemindex -= p->MoverParameters->inductionMotor.inverterCount;
 				}
 			}
 			p = kier ? p->Next(flag) : p->Prev(flag);
@@ -452,20 +452,20 @@ void TTrain::OnCommand_inverterdisable(TTrain *Train, command_data const &Comman
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
 		bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
-		auto const flag{CouplingSet::FromBits(Train->DynamicObject->MoverParameters->InverterControlCouplerFlag)};
+		auto const flag{CouplingSet::FromBits(Train->DynamicObject->MoverParameters->inductionMotor.inverterControlCouplings)};
 		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
-			if (p->MoverParameters->eimc[eimc_p_Pmax] > 1)
+			if (p->MoverParameters->inductionMotor.config[eimc_p_Pmax] > 1)
 			{
-				if (itemindex < p->MoverParameters->InvertersNo)
+				if (itemindex < p->MoverParameters->inductionMotor.inverterCount)
 				{
-					p->MoverParameters->Inverters[itemindex].Activate = false;
+					p->MoverParameters->inductionMotor.inverters[itemindex].Activate = false;
 					break;
 				}
 				else
 				{
-					itemindex -= p->MoverParameters->InvertersNo;
+					itemindex -= p->MoverParameters->inductionMotor.inverterCount;
 				}
 			}
 			p = kier ? p->Next(flag) : p->Prev(flag);
@@ -491,22 +491,22 @@ void TTrain::OnCommand_invertertoggle(TTrain *Train, command_data const &Command
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
 		bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
-		auto const flag{CouplingSet::FromBits(Train->DynamicObject->MoverParameters->InverterControlCouplerFlag)};
+		auto const flag{CouplingSet::FromBits(Train->DynamicObject->MoverParameters->inductionMotor.inverterControlCouplings)};
 		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
-			if (p->MoverParameters->eimc[eimc_p_Pmax] > 1)
+			if (p->MoverParameters->inductionMotor.config[eimc_p_Pmax] > 1)
 			{
-				if (itemindex < p->MoverParameters->InvertersNo)
+				if (itemindex < p->MoverParameters->inductionMotor.inverterCount)
 				{
-					p->MoverParameters->Inverters[itemindex].Activate = !p->MoverParameters->Inverters[itemindex].Activate;
+					p->MoverParameters->inductionMotor.inverters[itemindex].Activate = !p->MoverParameters->inductionMotor.inverters[itemindex].Activate;
 					// visual feedback
-					item.UpdateValue(p->MoverParameters->Inverters[itemindex].Activate ? 1.0 : 0.0, Train->dsbSwitch);
+					item.UpdateValue(p->MoverParameters->inductionMotor.inverters[itemindex].Activate ? 1.0 : 0.0, Train->dsbSwitch);
 					break;
 				}
 				else
 				{
-					itemindex -= p->MoverParameters->InvertersNo;
+					itemindex -= p->MoverParameters->inductionMotor.inverterCount;
 				}
 			}
 			p = kier ? p->Next(flag) : p->Prev(flag);
